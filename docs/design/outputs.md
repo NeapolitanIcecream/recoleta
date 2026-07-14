@@ -220,6 +220,9 @@ Important behavior:
   non-GitHub static hosts when you want an explicit repo-local snapshot.
 - trend and idea detail pages prefer sibling `*.presentation.json` sidecars and
   fall back to markdown parsing when a sidecar is missing or invalid.
+- collection indexes, archive rows, and topic collections use build-time static
+  pagination once they exceed their bounded page sizes; first-page URLs remain
+  unchanged and later pages are listed in the site manifest.
 - Historical note: the older shared-stream runtime aggregated stream-local
   `Trends/` trees and exposed a `Streams` navigation surface. The current
   instance-first runtime keeps one canonical output tree per child instance and

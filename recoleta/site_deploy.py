@@ -296,6 +296,7 @@ def _sanitize_public_manifest(*, manifest_path: Path) -> dict[str, Any]:
         "languages",
         "language_codes",
         "default_language_code",
+        "pagination",
     ):
         if key in loaded:
             sanitized[key] = loaded.get(key)

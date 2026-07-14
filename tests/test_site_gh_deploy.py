@@ -98,6 +98,11 @@ def test_gh_deploy_creates_branch_snapshot_without_touching_main_worktree(
     assert "generated_at" not in deployed_manifest
     assert "input_dir" not in deployed_manifest
     assert "output_dir" not in deployed_manifest
+    assert deployed_manifest["pagination"] == {
+        "card_page_size": 12,
+        "dense_page_size": 24,
+        "topic_column_page_size": 6,
+    }
 
     assert (local_repo / "README.md").exists()
     assert not (local_repo / "index.html").exists()

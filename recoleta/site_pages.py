@@ -24,6 +24,27 @@ from recoleta.site_models import (
 )
 
 
+SITE_CARD_PAGE_SIZE = 12
+SITE_DENSE_PAGE_SIZE = 24
+SITE_TOPIC_COLUMN_PAGE_SIZE = 6
+
+
+@dataclass(frozen=True, slots=True)
+class SitePagination:
+    current_page: int
+    total_pages: int
+    page_path: Path
+    page_paths: tuple[Path, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SiteIndexPageArtifacts:
+    trends_index_pages: tuple[Path, ...]
+    ideas_index_pages: tuple[Path, ...]
+    topics_index_pages: tuple[Path, ...]
+    archive_pages: tuple[Path, ...]
+
+
 @dataclass(frozen=True, slots=True)
 class SitePageShellInput:
     title: str
@@ -353,11 +374,64 @@ def _load_export_artifacts(
     )
 
 
+def _page_count(*, item_count: int, page_size: int) -> int:
+    return max(1, (item_count + page_size - 1) // page_size)
+
+
+def _paginated_page_paths(
+    *,
+    first_page_path: Path,
+    total_pages: int,
+) -> tuple[Path, ...]:
+    paths = [first_page_path]
+    for page_number in range(2, total_pages + 1):
+        pagination_root = (
+            first_page_path.parent
+            if first_page_path.name == "index.html"
+            else first_page_path.with_suffix("")
+        )
+        page_path = pagination_root / "page" / str(page_number) / "index.html"
+        paths.append(page_path)
+    return tuple(paths)
+
+
+def _site_paginations(
+    *,
+    first_page_path: Path,
+    total_pages: int,
+) -> tuple[SitePagination, ...]:
+    page_paths = _paginated_page_paths(
+        first_page_path=first_page_path,
+        total_pages=total_pages,
+    )
+    return tuple(
+        SitePagination(
+            current_page=page_number,
+            total_pages=total_pages,
+            page_path=page_path,
+            page_paths=page_paths,
+        )
+        for page_number, page_path in enumerate(page_paths, start=1)
+    )
+
+
+def _page_slice_bounds(
+    *, pagination: SitePagination, page_size: int
+) -> tuple[int, int]:
+    start = (pagination.current_page - 1) * page_size
+    return start, start + page_size
+
+
+def _write_html_page(*, page_path: Path, content: str) -> None:
+    page_path.parent.mkdir(parents=True, exist_ok=True)
+    page_path.write_text(content, encoding="utf-8")
+
+
 def _write_index_pages(
     *,
     artifacts: SingleLanguageSiteExportArtifacts,
     deps: SingleLanguageSiteExportDeps,
-) -> None:
+) -> SiteIndexPageArtifacts:
     output_dir = artifacts.resolved_output_dir
     (output_dir / "index.html").write_text(
         deps.render_home_page(
@@ -368,37 +442,106 @@ def _write_index_pages(
         ),
         encoding="utf-8",
     )
-    (output_dir / "trends" / "index.html").write_text(
-        deps.render_trends_index_page(
-            documents=artifacts.documents,
-            output_dir=output_dir,
-            topic_pages=artifacts.topic_pages,
+
+    trends_paginations = _site_paginations(
+        first_page_path=output_dir / "trends" / "index.html",
+        total_pages=_page_count(
+            item_count=len(artifacts.documents),
+            page_size=SITE_CARD_PAGE_SIZE,
         ),
-        encoding="utf-8",
     )
-    (output_dir / "archive.html").write_text(
-        deps.render_archive_page(
-            documents=artifacts.documents,
-            output_dir=output_dir,
+    for pagination in trends_paginations:
+        start, stop = _page_slice_bounds(
+            pagination=pagination,
+            page_size=SITE_CARD_PAGE_SIZE,
+        )
+        _write_html_page(
+            page_path=pagination.page_path,
+            content=deps.render_trends_index_page(
+                documents=artifacts.documents[start:stop],
+                total_documents=len(artifacts.documents),
+                output_dir=output_dir,
+                topic_pages=artifacts.topic_pages,
+                pagination=pagination,
+            ),
+        )
+
+    archive_paginations = _site_paginations(
+        first_page_path=output_dir / "archive.html",
+        total_pages=_page_count(
+            item_count=len(artifacts.documents),
+            page_size=SITE_DENSE_PAGE_SIZE,
         ),
-        encoding="utf-8",
     )
-    (output_dir / "topics" / "index.html").write_text(
-        deps.render_topics_index_page(
-            documents=artifacts.documents,
-            idea_documents=artifacts.idea_documents,
-            output_dir=output_dir,
-            topic_pages=artifacts.topic_pages,
+    for pagination in archive_paginations:
+        start, stop = _page_slice_bounds(
+            pagination=pagination,
+            page_size=SITE_DENSE_PAGE_SIZE,
+        )
+        _write_html_page(
+            page_path=pagination.page_path,
+            content=deps.render_archive_page(
+                documents=artifacts.documents[start:stop],
+                total_documents=len(artifacts.documents),
+                output_dir=output_dir,
+                pagination=pagination,
+            ),
+        )
+
+    topics_paginations = _site_paginations(
+        first_page_path=output_dir / "topics" / "index.html",
+        total_pages=_page_count(
+            item_count=len(artifacts.topic_pages),
+            page_size=SITE_DENSE_PAGE_SIZE,
         ),
-        encoding="utf-8",
     )
-    (output_dir / "ideas" / "index.html").write_text(
-        deps.render_ideas_index_page(
-            documents=artifacts.idea_documents,
-            output_dir=output_dir,
-            topic_pages=artifacts.topic_pages,
+    for pagination in topics_paginations:
+        _write_html_page(
+            page_path=pagination.page_path,
+            content=deps.render_topics_index_page(
+                documents=artifacts.documents,
+                idea_documents=artifacts.idea_documents,
+                output_dir=output_dir,
+                topic_pages=artifacts.topic_pages,
+                pagination=pagination,
+                page_size=SITE_DENSE_PAGE_SIZE,
+            ),
+        )
+
+    ideas_paginations = _site_paginations(
+        first_page_path=output_dir / "ideas" / "index.html",
+        total_pages=_page_count(
+            item_count=len(artifacts.idea_documents),
+            page_size=SITE_CARD_PAGE_SIZE,
         ),
-        encoding="utf-8",
+    )
+    for pagination in ideas_paginations:
+        start, stop = _page_slice_bounds(
+            pagination=pagination,
+            page_size=SITE_CARD_PAGE_SIZE,
+        )
+        _write_html_page(
+            page_path=pagination.page_path,
+            content=deps.render_ideas_index_page(
+                documents=artifacts.idea_documents[start:stop],
+                total_documents=len(artifacts.idea_documents),
+                output_dir=output_dir,
+                topic_pages=artifacts.topic_pages,
+                pagination=pagination,
+            ),
+        )
+
+    return SiteIndexPageArtifacts(
+        trends_index_pages=tuple(
+            pagination.page_path for pagination in trends_paginations
+        ),
+        ideas_index_pages=tuple(
+            pagination.page_path for pagination in ideas_paginations
+        ),
+        topics_index_pages=tuple(
+            pagination.page_path for pagination in topics_paginations
+        ),
+        archive_pages=tuple(pagination.page_path for pagination in archive_paginations),
     )
 
 
@@ -406,7 +549,7 @@ def _write_detail_pages(
     *,
     artifacts: SingleLanguageSiteExportArtifacts,
     deps: SingleLanguageSiteExportDeps,
-) -> None:
+) -> dict[str, tuple[Path, ...]]:
     output_dir = artifacts.resolved_output_dir
     for idx, document in enumerate(artifacts.documents):
         previous_document = artifacts.documents[idx - 1] if idx > 0 else None
@@ -441,24 +584,51 @@ def _write_detail_pages(
             ),
             encoding="utf-8",
         )
-    for slug, page_path in artifacts.topic_pages.items():
-        page_path.write_text(
-            deps.render_topic_page(
-                topic=artifacts.label_by_topic_slug[slug],
-                topic_slug=slug,
-                documents=artifacts.topic_documents[slug],
-                idea_documents=artifacts.idea_documents_by_topic.get(slug, []),
-                output_dir=output_dir,
-                topic_pages=artifacts.topic_pages,
+    topic_collection_pages: dict[str, tuple[Path, ...]] = {}
+    for slug, first_page_path in artifacts.topic_pages.items():
+        topic_documents = artifacts.topic_documents[slug]
+        topic_idea_documents = artifacts.idea_documents_by_topic.get(slug, [])
+        paginations = _site_paginations(
+            first_page_path=first_page_path,
+            total_pages=max(
+                _page_count(
+                    item_count=len(topic_documents),
+                    page_size=SITE_TOPIC_COLUMN_PAGE_SIZE,
+                ),
+                _page_count(
+                    item_count=len(topic_idea_documents),
+                    page_size=SITE_TOPIC_COLUMN_PAGE_SIZE,
+                ),
             ),
-            encoding="utf-8",
         )
+        topic_collection_pages[slug] = tuple(
+            pagination.page_path for pagination in paginations
+        )
+        for pagination in paginations:
+            _write_html_page(
+                page_path=pagination.page_path,
+                content=deps.render_topic_page(
+                    topic=artifacts.label_by_topic_slug[slug],
+                    topic_slug=slug,
+                    documents=topic_documents,
+                    idea_documents=topic_idea_documents,
+                    total_documents=len(topic_documents),
+                    total_idea_documents=len(topic_idea_documents),
+                    output_dir=output_dir,
+                    topic_pages=artifacts.topic_pages,
+                    pagination=pagination,
+                    page_size=SITE_TOPIC_COLUMN_PAGE_SIZE,
+                ),
+            )
+    return topic_collection_pages
 
 
 def _single_language_export_manifest(
     *,
     artifacts: SingleLanguageSiteExportArtifacts,
     normalized_item_export_scope: str,
+    index_pages: SiteIndexPageArtifacts,
+    topic_collection_pages: dict[str, tuple[Path, ...]],
 ) -> dict[str, Any]:
     output_dir = artifacts.resolved_output_dir
     return {
@@ -489,6 +659,11 @@ def _single_language_export_manifest(
         "items_available_total": artifacts.item_selection.available_total,
         "items_unreferenced_total": artifacts.item_selection.unreferenced_total,
         "topics_total": len(artifacts.topic_pages),
+        "pagination": {
+            "card_page_size": SITE_CARD_PAGE_SIZE,
+            "dense_page_size": SITE_DENSE_PAGE_SIZE,
+            "topic_column_page_size": SITE_TOPIC_COLUMN_PAGE_SIZE,
+        },
         "files": {
             "index": "index.html",
             "archive": "archive.html",
@@ -497,6 +672,25 @@ def _single_language_export_manifest(
             "ideas_index": "ideas/index.html",
             "topics_index": "topics/index.html",
             "stylesheet": "assets/site.css",
+            "trends_index_pages": [
+                str(path.relative_to(output_dir))
+                for path in index_pages.trends_index_pages
+            ],
+            "ideas_index_pages": [
+                str(path.relative_to(output_dir))
+                for path in index_pages.ideas_index_pages
+            ],
+            "topics_index_pages": [
+                str(path.relative_to(output_dir))
+                for path in index_pages.topics_index_pages
+            ],
+            "archive_pages": [
+                str(path.relative_to(output_dir)) for path in index_pages.archive_pages
+            ],
+            "topic_collection_pages": {
+                slug: [str(path.relative_to(output_dir)) for path in paths]
+                for slug, paths in topic_collection_pages.items()
+            },
             "trend_pages": [
                 str(document.page_path.relative_to(output_dir))
                 for document in artifacts.documents
@@ -526,11 +720,13 @@ def export_trend_static_site_single_language(
         request.item_export_scope
     )
     artifacts = _load_export_artifacts(request=request, deps=deps)
-    _write_index_pages(artifacts=artifacts, deps=deps)
-    _write_detail_pages(artifacts=artifacts, deps=deps)
+    index_pages = _write_index_pages(artifacts=artifacts, deps=deps)
+    topic_collection_pages = _write_detail_pages(artifacts=artifacts, deps=deps)
     manifest = _single_language_export_manifest(
         artifacts=artifacts,
         normalized_item_export_scope=normalized_item_export_scope,
+        index_pages=index_pages,
+        topic_collection_pages=topic_collection_pages,
     )
     manifest_path = artifacts.resolved_output_dir / "manifest.json"
     manifest_path.write_text(
@@ -571,6 +767,7 @@ def export_trend_static_site_single_language(
 __all__ = [
     "SingleLanguageSiteExportDeps",
     "SingleLanguageSiteExportRequest",
+    "SitePagination",
     "SitePageShellInput",
     "export_trend_static_site_single_language",
     "render_site_page_shell",

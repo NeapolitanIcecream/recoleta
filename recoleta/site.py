@@ -76,6 +76,7 @@ from recoleta.site_email_links import (
 from recoleta.site_pages import (
     SingleLanguageSiteExportDeps,
     SingleLanguageSiteExportRequest,
+    SitePagination,
     SitePageShellInput,
     export_trend_static_site_single_language as _export_trend_static_site_single_language_impl,
     render_site_page_shell as _render_site_page_shell_impl,
@@ -126,8 +127,12 @@ class _TopicPageRenderRequest:
     topic_slug: str
     documents: list[TrendSiteDocument]
     idea_documents: list[IdeaSiteDocument]
+    total_documents: int
+    total_idea_documents: int
     output_dir: Path
     topic_pages: dict[str, Path]
+    pagination: SitePagination
+    page_size: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +144,7 @@ class _TopicCardGridRenderRequest:
     topic_counter: Counter[str]
     trend_counter: Counter[str]
     idea_counter: Counter[str]
+    offset: int = 0
     limit: int | None = None
 
 
@@ -276,13 +282,32 @@ def _coerce_topic_page_render_request(
     if request is not None:
         return request
     values = dict(legacy_kwargs or {})
+    topic_slug = str(values["topic_slug"])
+    topic_pages = dict(values["topic_pages"])
+    page_path = topic_pages[topic_slug]
+    pagination = values.get("pagination")
+    if not isinstance(pagination, SitePagination):
+        pagination = SitePagination(
+            current_page=1,
+            total_pages=1,
+            page_path=page_path,
+            page_paths=(page_path,),
+        )
+    documents = list(values["documents"])
+    idea_documents = list(values["idea_documents"])
     return _TopicPageRenderRequest(
         topic=str(values["topic"]),
-        topic_slug=str(values["topic_slug"]),
-        documents=list(values["documents"]),
-        idea_documents=list(values["idea_documents"]),
+        topic_slug=topic_slug,
+        documents=documents,
+        idea_documents=idea_documents,
+        total_documents=int(values.get("total_documents", len(documents))),
+        total_idea_documents=int(
+            values.get("total_idea_documents", len(idea_documents))
+        ),
         output_dir=values["output_dir"],
-        topic_pages=dict(values["topic_pages"]),
+        topic_pages=topic_pages,
+        pagination=pagination,
+        page_size=max(1, int(values.get("page_size", max(len(documents), 1)))),
     )
 
 
@@ -914,11 +939,11 @@ def _render_topic_card(
 
 
 def _render_topic_card_grid(*, request: _TopicCardGridRenderRequest) -> str:
-    most_common = (
-        request.topic_counter.most_common(request.limit)
-        if request.limit is not None
-        else request.topic_counter.most_common()
-    )
+    most_common = request.topic_counter.most_common()
+    if request.limit is not None:
+        most_common = most_common[request.offset : request.offset + request.limit]
+    elif request.offset > 0:
+        most_common = most_common[request.offset :]
     return "".join(
         _render_topic_card(
             request=_TopicCardRenderRequest(
@@ -959,6 +984,110 @@ def _collection_window_span(
     return f"{oldest} to {newest}"
 
 
+def _pagination_window(*, current_page: int, total_pages: int) -> list[int | None]:
+    if total_pages <= 7:
+        return list(range(1, total_pages + 1))
+    visible_pages = {1, total_pages}
+    visible_pages.update(
+        range(max(1, current_page - 2), min(total_pages, current_page + 2) + 1)
+    )
+    ordered_pages = sorted(visible_pages)
+    window: list[int | None] = []
+    previous_page = 0
+    for page_number in ordered_pages:
+        if previous_page and page_number - previous_page > 1:
+            window.append(None)
+        window.append(page_number)
+        previous_page = page_number
+    return window
+
+
+def _render_pagination_direction(
+    *,
+    label: str,
+    target_page: int | None,
+    rel: str,
+    modifier: str,
+    pagination: SitePagination,
+) -> str:
+    class_name = f"pagination-link pagination-direction {modifier}"
+    if target_page is None:
+        return (
+            f"<span class='{class_name} is-disabled' aria-disabled='true'>"
+            f"{html.escape(label)}"
+            "</span>"
+        )
+    href = _site_href(
+        from_page=pagination.page_path,
+        to_page=pagination.page_paths[target_page - 1],
+    )
+    return (
+        f"<a class='{class_name}' href='{html.escape(href, quote=True)}' rel='{rel}'>"
+        f"{html.escape(label)}"
+        "</a>"
+    )
+
+
+def _render_collection_pagination(
+    *,
+    pagination: SitePagination,
+    collection_label: str,
+) -> str:
+    if pagination.total_pages <= 1:
+        return ""
+    page_links: list[str] = []
+    for page_number in _pagination_window(
+        current_page=pagination.current_page,
+        total_pages=pagination.total_pages,
+    ):
+        if page_number is None:
+            page_links.append(
+                "<span class='pagination-ellipsis' aria-hidden='true'>…</span>"
+            )
+            continue
+        if page_number == pagination.current_page:
+            page_links.append(
+                "<span class='pagination-link is-current' aria-current='page'>"
+                f"{page_number}"
+                "</span>"
+            )
+            continue
+        href = _site_href(
+            from_page=pagination.page_path,
+            to_page=pagination.page_paths[page_number - 1],
+        )
+        page_links.append(
+            "<a class='pagination-link' "
+            f"href='{html.escape(href, quote=True)}' "
+            f"aria-label='Go to page {page_number}'>{page_number}</a>"
+        )
+
+    status = f"Page {pagination.current_page} of {pagination.total_pages}"
+    return (
+        "<nav class='collection-pagination' "
+        f"aria-label='{html.escape(collection_label, quote=True)} pagination'>"
+        f"{_render_pagination_direction(label='Previous', target_page=pagination.current_page - 1 if pagination.current_page > 1 else None, rel='prev', modifier='pagination-previous', pagination=pagination)}"
+        "<div class='pagination-center'>"
+        f"<div class='pagination-pages'>{''.join(page_links)}</div>"
+        f"<span class='pagination-status'>{html.escape(status)}</span>"
+        "</div>"
+        f"{_render_pagination_direction(label='Next', target_page=pagination.current_page + 1 if pagination.current_page < pagination.total_pages else None, rel='next', modifier='pagination-next', pagination=pagination)}"
+        "</nav>"
+    )
+
+
+def _paginated_count_text(*, count_text: str, pagination: SitePagination) -> str:
+    if pagination.total_pages <= 1:
+        return count_text
+    return f"{count_text} · Page {pagination.current_page} of {pagination.total_pages}"
+
+
+def _paginated_document_title(*, title: str, pagination: SitePagination) -> str:
+    if pagination.current_page <= 1:
+        return title
+    return f"{title} · Page {pagination.current_page}"
+
+
 def _render_collection_section(
     *,
     request: _CollectionSectionRenderRequest,
@@ -992,6 +1121,7 @@ def _render_collection_summary_section(
     trend_count: int,
     idea_count: int,
     latest_token: str,
+    pagination: SitePagination,
 ) -> str:
     return (
         "<section class='home-section collection-summary-section'>"
@@ -1000,7 +1130,7 @@ def _render_collection_summary_section(
         f"<div class='section-kicker'>{html.escape(summary_label)}</div>"
         f"<h1 class='section-title'>{html.escape(title)}</h1>"
         "</div>"
-        f"<span class='meta-date'>{html.escape(_format_collection_mix(trend_count=trend_count, idea_count=idea_count))}</span>"
+        f"<span class='meta-date'>{html.escape(_paginated_count_text(count_text=_format_collection_mix(trend_count=trend_count, idea_count=idea_count), pagination=pagination))}</span>"
         "</div>"
         "<div class='summary-stats'>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Trends</div><div class='meta-panel-value'>{trend_count}</div></div>"
@@ -1420,10 +1550,12 @@ def _render_idea_page(
 def _render_trends_index_page(
     *,
     documents: list[TrendSiteDocument],
+    total_documents: int,
     output_dir: Path,
     topic_pages: dict[str, Path],
+    pagination: SitePagination,
 ) -> str:
-    page_path = output_dir / "trends" / "index.html"
+    page_path = pagination.page_path
     cards = "".join(
         _render_trend_card(
             document=document,
@@ -1436,14 +1568,18 @@ def _render_trends_index_page(
         "<section class='home-section'>"
         "<div class='section-heading-row'>"
         "<h1 class='section-title page-section-title'>Trends</h1>"
-        f"<span class='meta-date'>{html.escape(_count_label(len(documents), singular='trend'))}</span>"
+        f"<span class='meta-date'>{html.escape(_paginated_count_text(count_text=_count_label(total_documents, singular='trend'), pagination=pagination))}</span>"
         "</div>"
         f"<div class='trend-grid'>{cards or '<div class="empty-card">No trends available yet.</div>'}</div>"
+        f"{_render_collection_pagination(pagination=pagination, collection_label='Trends')}"
         "</section>"
     )
     return _render_site_page(
         SitePageShellInput(
-            title="Trends · Recoleta Trends",
+            title=_paginated_document_title(
+                title="Trends · Recoleta Trends",
+                pagination=pagination,
+            ),
             page_path=page_path,
             output_dir=output_dir,
             page_heading="Trends",
@@ -1459,10 +1595,12 @@ def _render_trends_index_page(
 def _render_ideas_index_page(
     *,
     documents: list[IdeaSiteDocument],
+    total_documents: int,
     output_dir: Path,
     topic_pages: dict[str, Path],
+    pagination: SitePagination,
 ) -> str:
-    page_path = output_dir / "ideas" / "index.html"
+    page_path = pagination.page_path
     cards = "".join(
         _render_idea_card(
             document=document,
@@ -1475,14 +1613,18 @@ def _render_ideas_index_page(
         "<section class='home-section'>"
         "<div class='section-heading-row'>"
         "<h1 class='section-title page-section-title'>Ideas</h1>"
-        f"<span class='meta-date'>{html.escape(_count_label(len(documents), singular='idea'))}</span>"
+        f"<span class='meta-date'>{html.escape(_paginated_count_text(count_text=_count_label(total_documents, singular='idea'), pagination=pagination))}</span>"
         "</div>"
         f"<div class='trend-grid'>{cards or '<div class="empty-card">No ideas available yet.</div>'}</div>"
+        f"{_render_collection_pagination(pagination=pagination, collection_label='Ideas')}"
         "</section>"
     )
     return _render_site_page(
         SitePageShellInput(
-            title="Ideas · Recoleta Trends",
+            title=_paginated_document_title(
+                title="Ideas · Recoleta Trends",
+                pagination=pagination,
+            ),
             page_path=page_path,
             output_dir=output_dir,
             page_heading="Ideas",
@@ -1659,8 +1801,10 @@ def _render_topics_index_page(
     idea_documents: list[IdeaSiteDocument],
     output_dir: Path,
     topic_pages: dict[str, Path],
+    pagination: SitePagination,
+    page_size: int,
 ) -> str:
-    page_path = output_dir / "topics" / "index.html"
+    page_path = pagination.page_path
     topic_counter: Counter[str] = Counter()
     trend_counter: Counter[str] = Counter()
     idea_counter: Counter[str] = Counter()
@@ -1705,6 +1849,8 @@ def _render_topics_index_page(
             topic_counter=topic_counter,
             trend_counter=trend_counter,
             idea_counter=idea_counter,
+            offset=(pagination.current_page - 1) * page_size,
+            limit=page_size,
         )
     )
 
@@ -1712,15 +1858,19 @@ def _render_topics_index_page(
         "<section class='home-section'>"
         "<div class='section-heading-row'>"
         "<h1 class='section-title page-section-title'>All tracked topics</h1>"
-        f"<span class='meta-date'>{html.escape(_count_label(len(topic_pages), singular='topic'))}</span>"
+        f"<span class='meta-date'>{html.escape(_paginated_count_text(count_text=_count_label(len(topic_pages), singular='topic'), pagination=pagination))}</span>"
         "</div>"
         f"<div class='topic-card-grid'>{cards or '<div class="empty-card">No topics available yet.</div>'}</div>"
+        f"{_render_collection_pagination(pagination=pagination, collection_label='Topics')}"
         "</section>"
     )
 
     return _render_site_page(
         SitePageShellInput(
-            title="Topics · Recoleta Trends",
+            title=_paginated_document_title(
+                title="Topics · Recoleta Trends",
+                pagination=pagination,
+            ),
             page_path=page_path,
             output_dir=output_dir,
             page_heading="Topics",
@@ -1738,13 +1888,17 @@ def _render_topic_page_collections(
     request: _TopicPageRenderRequest,
     page_path: Path,
 ) -> str:
+    start = (request.pagination.current_page - 1) * request.page_size
+    stop = start + request.page_size
+    page_documents = request.documents[start:stop]
+    page_idea_documents = request.idea_documents[start:stop]
     cards = "".join(
         _render_trend_card(
             document=document,
             from_page=page_path,
             topic_pages=request.topic_pages,
         )
-        for document in request.documents
+        for document in page_documents
     )
     idea_cards = "".join(
         _render_idea_card(
@@ -1752,17 +1906,28 @@ def _render_topic_page_collections(
             from_page=page_path,
             topic_pages=request.topic_pages,
         )
-        for document in request.idea_documents
+        for document in page_idea_documents
     )
     latest_token = _latest_collection_token(
         [*request.documents, *request.idea_documents]
     )
+    trend_empty_copy = (
+        "No trends available yet."
+        if request.pagination.current_page == 1
+        else "No trends on this page."
+    )
+    idea_empty_copy = (
+        "No ideas available yet."
+        if request.pagination.current_page == 1
+        else "No ideas on this page."
+    )
     return (
-        f"{_render_collection_summary_section(summary_label='Topic summary', title=request.topic, trend_count=len(request.documents), idea_count=len(request.idea_documents), latest_token=latest_token)}"
+        f"{_render_collection_summary_section(summary_label='Topic summary', title=request.topic, trend_count=request.total_documents, idea_count=request.total_idea_documents, latest_token=latest_token, pagination=request.pagination)}"
         "<section class='split-layout paired-collection-layout'>"
-        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Trends', count_text=_count_label(len(request.documents), singular='trend'), cards_html=cards, empty_copy='No trends available yet.'))}"
-        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Ideas', count_text=_count_label(len(request.idea_documents), singular='idea'), cards_html=idea_cards, empty_copy='No ideas available yet.'))}"
+        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Trends', count_text=_count_label(request.total_documents, singular='trend'), cards_html=cards, empty_copy=trend_empty_copy))}"
+        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Ideas', count_text=_count_label(request.total_idea_documents, singular='idea'), cards_html=idea_cards, empty_copy=idea_empty_copy))}"
         "</section>"
+        f"{_render_collection_pagination(pagination=request.pagination, collection_label=f'{request.topic} topic')}"
     )
 
 
@@ -1775,14 +1940,17 @@ def _render_topic_page(
         request=request,
         legacy_kwargs=legacy_kwargs,
     )
-    page_path = normalized_request.topic_pages[normalized_request.topic_slug]
+    page_path = normalized_request.pagination.page_path
     content_html = _render_topic_page_collections(
         request=normalized_request,
         page_path=page_path,
     )
     return _render_site_page(
         SitePageShellInput(
-            title=f"{normalized_request.topic} · Recoleta Trends",
+            title=_paginated_document_title(
+                title=f"{normalized_request.topic} · Recoleta Trends",
+                pagination=normalized_request.pagination,
+            ),
             page_path=page_path,
             output_dir=normalized_request.output_dir,
             page_heading=normalized_request.topic,
@@ -1796,18 +1964,30 @@ def _render_topic_page(
 
 
 def _render_archive_page(
-    *, documents: list[TrendSiteDocument], output_dir: Path
+    *,
+    documents: list[TrendSiteDocument],
+    total_documents: int,
+    output_dir: Path,
+    pagination: SitePagination,
 ) -> str:
-    page_path = output_dir / "archive.html"
+    page_path = pagination.page_path
+    rows = _render_archive_rows(documents=documents, from_page=page_path)
     content_html = (
         "<section class='home-section'>"
+        "<div class='section-heading-row'>"
         "<h1 class='section-title page-section-title'>Archive</h1>"
-        f"{_render_archive_rows(documents=documents, from_page=page_path)}"
+        f"<span class='meta-date'>{html.escape(_paginated_count_text(count_text=_count_label(total_documents, singular='trend'), pagination=pagination))}</span>"
+        "</div>"
+        f"{rows or '<div class="empty-card">No archive entries yet.</div>'}"
+        f"{_render_collection_pagination(pagination=pagination, collection_label='Archive')}"
         "</section>"
     )
     return _render_site_page(
         SitePageShellInput(
-            title="Archive · Recoleta Trends",
+            title=_paginated_document_title(
+                title="Archive · Recoleta Trends",
+                pagination=pagination,
+            ),
             page_path=page_path,
             output_dir=output_dir,
             page_heading="Archive",
@@ -2247,6 +2427,7 @@ iframe {
 .action-link:focus-visible,
 .topic-pill-link:focus-visible,
 .pager-card:focus-visible,
+.pagination-link:focus-visible,
 .breadcrumbs a:focus-visible,
 .language-switcher-link:focus-visible {
   opacity: 1;
@@ -2637,6 +2818,75 @@ iframe {
   font-size: 18px;
   line-height: 1.32;
 }
+.collection-pagination {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) auto minmax(96px, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.pagination-center,
+.pagination-pages {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pagination-pages {
+  gap: 6px;
+}
+.pagination-link,
+.pagination-ellipsis,
+.pagination-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.pagination-link {
+  border: 1px solid rgba(29, 103, 194, 0.14);
+  background: rgba(248, 251, 255, 0.88);
+  color: #225693;
+}
+.pagination-link:hover {
+  border-color: rgba(29, 103, 194, 0.28);
+  background: var(--accent-soft);
+}
+.pagination-link.is-current {
+  border-color: #1d67c2;
+  background: #1d67c2;
+  color: #ffffff;
+}
+.pagination-link.is-disabled {
+  border-color: rgba(17, 41, 71, 0.08);
+  background: rgba(255, 255, 255, 0.46);
+  color: #93a2b2;
+}
+.pagination-direction {
+  min-width: 96px;
+}
+.pagination-previous {
+  justify-self: start;
+}
+.pagination-next {
+  justify-self: end;
+}
+.pagination-ellipsis {
+  min-width: 28px;
+  padding: 0 4px;
+  color: var(--muted);
+}
+.pagination-status {
+  display: none;
+  color: #425a74;
+  white-space: nowrap;
+}
 .timeline-list,
 .archive-list {
   display: grid;
@@ -2832,6 +3082,23 @@ iframe {
   .timeline-item,
   .archive-item {
     flex-direction: column;
+  }
+  .collection-pagination {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 8px;
+  }
+  .pagination-pages {
+    display: none;
+  }
+  .pagination-status {
+    display: inline-flex;
+    min-height: 44px;
+    padding: 0 4px;
+  }
+  .pagination-direction {
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 12px;
   }
 }
 """
@@ -3486,9 +3753,7 @@ def _build_idea_body_from_presentation(
     assert isinstance(content, dict)
     summary_html = _render_presentation_markdown_html(content.get("summary"))
     ideas = [
-        idea
-        for idea in list(content.get("ideas") or [])
-        if isinstance(idea, dict)
+        idea for idea in list(content.get("ideas") or []) if isinstance(idea, dict)
     ]
     cards: list[str] = []
     evidence_count = 0
@@ -3521,9 +3786,7 @@ def _build_idea_body_from_presentation(
         + "</section>"
     ]
     if cards:
-        count_label = (
-            f"{len(cards)} idea" if len(cards) == 1 else f"{len(cards)} ideas"
-        )
+        count_label = f"{len(cards)} idea" if len(cards) == 1 else f"{len(cards)} ideas"
         rendered.append(
             "<section class='surface-card section-card idea-opportunities-section'>"
             "<div class='idea-section-head'>"
