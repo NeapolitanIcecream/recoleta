@@ -59,6 +59,13 @@ def mock_item_html_enrichment(
         headers={"Content-Type": "text/html; charset=utf-8"},
     )
 
-    import recoleta.pipeline as pipeline
+    import recoleta.pipeline.enrich_stage as enrich_stage
+    import recoleta.pipeline.service as pipeline_service
 
-    monkeypatch.setattr(pipeline, "extract_html_maintext", lambda html: "mock maintext")  # noqa: ARG005
+    def extract_mock_maintext(html: str) -> str:  # noqa: ARG001
+        return "mock maintext"
+
+    monkeypatch.setattr(enrich_stage, "extract_html_maintext", extract_mock_maintext)
+    monkeypatch.setattr(
+        pipeline_service, "extract_html_maintext", extract_mock_maintext
+    )

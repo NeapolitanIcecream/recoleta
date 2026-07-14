@@ -25,7 +25,7 @@ from recoleta.publish import (
     write_markdown_run_index,
     write_obsidian_note,
 )
-from recoleta.types import PublishResult, utc_now
+from recoleta.types import MetricPoint, PublishResult, utc_now
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,42 +324,46 @@ def _write_markdown_index_if_enabled(
 
 
 def _record_publish_metrics(request: PublishMetricsRequest) -> None:
-    request.service.repository.record_metric(
-        run_id=request.run_id,
-        name="pipeline.publish.sent_total",
-        value=request.publish_result.sent,
-        unit="count",
-    )
-    request.service.repository.record_metric(
-        run_id=request.run_id,
-        name="pipeline.publish.skipped_total",
-        value=request.publish_result.skipped,
-        unit="count",
-    )
-    request.service.repository.record_metric(
-        run_id=request.run_id,
-        name="pipeline.publish.filtered_total",
-        value=request.filtered_total,
-        unit="count",
-    )
-    request.service.repository.record_metric(
-        run_id=request.run_id,
-        name="pipeline.publish.failed_total",
-        value=request.publish_result.failed,
-        unit="count",
-    )
-    if request.remaining_today is not None:
-        request.service.repository.record_metric(
-            run_id=request.run_id,
-            name="pipeline.publish.daily_cap_remaining",
-            value=max(0, request.remaining_today - request.publish_result.sent),
+    metrics = [
+        MetricPoint(
+            name="pipeline.publish.sent_total",
+            value=request.publish_result.sent,
             unit="count",
+        ),
+        MetricPoint(
+            name="pipeline.publish.skipped_total",
+            value=request.publish_result.skipped,
+            unit="count",
+        ),
+        MetricPoint(
+            name="pipeline.publish.filtered_total",
+            value=request.filtered_total,
+            unit="count",
+        ),
+        MetricPoint(
+            name="pipeline.publish.failed_total",
+            value=request.publish_result.failed,
+            unit="count",
+        ),
+    ]
+    if request.remaining_today is not None:
+        metrics.append(
+            MetricPoint(
+                name="pipeline.publish.daily_cap_remaining",
+                value=max(0, request.remaining_today - request.publish_result.sent),
+                unit="count",
+            )
         )
-    request.service.repository.record_metric(
+    metrics.append(
+        MetricPoint(
+            name="pipeline.publish.duration_ms",
+            value=int((time.perf_counter() - request.started) * 1000),
+            unit="ms",
+        )
+    )
+    request.service._record_metrics_batch(
         run_id=request.run_id,
-        name="pipeline.publish.duration_ms",
-        value=int((time.perf_counter() - request.started) * 1000),
-        unit="ms",
+        metrics=metrics,
     )
 
 

@@ -8,6 +8,12 @@ from typing import Any, cast
 from sqlmodel import Session, select
 
 from recoleta.models import Analysis, Document, LocalizedOutput
+from recoleta.pass_output_selection import (
+    is_suppressed_pass_output,
+    latest_canonical_pass_outputs_by_window,
+    latest_idea_pass_output_states_by_window,
+    pass_output_window_key,
+)
 
 _ISSUE_CODES = (
     "missing_localized_output",
@@ -89,12 +95,13 @@ def build_localization_audit_payload(
 
     surfaces_payload = _surfaces_payload(
         canonical_ids_by_surface=storage_snapshot["canonical_ids_by_surface"],
+        known_ids_by_surface=storage_snapshot["known_ids_by_surface"],
         localized_rows=storage_snapshot["localized_rows"],
         target_languages=target_languages,
         issues=issues,
     )
     storage_payload = _storage_payload(
-        canonical_ids_by_surface=storage_snapshot["canonical_ids_by_surface"],
+        known_ids_by_surface=storage_snapshot["known_ids_by_surface"],
         localized_rows=storage_snapshot["localized_rows"],
         issues=issues,
     )
@@ -220,11 +227,11 @@ def _dedupe(values: list[str]) -> list[str]:
 def _load_storage_snapshot(*, repository: Any) -> dict[str, Any]:
     with Session(repository.engine) as session:
         analysis_ids = _id_set(session.exec(select(Analysis.id)))
-        trend_ids = _id_set(
-            session.exec(select(Document.id).where(Document.doc_type == "trend"))
+        trend_documents = list(
+            session.exec(select(Document).where(Document.doc_type == "trend"))
         )
-        idea_ids = _id_set(
-            session.exec(select(Document.id).where(Document.doc_type == "idea"))
+        idea_documents = list(
+            session.exec(select(Document).where(Document.doc_type == "idea"))
         )
         localized_rows = list(
             session.exec(
@@ -236,13 +243,73 @@ def _load_storage_snapshot(*, repository: Any) -> dict[str, Any]:
                 )
             )
         )
+    trend_ids = _document_ids(trend_documents)
+    idea_ids = _document_ids(idea_documents)
     return {
         "canonical_ids_by_surface": {
+            "items": analysis_ids,
+            "trends": _canonical_document_ids(
+                repository=repository,
+                documents=trend_documents,
+                pass_kind="trend_synthesis",
+            ),
+            "ideas": _canonical_document_ids(
+                repository=repository,
+                documents=idea_documents,
+                pass_kind="trend_ideas",
+            ),
+        },
+        "known_ids_by_surface": {
             "items": analysis_ids,
             "trends": trend_ids,
             "ideas": idea_ids,
         },
         "localized_rows": localized_rows,
+    }
+
+
+def _document_ids(documents: list[Document]) -> set[int]:
+    return _id_set(getattr(document, "id", None) for document in documents)
+
+
+def _canonical_document_ids(
+    *, repository: Any, documents: list[Document], pass_kind: str
+) -> set[int]:
+    if pass_kind == "trend_ideas":
+        return _canonical_idea_document_ids(
+            repository=repository,
+            documents=documents,
+        )
+    canonical_by_window = latest_canonical_pass_outputs_by_window(
+        repository=repository,
+        pass_kind=pass_kind,
+        windows=(pass_output_window_key(document) for document in documents),
+    )
+    return {
+        document_id
+        for document in documents
+        if (document_id := int(getattr(document, "id", 0) or 0)) > 0
+        and not is_suppressed_pass_output(
+            canonical_by_window.get(pass_output_window_key(document))
+        )
+    }
+
+
+def _canonical_idea_document_ids(
+    *, repository: Any, documents: list[Document]
+) -> set[int]:
+    states_by_window = latest_idea_pass_output_states_by_window(
+        repository=repository,
+        windows=(pass_output_window_key(document) for document in documents),
+    )
+    return {
+        document_id
+        for document in documents
+        if (document_id := int(getattr(document, "id", 0) or 0)) > 0
+        and (
+            (state := states_by_window.get(pass_output_window_key(document))) is None
+            or state.active
+        )
     }
 
 
@@ -309,6 +376,7 @@ def _site_languages(
 def _surfaces_payload(
     *,
     canonical_ids_by_surface: dict[str, set[int]],
+    known_ids_by_surface: dict[str, set[int]],
     localized_rows: list[LocalizedOutput],
     target_languages: list[str],
     issues: _IssueCollector,
@@ -318,12 +386,15 @@ def _surfaces_payload(
     for surface, spec in _SURFACE_SPECS.items():
         source_kind = spec["source_kind"]
         canonical_ids = canonical_ids_by_surface[surface]
+        known_ids = known_ids_by_surface[surface]
         language_payload: dict[str, Any] = {}
         for language_code in target_languages:
             rows = rows_by_kind_language.get((source_kind, language_code), [])
             stored_ids = _row_source_ids(rows)
-            orphan_ids = sorted(stored_ids - canonical_ids)
-            missing_ids = sorted(canonical_ids - stored_ids)
+            active_stored_ids = stored_ids & canonical_ids
+            inactive_ids = (stored_ids & known_ids) - canonical_ids
+            orphan_ids = sorted(stored_ids - known_ids)
+            missing_ids = sorted(canonical_ids - active_stored_ids)
             for source_record_id in missing_ids:
                 issues.add(
                     "missing_localized_output",
@@ -335,10 +406,14 @@ def _surfaces_payload(
                     },
                 )
             language_payload[language_code] = {
-                "stored_total": len(stored_ids),
+                "stored_total": len(active_stored_ids),
                 "succeeded_total": sum(
-                    1 for row in rows if str(row.status or "") == "succeeded"
+                    1
+                    for row in rows
+                    if str(row.status or "") == "succeeded"
+                    and int(row.source_record_id) in canonical_ids
                 ),
+                "inactive_total": len(inactive_ids),
                 "missing_total": len(missing_ids),
                 "orphan_total": len(orphan_ids),
             }
@@ -375,7 +450,7 @@ def _row_source_ids(rows: list[LocalizedOutput]) -> set[int]:
 
 def _storage_payload(
     *,
-    canonical_ids_by_surface: dict[str, set[int]],
+    known_ids_by_surface: dict[str, set[int]],
     localized_rows: list[LocalizedOutput],
     issues: _IssueCollector,
 ) -> dict[str, Any]:
@@ -396,7 +471,7 @@ def _storage_payload(
                 },
             )
             continue
-        if source_record_id not in canonical_ids_by_surface[surface]:
+        if source_record_id not in known_ids_by_surface[surface]:
             orphan_total += 1
             issues.add(
                 "orphan_localized_output",

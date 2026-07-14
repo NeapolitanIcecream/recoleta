@@ -13,7 +13,7 @@ from recoleta.models import (
     ITEM_STATE_INGESTED,
     ITEM_STATE_RETRYABLE_FAILED,
 )
-from recoleta.storage_common import _from_json_object, _to_json
+from recoleta.storage.common import _from_json_object, _to_json
 from recoleta.types import ItemDraft
 
 

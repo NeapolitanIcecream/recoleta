@@ -20,6 +20,12 @@ from recoleta.models import (
     ITEM_STATE_PUBLISHED,
     Item,
 )
+from recoleta.pass_output_selection import (
+    is_suppressed_pass_output,
+    latest_canonical_pass_outputs_by_window,
+    latest_idea_pass_output_states_by_window,
+    pass_output_window_key,
+)
 from recoleta.config import LocalizationConfig
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.provenance import (
@@ -126,7 +132,13 @@ def _materialize_idea_documents(
             cast(Any, Document.period_start),
             cast(Any, Document.id),
         )
-        return list(session.exec(statement))
+        documents = list(session.exec(statement))
+    materializable, _suppressed = _partition_documents_by_canonical_status(
+        repository=repository,
+        documents=documents,
+        pass_kind="trend_ideas",
+    )
+    return materializable
 
 
 def _load_localized_payload(*, row: Any) -> dict[str, Any] | None:
@@ -275,6 +287,18 @@ def _materialize_trend_documents(
     repository: Any,
     granularity: str | None,
 ) -> list[Document]:
+    materializable, _suppressed = _materialize_trend_document_partition(
+        repository=repository,
+        granularity=granularity,
+    )
+    return materializable
+
+
+def _materialize_trend_document_partition(
+    *,
+    repository: Any,
+    granularity: str | None,
+) -> tuple[list[Document], list[Document]]:
     with Session(repository.engine) as session:
         statement = select(Document).where(Document.doc_type == "trend")
         if granularity is not None:
@@ -283,7 +307,54 @@ def _materialize_trend_documents(
             cast(Any, Document.period_start),
             cast(Any, Document.id),
         )
-        return list(session.exec(statement))
+        documents = list(session.exec(statement))
+    return _partition_documents_by_canonical_status(
+        repository=repository,
+        documents=documents,
+        pass_kind="trend_synthesis",
+    )
+
+
+def _partition_documents_by_canonical_status(
+    *,
+    repository: Any,
+    documents: list[Document],
+    pass_kind: str,
+) -> tuple[list[Document], list[Document]]:
+    if pass_kind == "trend_ideas":
+        return _partition_idea_documents_by_currentness(
+            repository=repository,
+            documents=documents,
+        )
+    canonical_by_window = latest_canonical_pass_outputs_by_window(
+        repository=repository,
+        pass_kind=pass_kind,
+        windows=(pass_output_window_key(document) for document in documents),
+    )
+    materializable: list[Document] = []
+    suppressed: list[Document] = []
+    for document in documents:
+        row = canonical_by_window.get(pass_output_window_key(document))
+        (suppressed if is_suppressed_pass_output(row) else materializable).append(
+            document
+        )
+    return materializable, suppressed
+
+
+def _partition_idea_documents_by_currentness(
+    *, repository: Any, documents: list[Document]
+) -> tuple[list[Document], list[Document]]:
+    states_by_window = latest_idea_pass_output_states_by_window(
+        repository=repository,
+        windows=(pass_output_window_key(document) for document in documents),
+    )
+    materializable: list[Document] = []
+    inactive: list[Document] = []
+    for document in documents:
+        state = states_by_window.get(pass_output_window_key(document))
+        target = inactive if state is not None and not state.active else materializable
+        target.append(document)
+    return materializable, inactive
 
 
 def _load_trend_payload(
@@ -364,7 +435,23 @@ def _materialize_idea_pass_outputs(
             row.id or 0,
         )
     )
-    return selected
+    states_by_window = latest_idea_pass_output_states_by_window(
+        repository=repository,
+        windows=(pass_output_window_key(row) for row in selected),
+    )
+    return [
+        _effective_idea_output_row(
+            row=row,
+            state=states_by_window.get(pass_output_window_key(row)),
+        )
+        for row in selected
+    ]
+
+
+def _effective_idea_output_row(*, row: PassOutput, state: Any | None) -> PassOutput:
+    if state is None or state.active or is_suppressed_pass_output(row):
+        return row
+    return row.model_copy(update={"status": "suppressed"})
 
 
 def _load_ideas_payload(*, row: PassOutput) -> TrendIdeasPayload:

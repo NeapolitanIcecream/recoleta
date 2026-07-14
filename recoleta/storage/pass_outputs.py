@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, cast
@@ -8,7 +9,11 @@ from sqlalchemy import desc
 from sqlmodel import Session, select
 
 from recoleta.models import PassOutput
-from recoleta.storage_common import _to_json
+from recoleta.passes.base import (
+    SUPPRESSION_PROJECTION_COMPLETE_KEY,
+    PassStatus,
+)
+from recoleta.storage.common import _to_json
 from recoleta.types import sha256_hex
 
 
@@ -61,6 +66,30 @@ class PassOutputStoreMixin:
             return None
         with Session(self.engine) as session:
             return session.get(PassOutput, normalized_id)
+
+    def mark_suppressed_pass_output_projection_complete(
+        self, *, pass_output_id: int
+    ) -> PassOutput:
+        normalized_id = int(pass_output_id)
+        if normalized_id <= 0:
+            raise ValueError("pass_output_id must be positive")
+        with Session(self.engine) as session:
+            row = session.get(PassOutput, normalized_id)
+            if row is None:
+                raise ValueError(f"pass output not found: {normalized_id}")
+            if str(row.status or "").strip() != PassStatus.SUPPRESSED.value:
+                raise ValueError("only suppressed pass outputs have cleanup completion")
+            try:
+                loaded = json.loads(str(row.diagnostics_json or "{}"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                loaded = {}
+            diagnostics = loaded if isinstance(loaded, dict) else {}
+            diagnostics[SUPPRESSION_PROJECTION_COMPLETE_KEY] = True
+            row.diagnostics_json = _to_json(diagnostics)
+            session.add(row)
+            self._commit(session)
+            session.refresh(row)
+            return row
 
     def get_latest_pass_output(
         self,

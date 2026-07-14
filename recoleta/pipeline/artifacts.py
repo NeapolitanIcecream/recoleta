@@ -8,6 +8,7 @@ import httpx
 import orjson
 from loguru import logger
 
+from recoleta.llm_errors import is_retryable_llm_error
 from recoleta.observability import scrub_secrets
 
 
@@ -16,6 +17,8 @@ def sanitize_error_message(*, message: str, secrets: tuple[str, ...]) -> str:
 
 
 def classify_exception(exc: BaseException) -> dict[str, Any]:
+    if is_retryable_llm_error(exc):
+        return {"error_category": "llm_transient", "retryable": True}
     if isinstance(exc, httpx.HTTPStatusError):
         status = int(getattr(getattr(exc, "response", None), "status_code", 0) or 0)
         if status in {401, 403}:

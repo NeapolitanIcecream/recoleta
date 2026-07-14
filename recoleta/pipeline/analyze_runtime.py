@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import time
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
 
@@ -183,12 +183,136 @@ def _load_analyze_items(request: AnalyzeLoadRequest) -> list[Any]:
     return list(items)
 
 
+def _arxiv_content_types_for_analysis(*, settings: Any) -> list[str]:
+    primary_by_method = {
+        "pdf_text": "pdf_text",
+        "latex_source": "latex_source",
+        "html_document": "html_document_md",
+    }
+    content_types = [
+        primary_by_method.get(settings.sources.arxiv.enrich_method, "pdf_text")
+    ]
+    if settings.sources.arxiv.enrich_failure_mode == "fallback":
+        content_types.extend(
+            (
+                "pdf_text",
+                "html_maintext",
+                "html_document_md",
+                "html_document",
+                "latex_source",
+            )
+        )
+    return list(dict.fromkeys(content_types))
+
+
+def _content_types_for_analysis(*, settings: Any, item: Any) -> list[str]:
+    source = str(getattr(item, "source", "") or "").strip().lower()
+    if source == "arxiv":
+        return _arxiv_content_types_for_analysis(settings=settings)
+    if source == "openreview":
+        return ["pdf_text", "html_maintext"]
+    return ["html_maintext"]
+
+
+def _first_stored_content(
+    *, texts_by_type: dict[str, str | None], content_types: list[str]
+) -> str | None:
+    for content_type in content_types:
+        text = texts_by_type.get(content_type)
+        if isinstance(text, str) and text:
+            return text
+    return None
+
+
+def _load_item_content(
+    *, repository: Any, item_id: int, content_types: list[str]
+) -> str | None:
+    grouped_getter = getattr(repository, "get_latest_content_texts", None)
+    if callable(grouped_getter):
+        try:
+            texts_by_type = cast(
+                dict[str, str | None],
+                grouped_getter(item_id=item_id, content_types=content_types),
+            )
+        except NotImplementedError:
+            pass
+        else:
+            return _first_stored_content(
+                texts_by_type=texts_by_type,
+                content_types=content_types,
+            )
+    for content_type in content_types:
+        content = repository.get_latest_content(
+            item_id=item_id,
+            content_type=content_type,
+        )
+        text = getattr(content, "text", None)
+        if isinstance(text, str) and text:
+            return text
+    return None
+
+
+def _load_stored_contents_for_analysis(
+    *, service: Any, items: list[Any]
+) -> dict[int, str | None]:
+    items_by_id = {
+        int(item_id): item
+        for item in items
+        if (item_id := getattr(item, "id", None)) is not None and int(item_id) > 0
+    }
+    content_types_by_item_id = {
+        item_id: _content_types_for_analysis(settings=service.settings, item=item)
+        for item_id, item in items_by_id.items()
+    }
+    content_types = list(
+        dict.fromkeys(
+            content_type
+            for item_content_types in content_types_by_item_id.values()
+            for content_type in item_content_types
+        )
+    )
+    batch_getter = getattr(
+        service.repository, "get_latest_content_texts_for_items", None
+    )
+    if callable(batch_getter) and content_types:
+        try:
+            texts_by_item_id = cast(
+                dict[int, dict[str, str | None]],
+                batch_getter(
+                    item_ids=list(items_by_id),
+                    content_types=content_types,
+                ),
+            )
+        except NotImplementedError:
+            pass
+        else:
+            return {
+                item_id: _first_stored_content(
+                    texts_by_type=texts_by_item_id.get(item_id, {}),
+                    content_types=content_types_by_item_id[item_id],
+                )
+                for item_id in items_by_id
+            }
+    return {
+        item_id: _load_item_content(
+            repository=service.repository,
+            item_id=item_id,
+            content_types=content_types_by_item_id[item_id],
+        )
+        for item_id in items_by_id
+    }
+
+
 def _prepare_analyze_work(
     request: AnalyzePrepareRequest,
 ) -> tuple[list[Any], list[ItemStateUpdate], int]:
     work_items: list[Any] = []
     state_updates: list[ItemStateUpdate] = []
     missing_content_total = 0
+    content_by_item_id = _load_stored_contents_for_analysis(
+        service=request.service,
+        items=request.items,
+    )
     for item in request.items:
         raw_item_id = getattr(item, "id", None)
         if raw_item_id is None:
@@ -197,7 +321,7 @@ def _prepare_analyze_work(
             continue
         item_id = int(raw_item_id)
         preserve_item_state = getattr(item, "state", None) == ITEM_STATE_PUBLISHED
-        content_text = request.service._load_stored_content_for_analysis(item=item)
+        content_text = content_by_item_id.get(item_id)
         if content_text:
             work_items.append(
                 SimpleNamespace(

@@ -6,6 +6,9 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 
+SUPPRESSION_PROJECTION_COMPLETE_KEY = "suppression_projection_complete"
+
+
 class PassStatus(StrEnum):
     SUCCEEDED = "succeeded"
     SUPPRESSED = "suppressed"

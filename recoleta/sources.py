@@ -127,22 +127,21 @@ class HNPullRequest:
     include_stats: bool = False
 
 
-class _HFDailyPapersPullRequestKwargs(TypedDict, total=False):
-    max_items: int
+class _CommonPullRequestKwargs(TypedDict, total=False):
     period_start: datetime | None
     period_end: datetime | None
     pull_state_lookup: PullStateLookup | None
     include_stats: bool
 
 
-class _ArxivPullRequestKwargs(TypedDict, total=False):
+class _HFDailyPapersPullRequestKwargs(_CommonPullRequestKwargs, total=False):
+    max_items: int
+
+
+class _ArxivPullRequestKwargs(_CommonPullRequestKwargs, total=False):
     queries: list[str]
     max_results_per_run: int
-    period_start: datetime | None
-    period_end: datetime | None
     max_total_items: int | None
-    pull_state_lookup: PullStateLookup | None
-    include_stats: bool
     mode: str
     pool_db_path: Path | None
     pool_maturity_lag_days: int
@@ -150,35 +149,23 @@ class _ArxivPullRequestKwargs(TypedDict, total=False):
     pool_allow_immature_windows: bool
 
 
-class _OpenReviewPullRequestKwargs(TypedDict, total=False):
+class _OpenReviewPullRequestKwargs(_CommonPullRequestKwargs, total=False):
     venues: list[str]
     max_results_per_venue: int
-    period_start: datetime | None
-    period_end: datetime | None
     max_total_items: int | None
-    pull_state_lookup: PullStateLookup | None
-    include_stats: bool
 
 
-class _FeedPullRequestKwargs(TypedDict, total=False):
+class _FeedPullRequestKwargs(_CommonPullRequestKwargs, total=False):
     feed_urls: list[str]
     source: str
     max_items_per_feed: int
-    period_start: datetime | None
-    period_end: datetime | None
     max_total_items: int | None
-    pull_state_lookup: PullStateLookup | None
-    include_stats: bool
 
 
-class _HNPullRequestKwargs(TypedDict, total=False):
+class _HNPullRequestKwargs(_CommonPullRequestKwargs, total=False):
     feed_urls: list[str]
     max_items_per_feed: int
-    period_start: datetime | None
-    period_end: datetime | None
     max_total_items: int | None
-    pull_state_lookup: PullStateLookup | None
-    include_stats: bool
 
 
 def _should_retry_httpx(exc: BaseException) -> bool:

@@ -139,6 +139,8 @@ class _ReadOnlyPlannerRepo:
             return None
         pass_kind = kwargs["pass_kind"]
         status = kwargs.get("status")
+        if status not in {None, "succeeded"}:
+            return None
         if pass_kind == "trend_synthesis":
             if granularity in self.untouched_task_sets:
                 return None
@@ -196,9 +198,15 @@ class _ReadOnlyPlannerRepo:
             return []
         if doc_type in {"trend", "idea"} and granularity in self.untouched_task_sets:
             return []
-        if doc_type == "trend" and (granularity, period_start.date()) in self.missing_trend_windows:
+        if (
+            doc_type == "trend"
+            and (granularity, period_start.date()) in self.missing_trend_windows
+        ):
             return []
-        if doc_type == "idea" and (granularity, period_start.date()) in self.missing_idea_windows:
+        if (
+            doc_type == "idea"
+            and (granularity, period_start.date()) in self.missing_idea_windows
+        ):
             return []
         return [SimpleNamespace(id=1)]
 
@@ -210,13 +218,21 @@ class _ReadOnlyPlannerRepo:
             return []
         if doc_type in {"trend", "idea"} and granularity in self.untouched_task_sets:
             return []
-        if doc_type == "trend" and (granularity, period_start.date()) in self.missing_trend_windows:
+        if (
+            doc_type == "trend"
+            and (granularity, period_start.date()) in self.missing_trend_windows
+        ):
             return []
-        if doc_type == "idea" and (granularity, period_start.date()) in self.missing_idea_windows:
+        if (
+            doc_type == "idea"
+            and (granularity, period_start.date()) in self.missing_idea_windows
+        ):
             return []
         return [SimpleNamespace(id=1)]
 
-    def list_document_chunk_index_rows_in_period(self, **kwargs: Any) -> list[dict[str, Any]]:
+    def list_document_chunk_index_rows_in_period(
+        self, **kwargs: Any
+    ) -> list[dict[str, Any]]:
         return self._source_rows(
             doc_type=str(kwargs["doc_type"]),
             granularity=kwargs.get("granularity"),
@@ -237,10 +253,7 @@ class _ReadOnlyPlannerRepo:
         stored: bool,
     ) -> list[dict[str, Any]]:
         source_granularity = granularity or "item"
-        if (
-            source_granularity == "item"
-            and period_start.date() in self.missing_days
-        ):
+        if source_granularity == "item" and period_start.date() in self.missing_days:
             return []
         hash_map = self.stored_source_hashes if stored else self.source_hashes
         text_hash = hash_map.get(
@@ -278,7 +291,9 @@ class _StoredSourceRowsRepo:
     def __init__(self, parent: _ReadOnlyPlannerRepo) -> None:
         self.parent = parent
 
-    def list_document_chunk_index_rows_in_period(self, **kwargs: Any) -> list[dict[str, Any]]:
+    def list_document_chunk_index_rows_in_period(
+        self, **kwargs: Any
+    ) -> list[dict[str, Any]]:
         return self.parent._source_rows(
             doc_type=str(kwargs["doc_type"]),
             granularity=kwargs.get("granularity"),
@@ -338,7 +353,10 @@ class _AnalyzeBudgetReceiptRepo(_AnalyzeCandidatesRepo):
             return None
         if kwargs["granularity"] != "day":
             return None
-        if str(kwargs.get("config_fingerprint") or "") not in self.accepted_fingerprints:
+        if (
+            str(kwargs.get("config_fingerprint") or "")
+            not in self.accepted_fingerprints
+        ):
             return None
         if self.selected_total < int(kwargs.get("min_selected_total") or 0):
             return None
@@ -460,12 +478,94 @@ class _MixedStatusIdeasRepo(_ReadOnlyPlannerRepo):
         )
 
 
+class _MixedStatusTrendsRepo(_ReadOnlyPlannerRepo):
+    def get_latest_pass_output(self, **kwargs: Any) -> Any | None:
+        if kwargs["pass_kind"] != "trend_synthesis":
+            return super().get_latest_pass_output(**kwargs)
+        status = kwargs.get("status")
+        if status not in {"succeeded", "suppressed"}:
+            return None
+        succeeded = super().get_latest_pass_output(**{**kwargs, "status": "succeeded"})
+        if succeeded is None:
+            return None
+        row_id = int(succeeded.id)
+        return SimpleNamespace(
+            **{
+                **vars(succeeded),
+                "id": row_id + (1 if status == "suppressed" else 0),
+                "status": status,
+                "created_at": datetime(
+                    2026,
+                    3,
+                    16,
+                    3 if status == "suppressed" else 2,
+                    tzinfo=UTC,
+                ),
+            }
+        )
+
+
+class _PropagatedSuppressedTrendsRepo(_MixedStatusTrendsRepo):
+    def get_latest_pass_output(self, **kwargs: Any) -> Any | None:
+        if kwargs["pass_kind"] != "trend_ideas":
+            return super().get_latest_pass_output(**kwargs)
+        status = kwargs.get("status")
+        if status not in {None, "suppressed"}:
+            return None
+        granularity = kwargs["granularity"]
+        period_start = kwargs["period_start"]
+        upstream_id = (
+            _stable_pass_output_id(granularity, period_start, "trend_synthesis") + 1
+        )
+        return SimpleNamespace(
+            id=_stable_pass_output_id(granularity, period_start, "trend_ideas") + 1,
+            status="suppressed",
+            created_at=datetime(2026, 3, 16, 4, tzinfo=UTC),
+            input_refs_json=json.dumps(
+                [
+                    {
+                        "ref_kind": "pass_output",
+                        "pass_kind": "trend_synthesis",
+                        "pass_output_id": upstream_id,
+                    }
+                ]
+            ),
+        )
+
+
+class _IncompleteSuppressedTrendsRepo(_MixedStatusTrendsRepo):
+    def get_latest_pass_output(self, **kwargs: Any) -> Any | None:
+        row = super().get_latest_pass_output(**kwargs)
+        if row is None or getattr(row, "status", None) != "suppressed":
+            return row
+        diagnostics = json.loads(str(getattr(row, "diagnostics_json", "{}") or "{}"))
+        diagnostics["suppression_projection_complete"] = False
+        row.diagnostics_json = json.dumps(diagnostics)
+        return row
+
+
+class _IncompletePropagatedSuppressedTrendsRepo(
+    _PropagatedSuppressedTrendsRepo
+):
+    def get_latest_pass_output(self, **kwargs: Any) -> Any | None:
+        row = super().get_latest_pass_output(**kwargs)
+        if (
+            row is not None
+            and kwargs["pass_kind"] == "trend_ideas"
+            and getattr(row, "status", None) == "suppressed"
+        ):
+            row.diagnostics_json = json.dumps(
+                {"suppression_projection_complete": False}
+            )
+        return row
+
+
 class _DocumentOnlyLowerLevelRepo(_ReadOnlyPlannerRepo):
     def get_latest_pass_output(self, **kwargs: Any) -> Any | None:
-        if (
-            kwargs["granularity"] == "day"
-            and kwargs["pass_kind"] in {"trend_synthesis", "trend_ideas"}
-        ):
+        if kwargs["granularity"] == "day" and kwargs["pass_kind"] in {
+            "trend_synthesis",
+            "trend_ideas",
+        }:
             return None
         return super().get_latest_pass_output(**kwargs)
 
@@ -849,12 +949,8 @@ def test_planner_runs_analyze_when_budget_increases_above_receipt() -> None:
 
 def test_planner_preserves_analyze_budget_when_other_stage_model_changes() -> None:
     source_day = date(2026, 3, 16)
-    previous_settings = _AnalyzeFingerprintSettings(
-        trends_llm_model="gpt-trends-old"
-    )
-    current_settings = _AnalyzeFingerprintSettings(
-        trends_llm_model="gpt-trends-new"
-    )
+    previous_settings = _AnalyzeFingerprintSettings(trends_llm_model="gpt-trends-old")
+    current_settings = _AnalyzeFingerprintSettings(trends_llm_model="gpt-trends-new")
     previous_fingerprint = analyze_budget_config_fingerprint(previous_settings)
     assert previous_fingerprint == analyze_budget_config_fingerprint(current_settings)
     repo = _AnalyzeBudgetReceiptRepo(
@@ -1566,6 +1662,82 @@ def test_ideas_planner_prefers_newer_suppressed_output_over_older_success() -> N
     assert decision.estimated_llm_calls == 0
 
 
+def test_planner_runs_zero_llm_ideas_pass_to_propagate_suppressed_trend() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_day_plan_without_ingest(),
+        repository=_MixedStatusTrendsRepo(),
+        settings=_Settings(),
+    )
+
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+    assert ideas_decision.action == "run"
+    assert ideas_decision.reason == "propagate_suppressed_upstream_trend"
+    assert ideas_decision.estimated_llm_calls == 0
+
+
+def test_planner_skips_ideas_after_suppressed_trend_is_already_propagated() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_day_plan(),
+        repository=_PropagatedSuppressedTrendsRepo(),
+        settings=_Settings(),
+    )
+
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+    assert ideas_decision.action == "skip"
+    assert ideas_decision.reason == "suppressed_upstream_trend"
+    assert ideas_decision.estimated_llm_calls == 0
+
+
+def test_planner_retries_incomplete_suppressed_trend_projection() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_day_trends_only_plan(),
+        repository=_IncompleteSuppressedTrendsRepo(),
+        settings=_Settings(),
+    )
+
+    decision = _decision_for(decisions, "trends:day", source_day)
+    assert decision.action == "run"
+    assert decision.reason == "incomplete_suppression_projection"
+
+
+def test_planner_does_not_preserve_zero_llm_estimate_when_trend_will_rerun() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_day_plan_without_ingest(),
+        repository=_IncompleteSuppressedTrendsRepo(),
+        settings=_Settings(),
+    )
+
+    trend_decision = _decision_for(decisions, "trends:day", source_day)
+    ideas_decision = _decision_for(decisions, "ideas:day", source_day)
+    assert trend_decision.reason == "incomplete_suppression_projection"
+    assert ideas_decision.action == "run"
+    assert ideas_decision.reason == "upstream_trend_planned"
+    assert ideas_decision.estimated_llm_calls is None
+
+
+def test_planner_retries_incomplete_propagated_ideas_cleanup_without_llm() -> None:
+    source_day = date(2026, 3, 16)
+
+    decisions = plan_workflow_execution(
+        plan=_day_plan_without_ingest(),
+        repository=_IncompletePropagatedSuppressedTrendsRepo(),
+        settings=_Settings(),
+    )
+
+    decision = _decision_for(decisions, "ideas:day", source_day)
+    assert decision.action == "run"
+    assert decision.reason == "incomplete_suppression_projection"
+    assert decision.estimated_llm_calls == 0
+
+
 def test_translation_planner_sees_ideas_rerun_from_changed_trend_source(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1782,7 +1954,9 @@ def _day_translation_plan():
 
 
 def _translation_decision(decisions):
-    return next(decision for decision in decisions if decision.step_id == STEP_TRANSLATE)
+    return next(
+        decision for decision in decisions if decision.step_id == STEP_TRANSLATE
+    )
 
 
 def _translation_summary_by_bucket(decision):
@@ -1814,8 +1988,6 @@ def _stable_doc_id(
     period_start: datetime,
     kind: str,
 ) -> int:
-    granularity_offset = {"item": 0, "day": 100, "week": 200, "month": 300}[
-        granularity
-    ]
+    granularity_offset = {"item": 0, "day": 100, "week": 200, "month": 300}[granularity]
     kind_offset = {"doc": 0, "summary": 1, "content": 2, "meta": 3}[kind]
     return granularity_offset + period_start.toordinal() * 10 + kind_offset

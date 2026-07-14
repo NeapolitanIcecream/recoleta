@@ -10,6 +10,13 @@ from recoleta.types import sha256_hex
 
 WORKFLOW_FRESHNESS_SCHEMA_VERSION = 1
 _SOURCE_CHUNK_BATCH_LIMIT = 1000
+_PERSISTED_SOURCE_FINGERPRINT_FIELDS = (
+    "schema_version",
+    "key",
+    "documents_total",
+    "chunks_total",
+    "source_scopes",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +39,27 @@ def workflow_freshness_key(freshness: dict[str, Any] | None) -> str | None:
         return None
     normalized = str(freshness.get("key") or "").strip()
     return normalized or None
+
+
+def workflow_freshness_diagnostics_view(
+    freshness: dict[str, Any],
+) -> dict[str, Any]:
+    """Return a compact persisted view without changing the full fingerprint key."""
+    view = dict(freshness)
+    components = freshness.get("components")
+    if not isinstance(components, dict):
+        return view
+
+    persisted_components = dict(components)
+    upstream_sources = components.get("upstream_sources")
+    if isinstance(upstream_sources, dict):
+        persisted_components["upstream_sources"] = {
+            field: upstream_sources[field]
+            for field in _PERSISTED_SOURCE_FINGERPRINT_FIELDS
+            if field in upstream_sources
+        }
+    view["components"] = persisted_components
+    return view
 
 
 def analyze_budget_config_fingerprint(
@@ -490,5 +518,6 @@ __all__ = [
     "build_trend_ideas_freshness",
     "build_trend_source_fingerprint",
     "build_trend_synthesis_freshness",
+    "workflow_freshness_diagnostics_view",
     "workflow_freshness_key",
 ]

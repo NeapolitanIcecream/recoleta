@@ -25,7 +25,7 @@ from recoleta.extract import (
 )
 from recoleta.models import Item
 from recoleta.pipeline import PipelineService
-from recoleta.sources import fetch_arxiv_drafts
+from recoleta.sources import ArxivPullRequest, fetch_arxiv_drafts
 from recoleta.storage import Repository
 from recoleta.types import ItemDraft
 
@@ -313,8 +313,10 @@ def _freeze_drafts(
 ) -> tuple[list[FrozenDraft], dict[str, Any]]:
     pull_started = time.perf_counter()
     drafts = fetch_arxiv_drafts(
-        queries=list(settings.sources.arxiv.queries),
-        max_results_per_run=max(1, int(candidates)),
+        request=ArxivPullRequest(
+            queries=list(settings.sources.arxiv.queries),
+            max_results_per_run=max(1, int(candidates)),
+        )
     )
     pull_ms = int((time.perf_counter() - pull_started) * 1000)
 

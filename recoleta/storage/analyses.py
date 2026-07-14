@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import and_, desc, func, or_
+from sqlalchemy import and_, desc, func, or_, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlmodel import Session, select
 
 from recoleta.models import (
@@ -15,7 +16,7 @@ from recoleta.models import (
     ITEM_STATE_RETRYABLE_FAILED,
     ITEM_STATE_TRIAGED,
 )
-from recoleta.storage_common import _to_json
+from recoleta.storage.common import _to_json
 from recoleta.types import (
     AnalysisResult,
     AnalysisWrite,
@@ -53,73 +54,56 @@ def _normalized_analysis_writes(analyses: list[AnalysisWrite]) -> list[AnalysisW
     return normalized
 
 
-def _existing_analyses_by_item_id(
-    *,
-    session: Session,
-    item_ids: list[int],
-) -> dict[int, Analysis]:
-    statement = select(Analysis).where(cast(Any, Analysis.item_id).in_(item_ids))
-    return {int(analysis.item_id): analysis for analysis in session.exec(statement)}
+def _analysis_upsert_rows(analyses: list[AnalysisWrite]) -> list[dict[str, Any]]:
+    created_at = utc_now()
+    return [
+        {
+            "item_id": analysis.item_id,
+            "model": analysis.result.model,
+            "provider": analysis.result.provider,
+            "summary": analysis.result.summary,
+            "topics_json": _to_json(analysis.result.topics),
+            "relevance_score": analysis.result.relevance_score,
+            "novelty_score": analysis.result.novelty_score,
+            "cost_usd": analysis.result.cost_usd,
+            "latency_ms": analysis.result.latency_ms,
+            "created_at": created_at,
+        }
+        for analysis in analyses
+    ]
 
 
-def _mirror_items_by_id(
-    *,
-    session: Session,
-    mirror_item_ids: list[int],
-) -> dict[int, Item]:
-    if not mirror_item_ids:
-        return {}
-    item_statement = select(Item).where(cast(Any, Item.id).in_(mirror_item_ids))
-    return {
-        int(item.id): item
-        for item in session.exec(item_statement)
-        if item.id is not None
-    }
-
-
-def _analysis_row(
-    *,
-    analysis_write: AnalysisWrite,
-    existing: Analysis | None,
-) -> Analysis:
-    result = analysis_write.result
-    if existing is None:
-        return Analysis(
-            item_id=analysis_write.item_id,
-            model=result.model,
-            provider=result.provider,
-            summary=result.summary,
-            topics_json=_to_json(result.topics),
-            relevance_score=result.relevance_score,
-            novelty_score=result.novelty_score,
-            cost_usd=result.cost_usd,
-            latency_ms=result.latency_ms,
+def _bulk_upsert_analyses(*, session: Session, analyses: list[AnalysisWrite]) -> None:
+    table = cast(Any, Analysis).__table__
+    statement = sqlite_insert(table).values(_analysis_upsert_rows(analyses))
+    excluded = statement.excluded
+    session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[table.c.item_id],
+            set_={
+                "model": excluded.model,
+                "provider": excluded.provider,
+                "summary": excluded.summary,
+                "topics_json": excluded.topics_json,
+                "relevance_score": excluded.relevance_score,
+                "novelty_score": excluded.novelty_score,
+                "cost_usd": excluded.cost_usd,
+                "latency_ms": excluded.latency_ms,
+            },
         )
-    existing.model = result.model
-    existing.provider = result.provider
-    existing.summary = result.summary
-    existing.topics_json = _to_json(result.topics)
-    existing.relevance_score = result.relevance_score
-    existing.novelty_score = result.novelty_score
-    existing.cost_usd = result.cost_usd
-    existing.latency_ms = result.latency_ms
-    return existing
+    )
 
 
-def _mirror_analyzed_item(
-    *,
-    session: Session,
-    items_by_id: dict[int, Item],
-    analysis_write: AnalysisWrite,
+def _bulk_mirror_analyzed_items(
+    *, session: Session, mirror_item_ids: list[int]
 ) -> None:
-    if not analysis_write.mirror_item_state:
+    if not mirror_item_ids:
         return
-    item = items_by_id.get(analysis_write.item_id)
-    if item is None:
-        return
-    item.state = ITEM_STATE_ANALYZED
-    item.updated_at = utc_now()
-    session.add(item)
+    session.execute(
+        update(cast(Any, Item).__table__)
+        .where(cast(Any, Item).__table__.c.id.in_(mirror_item_ids))
+        .values(state=ITEM_STATE_ANALYZED, updated_at=utc_now())
+    )
 
 
 def _llm_analysis_candidate_states(*, triage_required: bool) -> list[str]:
@@ -276,39 +260,17 @@ class AnalysisStoreMixin:
         if not normalized:
             return 0
 
-        item_ids = sorted({analysis.item_id for analysis in normalized})
         mirror_item_ids = sorted(
             {analysis.item_id for analysis in normalized if analysis.mirror_item_state}
         )
         with Session(self.engine) as session:
-            existing_by_key = _existing_analyses_by_item_id(
-                session=session,
-                item_ids=item_ids,
-            )
-            items_by_id = _mirror_items_by_id(
+            _bulk_upsert_analyses(session=session, analyses=normalized)
+            _bulk_mirror_analyzed_items(
                 session=session,
                 mirror_item_ids=mirror_item_ids,
             )
-
-            applied = 0
-            for analysis_write in normalized:
-                analysis_row = _analysis_row(
-                    analysis_write=analysis_write,
-                    existing=existing_by_key.get(analysis_write.item_id),
-                )
-                existing_by_key[analysis_write.item_id] = analysis_row
-                _mirror_analyzed_item(
-                    session=session,
-                    items_by_id=items_by_id,
-                    analysis_write=analysis_write,
-                )
-
-                session.add(analysis_row)
-                applied += 1
-
-            if applied > 0:
-                self._commit(session)
-            return applied
+            self._commit(session)
+        return len(normalized)
 
     def list_items_for_publish(
         self,

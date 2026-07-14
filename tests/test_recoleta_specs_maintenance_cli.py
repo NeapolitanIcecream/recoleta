@@ -19,7 +19,9 @@ from recoleta.models import (
     DocumentChunk,
     Item,
     Metric,
+    PassOutput,
     Run,
+    WorkflowStepReceipt,
 )
 from recoleta.rag.vector_store import embedding_table_name
 from recoleta.storage import CURRENT_SCHEMA_VERSION, Repository
@@ -150,6 +152,86 @@ def test_gc_prunes_expired_debug_artifacts_and_operational_history(
     assert remaining_metrics[0].run_id == "run-recent"
     assert len(remaining_artifacts) == 1
     assert remaining_artifacts[0].path == str(recent_artifact_path)
+
+
+def test_operational_gc_preserves_runs_referenced_by_durable_state(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    run_ids = {
+        kind: repository.create_run(f"fp-{kind}", run_id=f"run-{kind}").id
+        for kind in ("pass", "receipt", "artifact", "delete")
+    }
+    for run_id in run_ids.values():
+        repository.finish_run(run_id, success=True)
+        repository.record_metric(run_id=run_id, name="old.metric", value=1)
+    repository.create_pass_output(
+        run_id=run_ids["pass"],
+        pass_kind="trend_synthesis",
+        status="succeeded",
+        payload={"title": "durable"},
+    )
+    repository.record_workflow_step_receipt(
+        run_id=run_ids["receipt"],
+        step_id="analyze",
+        granularity="day",
+        period_start=datetime(2026, 1, 1, tzinfo=UTC),
+        period_end=datetime(2026, 1, 2, tzinfo=UTC),
+        config_fingerprint="receipt-fingerprint",
+        requested_limit=10,
+        selected_total=1,
+        processed_total=1,
+        failed_total=0,
+    )
+    repository.add_artifact(
+        run_id=run_ids["artifact"],
+        item_id=None,
+        kind="debug",
+        path=str(tmp_path / "recent-artifact.json"),
+    )
+
+    now = datetime.now(UTC)
+    old_ts = now - timedelta(days=90)
+    with Session(repository.engine) as session:
+        for row in session.exec(select(Run)):
+            row.started_at = old_ts
+            row.heartbeat_at = old_ts
+            row.finished_at = old_ts
+        session.commit()
+
+    kwargs = {
+        "older_than": now - timedelta(days=60),
+        "artifact_older_than": now - timedelta(days=14),
+    }
+    dry_run = repository.prune_operational_history_older_than(
+        **kwargs,
+        dry_run=True,
+    )
+    result = repository.prune_operational_history_older_than(
+        **kwargs,
+        dry_run=False,
+    )
+
+    assert dry_run == result
+    assert result.run_rows == 1
+    assert result.metric_rows == 4
+    assert result.retained_run_rows == 3
+    assert result.retained_canonical_run_rows == 2
+    assert result.retained_artifact_run_rows == 1
+    with Session(repository.engine) as session:
+        assert {row.id for row in session.exec(select(Run))} == {
+            run_ids["pass"],
+            run_ids["receipt"],
+            run_ids["artifact"],
+        }
+        assert list(session.exec(select(Metric))) == []
+        assert len(list(session.exec(select(PassOutput)))) == 1
+        assert len(list(session.exec(select(WorkflowStepReceipt)))) == 1
+        assert len(list(session.exec(select(Artifact)))) == 1
+    with repository.engine.connect() as connection:
+        violations = list(connection.exec_driver_sql("PRAGMA foreign_key_check"))
+    assert violations == []
 
 
 def test_gc_prune_caches_clears_rebuildable_cache_material(

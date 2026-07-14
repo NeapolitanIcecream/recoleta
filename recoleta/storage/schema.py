@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlmodel import SQLModel
 
-from recoleta.storage_common import CURRENT_SCHEMA_VERSION, SchemaVersionError
+from recoleta.storage.common import CURRENT_SCHEMA_VERSION, SchemaVersionError
 
 _RUN_WORKFLOW_METADATA_COLUMNS: tuple[tuple[str, str, str | None], ...] = (
     (

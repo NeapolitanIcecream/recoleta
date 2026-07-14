@@ -7,10 +7,10 @@ from recoleta.rag.ideas_agent import (
     _TrendIdeasBundleTitle,
     _build_trend_ideas_instructions,
     _build_trend_ideas_title_instructions,
+    bundle_title_rewrite_reason,
     build_trend_ideas_prompt_payload,
     build_trend_ideas_title_prompt_payload,
 )
-from recoleta.trends import TrendPayload
 
 
 def test_ideas_instructions_require_finished_prose_without_public_worksheet_fields() -> (
@@ -20,10 +20,32 @@ def test_ideas_instructions_require_finished_prose_without_public_worksheet_fiel
         output_language="Chinese (Simplified)"
     )
 
-    assert "You are a research editor writing short reader-facing pieces from a local evidence pack." in instructions
-    assert "Use internal reasoning to judge whether a concrete case now has enough evidence" in instructions
+    assert (
+        "You are a research editor writing short reader-facing pieces from a local evidence pack."
+        in instructions
+    )
+    assert (
+        "Use internal reasoning to judge whether a concrete case now has enough evidence"
+        in instructions
+    )
     assert "Do not expose those axes as separate reader-facing fields." in instructions
     assert "Each idea must be a finished short piece." in instructions
+    assert "two independent item documents" in instructions
+    assert (
+        "Multiple chunks from one document still count as one source." in instructions
+    )
+    assert "A get_doc call returns metadata only" in instructions
+    assert (
+        "Direct adoption or productization of one paper is not enough." in instructions
+    )
+    assert "explicit kill threshold" in instructions
+    assert "separate source facts from your synthesis or inference" in instructions
+    assert "normally 6 to 8 documents" in instructions
+    assert "Do not search again for material already listed there." in instructions
+    assert (
+        "Use search_hybrid only when the pack lacks enough independent evidence"
+        in instructions
+    )
     assert "ideas[].content_md for the prose body" in instructions
     assert "Do not let task language leak into public prose." in instructions
     assert "the strongest notes" in instructions
@@ -31,8 +53,14 @@ def test_ideas_instructions_require_finished_prose_without_public_worksheet_fiel
     assert "the result does not say" in instructions
     assert "away from X and toward Y" in instructions
     assert "X is not Y. It is Z." in instructions
-    assert "Do not call the output publishable, grounded, retained, or strong." in instructions
-    assert "Do not describe the set as ideas, notes, directions, pieces, or retained items inside summary_md." in instructions
+    assert (
+        "Do not call the output publishable, grounded, retained, or strong."
+        in instructions
+    )
+    assert (
+        "Do not describe the set as ideas, notes, directions, pieces, or retained items inside summary_md."
+        in instructions
+    )
     assert "shifting from" in instructions
     assert "turns from" in instructions
     assert "Do not use negative parallelism" in instructions
@@ -54,26 +82,45 @@ def test_ideas_prompt_payload_reinforces_reader_facing_contract() -> None:
         granularity="day",
         period_start=datetime(2026, 3, 9, tzinfo=UTC),
         period_end=datetime(2026, 3, 10, tzinfo=UTC),
-        trend_payload=TrendPayload(
-            title="Agent systems",
-            granularity="day",
-            period_start="2026-03-09T00:00:00+00:00",
-            period_end="2026-03-10T00:00:00+00:00",
-            overview_md="Execution loops are tightening.",
-            topics=["agents"],
-            clusters=[],
-        ),
         trend_snapshot_pack_md="## Trend snapshot pack\n\nExecution loops are tightening.\n",
+        prior_ideas_pack_md=(
+            "## Prior ideas exclusion pack\n- Prompt release gate for agent runtimes\n"
+        ),
     )
 
-    assert payload["task"] == "Draft up to three concrete short pieces from the supplied evidence pack."
+    assert payload["task"] == (
+        "Propose up to three non-obvious, cross-source ideas from the supplied evidence pack."
+    )
+    assert payload["prior_ideas_pack_md"].startswith("## Prior ideas exclusion pack")
     notes = payload["notes"]
-    assert "Use idea ordering to express priority; do not emit best-bet or alternate labels." in notes
-    assert "Use evidence_refs to point to the strongest supporting documents." in notes
-    assert "Return finished short prose in ideas[].content_md instead of labeled method fields." in notes
+    assert (
+        "Use idea ordering to express priority; do not emit best-bet or alternate labels."
+        in notes
+    )
+    assert (
+        "Use evidence_refs to cite at least two distinct item documents read with get_doc_bundle or read_chunk for each idea; get_doc metadata does not count, and multiple chunks from one document count once."
+        in notes
+    )
+    assert (
+        "Return finished short prose in ideas[].content_md instead of labeled method fields."
+        in notes
+    )
+    assert any(
+        note.startswith("Keep each idea to about three short paragraphs")
+        for note in notes
+    )
     assert "Do not restate the trend summary as the final output." in notes
-    assert "Do not let task labels or collection labels leak into public prose." in notes
-    assert "Do not describe the output as publishable, grounded, retained, or strong." in notes
+    assert (
+        "Do not let task labels or collection labels leak into public prose." in notes
+    )
+    assert (
+        "Do not describe the output as publishable, grounded, retained, or strong."
+        in notes
+    )
+    assert (
+        "Treat prior_ideas_pack_md only as a deduplication exclusion list; never cite it as evidence."
+        in notes
+    )
     assert any(
         note.startswith("Do not use formulas such as 'the strongest notes'")
         for note in notes
@@ -87,13 +134,21 @@ def test_ideas_title_instructions_define_second_pass_bundle_title_contract() -> 
 
     assert "Write a single bundle title for the retained set." in instructions
     assert "The title must be a short literal noun phrase" in instructions
-    assert "Do not use labels such as idea, ideas, notes, evidence-grounded, trend snapshot, opportunity, or why now." in instructions
-    assert "Do not use counts, dates, colons, slogans, or rhetorical questions." in instructions
+    assert (
+        "Do not use labels such as idea, ideas, notes, evidence-grounded, trend snapshot, opportunity, or why now."
+        in instructions
+    )
+    assert (
+        "Do not use counts, dates, colons, slogans, or rhetorical questions."
+        in instructions
+    )
     assert "Do not use negative parallelism" in instructions
     assert "Do not serialize JSON inside the title field." in instructions
 
 
-def test_ideas_title_prompt_payload_only_uses_final_summary_and_retained_ideas() -> None:
+def test_ideas_title_prompt_payload_only_uses_final_summary_and_retained_ideas() -> (
+    None
+):
     payload = build_trend_ideas_title_prompt_payload(
         summary_md="Release controls and runtime checks now travel together.",
         ideas=[
@@ -108,7 +163,10 @@ def test_ideas_title_prompt_payload_only_uses_final_summary_and_retained_ideas()
         ],
     )
 
-    assert payload["task"] == "Write one short bundle title for the retained set. Return plain text in the title field."
+    assert (
+        payload["task"]
+        == "Write one short bundle title for the retained set. Return plain text in the title field."
+    )
     assert payload["summary_md"] == (
         "Release controls and runtime checks now travel together."
     )
@@ -130,6 +188,21 @@ def test_bundle_title_validation_unwraps_nested_json_string() -> None:
     )
 
     assert payload.title == "Robotics Control Evaluation Stack"
+
+
+def test_bundle_title_quality_gate_only_rewrites_invalid_titles() -> None:
+    assert bundle_title_rewrite_reason("Verification-first agent rollout") is None
+    assert (
+        bundle_title_rewrite_reason("Canonical Trend", source_title="canonical trend")
+        == "copied_source_title"
+    )
+    assert bundle_title_rewrite_reason("Ideas: why now?") == "punctuation"
+    assert bundle_title_rewrite_reason("2026年智能体部署路径") == "date"
+    assert bundle_title_rewrite_reason("智能体2026部署路径") == "date"
+    assert (
+        bundle_title_rewrite_reason("Unnormalized title that should be replaced")
+        == "placeholder"
+    )
 
 
 def test_normalize_trend_ideas_payload_caps_to_three_unique_grounded_ideas() -> None:
@@ -174,6 +247,41 @@ def test_normalize_trend_ideas_payload_caps_to_three_unique_grounded_ideas() -> 
 
     assert [idea.title for idea in normalized.ideas] == ["Idea 1", "Idea 2", "Idea 3"]
     assert [ref.doc_id for ref in normalized.ideas[0].evidence_refs] == [1]
+
+
+def test_normalize_trend_ideas_payload_requires_two_distinct_documents() -> None:
+    payload = TrendIdeasPayload.model_validate(
+        {
+            "title": "Ideas",
+            "granularity": "day",
+            "period_start": "2026-03-09T00:00:00+00:00",
+            "period_end": "2026-03-10T00:00:00+00:00",
+            "summary_md": "Summary",
+            "ideas": [
+                {
+                    "title": "One paper, two chunks",
+                    "content_md": "This must not pass as cross-source synthesis.",
+                    "evidence_refs": [
+                        {"doc_id": 1, "chunk_index": 0},
+                        {"doc_id": 1, "chunk_index": 2},
+                    ],
+                },
+                {
+                    "title": "Two independent sources",
+                    "content_md": "This combines evidence from separate documents.",
+                    "evidence_refs": [
+                        {"doc_id": 2, "chunk_index": 1},
+                        {"doc_id": 3, "chunk_index": 4},
+                    ],
+                },
+            ],
+        }
+    )
+
+    normalized = normalize_trend_ideas_payload(payload, min_distinct_docs=2)
+
+    assert [idea.title for idea in normalized.ideas] == ["Two independent sources"]
+    assert [ref.doc_id for ref in normalized.ideas[0].evidence_refs] == [2, 3]
 
 
 def test_trend_idea_content_md_preserves_markdown_structure() -> None:

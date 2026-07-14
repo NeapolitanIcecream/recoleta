@@ -8,6 +8,7 @@ import time
 from typing import Any, cast
 
 import pytest
+from litellm.exceptions import RateLimitError
 from sqlmodel import Session, select
 
 from recoleta.models import (
@@ -96,6 +97,15 @@ class _PartiallyInvalidPersistenceAnalyzer:
                 latency_ms=1,
             ),
             None,
+        )
+
+
+class _RateLimitedAnalyzer:
+    def analyze(self, **_kwargs: Any) -> tuple[AnalysisResult, AnalyzeDebug | None]:
+        raise RateLimitError(
+            "rate limited",
+            llm_provider="openai",
+            model="openai/gpt-4o-mini",
         )
 
 
@@ -414,6 +424,30 @@ def test_analyze_failure_emits_failure_metric(configured_env) -> None:
     )
 
 
+def test_analyze_exhausted_provider_error_remains_retryable(configured_env) -> None:
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=_RateLimitedAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+    draft = ItemDraft.from_values(
+        source="rss",
+        source_item_id="item-transient-provider-error",
+        canonical_url="https://example.com/transient-provider-error",
+        title="Transient Provider Error",
+    )
+    service.prepare(run_id="run-transient-provider-error", drafts=[draft], limit=1)
+
+    result = service.analyze(run_id="run-transient-provider-error", limit=1)
+
+    assert result.failed == 1
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item)).one()
+    assert item.state == ITEM_STATE_RETRYABLE_FAILED
+
+
 def test_analyze_records_budget_receipt(configured_env) -> None:
     settings, repository = _build_runtime()
     service = PipelineService(
@@ -458,7 +492,7 @@ def test_enrich_marks_retryable_failures_and_allows_retry_before_analyze(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import httpx
-    import recoleta.pipeline as pipeline
+    import recoleta.pipeline.service as pipeline_service
 
     settings, repository = _build_runtime()
     service = PipelineService(
@@ -491,7 +525,7 @@ def test_enrich_marks_retryable_failures_and_allows_retry_before_analyze(
             )
         return "<html><body><p>mock html</p></body></html>"
 
-    monkeypatch.setattr(pipeline, "fetch_url_html", flaky_fetch_url_html)
+    monkeypatch.setattr(pipeline_service, "fetch_url_html", flaky_fetch_url_html)
 
     service.enrich(run_id="run-retryable-enrich", limit=10)
 
@@ -625,12 +659,40 @@ def test_analyze_batches_persistence_to_reduce_sql_commits(
     ]
     service.prepare(run_id="run-analyze-batch", drafts=drafts, limit=10)
 
+    batch_calls: list[tuple[list[int], list[str]]] = []
+    load_batch = repository.get_latest_content_texts_for_items
+
+    def capture_content_batch(
+        *, item_ids: list[int], content_types: list[str]
+    ) -> dict[int, dict[str, str | None]]:
+        batch_calls.append((list(item_ids), list(content_types)))
+        return load_batch(item_ids=item_ids, content_types=content_types)
+
+    monkeypatch.setattr(
+        repository,
+        "get_latest_content_texts_for_items",
+        capture_content_batch,
+    )
+
+    def fail_itemwise_content_load(**_kwargs: Any) -> None:
+        raise AssertionError("analyze should load selected item content in one batch")
+
+    monkeypatch.setattr(
+        repository,
+        "get_latest_content",
+        fail_itemwise_content_load,
+    )
+
     with repository.sql_diagnostics() as sql_diag:
         result = service.analyze(run_id="run-analyze-batch", limit=4)
 
     assert result.processed == 4
     assert result.failed == 0
+    assert len(batch_calls) == 1
+    assert len(batch_calls[0][0]) == 4
+    assert batch_calls[0][1] == ["html_maintext"]
     assert sql_diag.queries_total > 0
+    assert sql_diag.queries_total <= 32
     assert sql_diag.commits_total > 0
     assert sql_diag.commits_total <= 4
 
@@ -1516,7 +1578,7 @@ def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import recoleta.pipeline as pipeline
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
     settings, repository = _build_runtime()
 
@@ -1559,13 +1621,13 @@ def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
     def fail_fetch_url_html(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("html fetch should not be used")
 
-    monkeypatch.setattr(pipeline, "fetch_url_bytes", fake_fetch_url_bytes)
+    monkeypatch.setattr(enrich_stage, "fetch_url_bytes", fake_fetch_url_bytes)
     monkeypatch.setattr(
-        pipeline,
+        enrich_stage,
         "extract_pdf_text",
         lambda _bytes, **_: "mock pdf text",  # noqa: ARG005
     )
-    monkeypatch.setattr(pipeline, "fetch_url_html", fail_fetch_url_html)
+    monkeypatch.setattr(enrich_stage, "fetch_url_html", fail_fetch_url_html)
 
     service = PipelineService(
         settings=settings,
@@ -1600,7 +1662,7 @@ def test_analyze_uses_latex_source_enrichment_for_arxiv_items(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import recoleta.pipeline as pipeline
+    import recoleta.pipeline.service as pipeline_service
 
     monkeypatch.setenv(
         "SOURCES",
@@ -1647,13 +1709,13 @@ def test_analyze_uses_latex_source_enrichment_for_arxiv_items(
     def fail_fetch_url_html(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("html fetch should not be used")
 
-    monkeypatch.setattr(pipeline, "fetch_url_bytes", fake_fetch_url_bytes)
+    monkeypatch.setattr(pipeline_service, "fetch_url_bytes", fake_fetch_url_bytes)
     monkeypatch.setattr(
-        pipeline,
+        pipeline_service,
         "extract_arxiv_latex_source",
         lambda _bytes: "\\section{Intro}\nAgents are useful.",  # noqa: ARG005
     )
-    monkeypatch.setattr(pipeline, "fetch_url_html", fail_fetch_url_html)
+    monkeypatch.setattr(pipeline_service, "fetch_url_html", fail_fetch_url_html)
 
     service = PipelineService(
         settings=settings,
@@ -1689,7 +1751,7 @@ def test_analyze_uses_html_document_enrichment_for_arxiv_items(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import recoleta.pipeline as pipeline
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
     monkeypatch.setenv(
         "SOURCES",
@@ -1736,18 +1798,18 @@ def test_analyze_uses_html_document_enrichment_for_arxiv_items(
     def fail_fetch_url_bytes(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("binary fetch should not be used")
 
-    monkeypatch.setattr(pipeline, "fetch_url_html", fake_fetch_url_html)
-    monkeypatch.setattr(pipeline, "fetch_url_bytes", fail_fetch_url_bytes)
+    monkeypatch.setattr(enrich_stage, "fetch_url_html", fake_fetch_url_html)
+    monkeypatch.setattr(enrich_stage, "fetch_url_bytes", fail_fetch_url_bytes)
     monkeypatch.setattr(
-        pipeline,
+        enrich_stage,
         "extract_html_document_cleaned_with_references",
         lambda _html, **_: ("<main><p>clean html body</p></main>", None, {}),  # noqa: ARG005
     )
     monkeypatch.setattr(
-        pipeline, "extract_html_maintext", lambda _html: "clean text body"
+        enrich_stage, "extract_html_maintext", lambda _html: "clean text body"
     )  # noqa: ARG005
     monkeypatch.setattr(
-        pipeline,
+        enrich_stage,
         "convert_html_document_to_markdown",
         lambda _html, **_: ("clean html body", 3, None),  # noqa: ARG005
     )
@@ -1791,7 +1853,7 @@ def test_arxiv_strict_enrich_does_not_fallback_when_method_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import httpx
-    import recoleta.pipeline as pipeline
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
     monkeypatch.setenv(
         "SOURCES",
@@ -1824,8 +1886,8 @@ def test_arxiv_strict_enrich_does_not_fallback_when_method_fails(
     def fail_if_binary_fetch_used(*_args, **_kwargs):  # type: ignore[no-untyped-def]
         raise AssertionError("strict mode must not fallback to binary/pdf fetch")
 
-    monkeypatch.setattr(pipeline, "fetch_url_html", fail_fetch_url_html)
-    monkeypatch.setattr(pipeline, "fetch_url_bytes", fail_if_binary_fetch_used)
+    monkeypatch.setattr(enrich_stage, "fetch_url_html", fail_fetch_url_html)
+    monkeypatch.setattr(enrich_stage, "fetch_url_bytes", fail_if_binary_fetch_used)
 
     service.enrich(run_id="run-arxiv-strict-failure", limit=10)
 

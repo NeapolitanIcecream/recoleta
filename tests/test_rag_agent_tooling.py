@@ -319,7 +319,10 @@ def test_get_doc_bundle_returns_summary_sections_and_content_chunks(
 
     bundle = result["bundle"]
     assert bundle["doc"]["title"] == "Agent Memory Loops"
-    assert bundle["summary"]["text"].startswith("Summary: retrieval memory loops")
+    assert "text" not in bundle["summary"]
+    assert bundle["summary_sections"]["summary"] == (
+        "retrieval memory loops for agents."
+    )
     assert (
         bundle["summary_sections"]["problem"] == "planners forget earlier observations."
     )

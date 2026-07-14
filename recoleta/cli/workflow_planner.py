@@ -25,6 +25,11 @@ from recoleta.cli.workflow_models import (
 )
 from recoleta.config import resolve_stage_llm_model
 from recoleta.models import ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED
+from recoleta.pass_output_selection import (
+    is_suppressed_pass_output,
+    latest_pass_output_for_statuses,
+    suppression_projection_incomplete,
+)
 from recoleta.trends import day_period_bounds, month_period_bounds, week_period_bounds
 from recoleta.workflow_freshness import (
     analyze_budget_config_fingerprint_candidates,
@@ -332,9 +337,7 @@ def _is_lower_level_granularity(
     if granularity is None or target_granularity is None:
         return False
     granularity_rank = GRANULARITY_RANK.get(str(granularity or "").strip().lower())
-    target_rank = GRANULARITY_RANK.get(
-        str(target_granularity or "").strip().lower()
-    )
+    target_rank = GRANULARITY_RANK.get(str(target_granularity or "").strip().lower())
     if granularity_rank is None or target_rank is None:
         return False
     return granularity_rank < target_rank
@@ -375,7 +378,10 @@ def _inspect_lower_level_task_sets(
 def _lower_level_granularities_for_plan(plan: WorkflowPlan) -> list[str]:
     granularities: set[str] = set()
     for invocation in plan.invocations:
-        if invocation.step_id not in TREND_STEPS and invocation.step_id not in IDEA_STEPS:
+        if (
+            invocation.step_id not in TREND_STEPS
+            and invocation.step_id not in IDEA_STEPS
+        ):
             continue
         context = _invocation_context(invocation=invocation, plan=plan)
         if _is_lower_level_generation_context(context=context, plan=plan):
@@ -418,7 +424,10 @@ def _lower_level_windows_for_plan(
     windows: list[tuple[datetime, datetime]] = []
     seen: set[tuple[datetime, datetime]] = set()
     for invocation in plan.invocations:
-        if invocation.step_id not in TREND_STEPS and invocation.step_id not in IDEA_STEPS:
+        if (
+            invocation.step_id not in TREND_STEPS
+            and invocation.step_id not in IDEA_STEPS
+        ):
             continue
         context = _invocation_context(invocation=invocation, plan=plan)
         if (
@@ -606,9 +615,7 @@ def _inspect_analyze(
         context=context,
         action="run",
         reason=(
-            ANALYZE_MODEL_REFRESH_REASON
-            if model_refresh_pending
-            else "candidate_items"
+            ANALYZE_MODEL_REFRESH_REASON if model_refresh_pending else "candidate_items"
         ),
         authority="item_state",
     )
@@ -676,7 +683,7 @@ def _inspect_trend_output(
     row = _latest_pass_output(
         repository=repository,
         pass_kind=TREND_SYNTHESIS_PASS_KIND,
-        statuses=[PASS_STATUS_SUCCEEDED],
+        statuses=[PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED],
         granularity=granularity,
         period_start=period_start,
         period_end=period_end,
@@ -686,6 +693,13 @@ def _inspect_trend_output(
             context=context,
             action="run",
             reason="missing_pass_output",
+            authority="pass_outputs",
+        )
+    if suppression_projection_incomplete(row):
+        return _decision(
+            context=context,
+            action="run",
+            reason="incomplete_suppression_projection",
             authority="pass_outputs",
         )
     expected = build_trend_synthesis_freshness(
@@ -701,6 +715,7 @@ def _inspect_trend_output(
         ),
         repository=repository,
     )
+    suppressed = is_suppressed_pass_output(row)
     return _classify_pass_output_completion(
         _PassOutputCompletionRequest(
             context=context,
@@ -711,6 +726,10 @@ def _inspect_trend_output(
             refresh_legacy_output=_trend_change_requires_legacy_refresh(
                 settings=settings,
                 llm_model=llm_model,
+            ),
+            projection_required=not suppressed,
+            fallback_skip_reason=(
+                "suppressed_trend" if suppressed else "fresh_pass_output"
             ),
         )
     )
@@ -729,6 +748,19 @@ def _inspect_lower_level_trend_output(
     period_end = context.period_end
     if granularity is None or period_start is None or period_end is None:
         return _pass_output_unavailable_decision(context)
+    if _window_suppression_projection_incomplete(
+        repository=repository,
+        pass_kind=TREND_SYNTHESIS_PASS_KIND,
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+    ):
+        return _decision(
+            context=context,
+            action="run",
+            reason="incomplete_suppression_projection",
+            authority="pass_outputs",
+        )
     if task_set_state is None:
         return _pass_output_unavailable_decision(context)
     if task_set_state.untouched:
@@ -778,7 +810,7 @@ def _inspect_ideas_output(
     upstream = _latest_pass_output(
         repository=repository,
         pass_kind=TREND_SYNTHESIS_PASS_KIND,
-        statuses=[PASS_STATUS_SUCCEEDED],
+        statuses=[PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED],
         granularity=granularity,
         period_start=period_start,
         period_end=period_end,
@@ -799,6 +831,12 @@ def _inspect_ideas_output(
         period_start=period_start,
         period_end=period_end,
     )
+    if is_suppressed_pass_output(upstream):
+        return _suppressed_upstream_ideas_decision(
+            context=context,
+            row=row,
+            upstream_id=upstream_id,
+        )
     if row is None:
         return _decision(
             context=context,
@@ -813,6 +851,13 @@ def _inspect_ideas_output(
             reason="stale_upstream_pass_output",
             authority="pass_outputs",
         )
+    if suppression_projection_incomplete(row):
+        return _decision(
+            context=context,
+            action="run",
+            reason="incomplete_suppression_projection",
+            authority="pass_outputs",
+        )
     expected = build_trend_ideas_freshness(
         settings=settings,
         granularity=granularity,
@@ -821,7 +866,9 @@ def _inspect_ideas_output(
         upstream_pass_output_id=upstream_id,
         llm_model=llm_model,
     )
-    projection_required = str(getattr(row, "status", "") or "") != PASS_STATUS_SUPPRESSED
+    projection_required = (
+        str(getattr(row, "status", "") or "") != PASS_STATUS_SUPPRESSED
+    )
     return _classify_pass_output_completion(
         _PassOutputCompletionRequest(
             context=context,
@@ -841,6 +888,31 @@ def _inspect_ideas_output(
                 else "fresh_pass_output"
             ),
         )
+    )
+
+
+def _suppressed_upstream_ideas_decision(
+    *,
+    context: _DecisionContext,
+    row: Any | None,
+    upstream_id: int,
+) -> WorkflowPlanDecision:
+    suppression_is_current = bool(
+        is_suppressed_pass_output(row)
+        and _upstream_pass_output_id(row) == upstream_id
+    )
+    if not suppression_is_current:
+        action, reason = "run", "propagate_suppressed_upstream_trend"
+    elif suppression_projection_incomplete(row):
+        action, reason = "run", "incomplete_suppression_projection"
+    else:
+        action, reason = "skip", "suppressed_upstream_trend"
+    return _decision(
+        context=context,
+        action=action,
+        reason=reason,
+        authority="pass_outputs",
+        estimated_llm_calls=0,
     )
 
 
@@ -864,6 +936,39 @@ def _inspect_lower_level_ideas_output(
             context=context,
             action="run",
             reason=task_set_state.reason,
+            authority="pass_outputs",
+            metadata=_lower_level_task_set_metadata(task_set_state),
+        )
+    upstream_suppressed, suppression_is_current = (
+        _lower_level_ideas_suppression_state(
+            context=context,
+            repository=repository,
+        )
+    )
+    if upstream_suppressed:
+        return _decision(
+            context=context,
+            action="skip" if suppression_is_current else "run",
+            reason=(
+                "suppressed_upstream_trend"
+                if suppression_is_current
+                else "propagate_suppressed_upstream_trend"
+            ),
+            authority="pass_outputs",
+            estimated_llm_calls=0,
+            metadata=_lower_level_task_set_metadata(task_set_state),
+        )
+    if _window_suppression_projection_incomplete(
+        repository=repository,
+        pass_kind=TREND_IDEAS_PASS_KIND,
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+    ):
+        return _decision(
+            context=context,
+            action="run",
+            reason="incomplete_suppression_projection",
             authority="pass_outputs",
             metadata=_lower_level_task_set_metadata(task_set_state),
         )
@@ -917,7 +1022,7 @@ def _lower_level_ideas_upstream_is_stale(
     upstream = _latest_pass_output(
         repository=repository,
         pass_kind=TREND_SYNTHESIS_PASS_KIND,
-        statuses=[PASS_STATUS_SUCCEEDED],
+        statuses=[PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED],
         **query,
     )
     row = _latest_pass_output(
@@ -927,6 +1032,58 @@ def _lower_level_ideas_upstream_is_stale(
         **query,
     )
     return _pass_output_upstream_is_stale(row=row, upstream=upstream)
+
+
+def _lower_level_ideas_suppression_state(
+    *,
+    context: _DecisionContext,
+    repository: Any,
+) -> tuple[bool, bool]:
+    if not _decision_context_has_period(context):
+        return False, False
+    query = {
+        "granularity": cast(str, context.granularity),
+        "period_start": cast(datetime, context.period_start),
+        "period_end": cast(datetime, context.period_end),
+    }
+    upstream = _latest_pass_output(
+        repository=repository,
+        pass_kind=TREND_SYNTHESIS_PASS_KIND,
+        statuses=[PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED],
+        **query,
+    )
+    if not is_suppressed_pass_output(upstream):
+        return False, False
+    row = _latest_pass_output(
+        repository=repository,
+        pass_kind=TREND_IDEAS_PASS_KIND,
+        statuses=[PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED],
+        **query,
+    )
+    return True, bool(
+        is_suppressed_pass_output(row)
+        and _upstream_pass_output_id(row) == _row_id(upstream)
+        and not suppression_projection_incomplete(row)
+    )
+
+
+def _window_suppression_projection_incomplete(
+    *,
+    repository: Any,
+    pass_kind: str,
+    granularity: str,
+    period_start: datetime,
+    period_end: datetime,
+) -> bool:
+    row = _latest_pass_output(
+        repository=repository,
+        pass_kind=pass_kind,
+        statuses=[PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED],
+        granularity=granularity,
+        period_start=period_start,
+        period_end=period_end,
+    )
+    return suppression_projection_incomplete(row)
 
 
 def _lower_level_model_is_stale(
@@ -1008,9 +1165,7 @@ def _stage_for_pass_kind(pass_kind: str) -> str:
     return "trends" if pass_kind == TREND_SYNTHESIS_PASS_KIND else "ideas"
 
 
-def _statuses_for_pass_kind(pass_kind: str) -> list[str]:
-    if pass_kind == TREND_SYNTHESIS_PASS_KIND:
-        return [PASS_STATUS_SUCCEEDED]
+def _statuses_for_pass_kind(_pass_kind: str) -> list[str]:
     return [PASS_STATUS_SUCCEEDED, PASS_STATUS_SUPPRESSED]
 
 
@@ -1335,29 +1490,17 @@ def _latest_pass_output(
     getter = getattr(repository, "get_latest_pass_output", None)
     if not callable(getter):
         return None
-    rows: list[Any] = []
-    for status in statuses:
-        try:
-            row = getter(
-                pass_kind=pass_kind,
-                status=status,
-                granularity=granularity,
-                period_start=period_start,
-                period_end=period_end,
-            )
-        except Exception:
-            return None
-        if row is not None:
-            rows.append(row)
-    if not rows:
+    try:
+        return latest_pass_output_for_statuses(
+            repository=repository,
+            pass_kind=pass_kind,
+            statuses=statuses,
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+        )
+    except Exception:
         return None
-    return max(rows, key=_pass_output_recency_key)
-
-
-def _pass_output_recency_key(row: Any) -> tuple[float, int]:
-    created_at = getattr(row, "created_at", None)
-    timestamp = created_at.timestamp() if isinstance(created_at, datetime) else 0.0
-    return (timestamp, _row_id(row) or 0)
 
 
 def _projection_contract_present(
@@ -1588,8 +1731,7 @@ def _translation_source_bucket(
 
 def _metric_suffix_token(value: str) -> str:
     cleaned = [
-        char.lower() if char.isalnum() else "_"
-        for char in str(value or "").strip()
+        char.lower() if char.isalnum() else "_" for char in str(value or "").strip()
     ]
     normalized = "".join(cleaned).strip("_")
     while "__" in normalized:
@@ -1754,8 +1896,7 @@ def _analysis_model_refresh_pending(
     ):
         return True
     return any(
-        getattr(item, "state", None)
-        in {ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED}
+        getattr(item, "state", None) in {ITEM_STATE_ANALYZED, ITEM_STATE_PUBLISHED}
         for item in items
     )
 
@@ -1771,9 +1912,7 @@ def _analyze_budget_metadata(
             "configured_limit": configured_limit,
             "receipt_run_id": str(getattr(receipt, "run_id", "") or ""),
             "receipt_selected_total": int(getattr(receipt, "selected_total", 0) or 0),
-            "receipt_requested_limit": _optional_int_attr(
-                receipt, "requested_limit"
-            ),
+            "receipt_requested_limit": _optional_int_attr(receipt, "requested_limit"),
             "receipt_processed_total": int(getattr(receipt, "processed_total", 0) or 0),
             "receipt_failed_total": int(getattr(receipt, "failed_total", 0) or 0),
         },
@@ -1803,10 +1942,10 @@ def _skip_complete_ingest_windows(
             continue
         key = (decision.period_start, decision.period_end)
         content_decisions_by_window.add(key)
-        if (
-            decision.action in {*PLANNED_RUN_ACTIONS, "blocked"}
-            and not _is_lower_level_generation_decision(decision=decision, plan=plan)
-        ):
+        if decision.action in {
+            *PLANNED_RUN_ACTIONS,
+            "blocked",
+        } and not _is_lower_level_generation_decision(decision=decision, plan=plan):
             content_runs_by_window.add(key)
 
     updated: list[WorkflowPlanDecision] = []
@@ -1923,9 +2062,7 @@ def _run_trends_when_analyze_is_planned(
                 if _is_lower_level_generation_decision(decision=decision, plan=plan)
                 else "upstream_analyze_planned"
             )
-            updated.append(
-                _reactivate_planned_decision(decision, reason)
-            )
+            updated.append(_reactivate_planned_decision(decision, reason))
             continue
         updated.append(decision)
     return updated
@@ -1997,9 +2134,7 @@ def _run_aggregate_trend_when_source_is_planned(
                 if _is_lower_level_generation_decision(decision=decision, plan=plan)
                 else "upstream_trend_planned"
             )
-            updated.append(
-                _reactivate_planned_decision(decision, reason)
-            )
+            updated.append(_reactivate_planned_decision(decision, reason))
             continue
         updated.append(decision)
     return updated
@@ -2079,8 +2214,7 @@ def _run_ideas_when_trends_are_planned(
             decision.period_end,
         )
         for decision in decisions
-        if decision.step_id in TREND_STEPS
-        and decision.action in PLANNED_RUN_ACTIONS
+        if decision.step_id in TREND_STEPS and decision.action in PLANNED_RUN_ACTIONS
     }
     model_refresh_trend_run_windows = {
         (
@@ -2116,9 +2250,7 @@ def _run_ideas_when_trends_are_planned(
                 if _is_lower_level_generation_decision(decision=decision, plan=plan)
                 else "upstream_trend_planned"
             )
-            updated.append(
-                _reactivate_planned_decision(decision, reason)
-            )
+            updated.append(_reactivate_planned_decision(decision, reason))
             continue
         updated.append(decision)
     return updated
@@ -2167,7 +2299,9 @@ def _idea_has_planned_trend(
     plan: WorkflowPlan,
 ) -> bool:
     matching_trend_step = IDEA_TO_TREND_STEP.get(decision.step_id)
-    if matching_trend_step is None or decision.action != "skip":
+    if matching_trend_step is None or (
+        decision.action != "skip" and decision.estimated_llm_calls != 0
+    ):
         return False
     window = (
         matching_trend_step,
@@ -2194,7 +2328,8 @@ def _run_translation_when_generation_is_planned(
         if (
             decision.step_id == STEP_TRANSLATE
             and decision.action == "skip"
-            and decision.reason in {"localized_outputs_fresh", "no_translation_candidates"}
+            and decision.reason
+            in {"localized_outputs_fresh", "no_translation_candidates"}
             and _translation_has_planned_generation(
                 translation_decision=decision,
                 generation_decisions=generation_runs,
@@ -2251,7 +2386,10 @@ def _generation_requires_translation(
     else:
         return False
     granularities = _translation_granularities_from_decision(translation_decision)
-    if None not in granularities and generation_decision.granularity not in granularities:
+    if (
+        None not in granularities
+        and generation_decision.granularity not in granularities
+    ):
         return False
     return _decision_periods_overlap(
         left_start=translation_decision.period_start,
@@ -2282,9 +2420,7 @@ def _translation_granularities_from_decision(
     metadata = decision.metadata if isinstance(decision.metadata, dict) else {}
     translation = metadata.get("translation") if isinstance(metadata, dict) else None
     granularities = (
-        translation.get("granularities")
-        if isinstance(translation, dict)
-        else [None]
+        translation.get("granularities") if isinstance(translation, dict) else [None]
     )
     if not isinstance(granularities, list):
         return [None]
@@ -2300,7 +2436,12 @@ def _decision_periods_overlap(
     right_start: datetime | None,
     right_end: datetime | None,
 ) -> bool:
-    if left_start is None or left_end is None or right_start is None or right_end is None:
+    if (
+        left_start is None
+        or left_end is None
+        or right_start is None
+        or right_end is None
+    ):
         return True
     return left_start < right_end and right_start < left_end
 

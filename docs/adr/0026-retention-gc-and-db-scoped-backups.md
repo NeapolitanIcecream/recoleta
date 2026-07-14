@@ -40,6 +40,8 @@ Long-running data should be treated as four classes:
    - analyses
    - deliveries
    - canonical trend documents
+   - canonical pass outputs
+   - workflow step receipts used for idempotency
 
 2. Rebuildable cache
    - document index and chunks
@@ -52,7 +54,7 @@ Long-running data should be treated as four classes:
    - PDF debug bundles
 
 4. Operational history
-   - runs
+   - unreferenced runs
    - metrics
 
 ## Cleanup policy
@@ -63,6 +65,10 @@ Default scope:
 
 - prune expired debug material
 - prune expired operational history
+
+When an expired run is still referenced by a canonical pass output, workflow
+step receipt, or unexpired artifact, retain the run row as a provenance anchor
+and prune its expired metrics. GC must not create dangling run references.
 
 Default non-scope:
 

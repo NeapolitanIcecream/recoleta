@@ -8,7 +8,7 @@ from typing import Any, Iterable, Iterator, cast
 
 import pytest
 
-import recoleta.pipeline as pipeline
+import recoleta.pipeline.enrich_stage as enrich_stage
 from recoleta.pipeline import PipelineService
 from recoleta.pipeline.enrich_stage import EnrichStageRequest, _EnrichStageRunner
 
@@ -49,7 +49,7 @@ class _FakeRepository:
         return
 
 
-class _InterruptingExecutor(pipeline.ThreadPoolExecutor):
+class _InterruptingExecutor(enrich_stage.ThreadPoolExecutor):
     """Simulate a KeyboardInterrupt that prevents executor __exit__ from waiting."""
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool | None:  # noqa: ANN401
@@ -134,10 +134,12 @@ def test_parallel_enrich_does_not_close_http_clients_while_workers_running() -> 
         PipelineService, "_ensure_item_content", _ensure_item_content, raising=True
     )
     monkeypatch.setattr(
-        pipeline, "ThreadPoolExecutor", _InterruptingExecutor, raising=True
+        enrich_stage, "ThreadPoolExecutor", _InterruptingExecutor, raising=True
     )
-    monkeypatch.setattr(pipeline, "as_completed", _as_completed_interrupt, raising=True)
-    monkeypatch.setattr(pipeline.httpx, "Client", _FakeHttpClient, raising=True)
+    monkeypatch.setattr(
+        enrich_stage, "as_completed", _as_completed_interrupt, raising=True
+    )
+    monkeypatch.setattr(enrich_stage.httpx, "Client", _FakeHttpClient, raising=True)
     try:
         dummy_triage = SimpleNamespace()
         service = PipelineService(

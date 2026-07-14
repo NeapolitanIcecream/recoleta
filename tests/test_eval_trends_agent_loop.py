@@ -241,6 +241,22 @@ def test_write_window_capture_artifacts_materializes_expected_files(
         json.loads((artifact_dir / "rubric.json").read_text(encoding="utf-8"))["status"]
         == "pending_manual_review"
     )
+    rubric = json.loads(
+        (artifact_dir / "rubric.json").read_text(encoding="utf-8")
+    )
+    assert set(rubric["scores"]) == {
+        "citation_entailment",
+        "counterevidence",
+        "cross_source_synthesis",
+        "decision_value",
+        "mechanism",
+        "readability",
+        "temporal_validity",
+        "tool_efficiency",
+    }
+    assert all(score is None for score in rubric["scores"].values())
+    assert "manual" in rubric["scoring_method"]
+    assert set(rubric["dimension_definitions"]) == set(rubric["scores"])
     prompt_payload = json.loads(
         (artifact_dir / "prompt.json").read_text(encoding="utf-8")
     )

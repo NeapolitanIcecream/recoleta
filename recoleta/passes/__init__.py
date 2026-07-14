@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from recoleta.passes.base import PassInputRef, PassOutputEnvelope, PassStatus
+from recoleta.passes.base import (
+    SUPPRESSION_PROJECTION_COMPLETE_KEY,
+    PassInputRef,
+    PassOutputEnvelope,
+    PassStatus,
+)
 from recoleta.passes.trend_synthesis import (
     TREND_SYNTHESIS_PASS_KIND,
     TREND_SYNTHESIS_SCHEMA_VERSION,
@@ -17,12 +22,14 @@ from recoleta.passes.trend_ideas import (
     build_trend_ideas_pass_output,
     build_trend_snapshot_pack_md,
     normalize_trend_ideas_payload,
+    normalize_trend_ideas_payload_with_stats,
 )
 
 __all__ = [
     "PassInputRef",
     "PassOutputEnvelope",
     "PassStatus",
+    "SUPPRESSION_PROJECTION_COMPLETE_KEY",
     "TREND_IDEAS_PASS_KIND",
     "TREND_IDEAS_SCHEMA_VERSION",
     "TREND_SYNTHESIS_PASS_KIND",
@@ -36,4 +43,5 @@ __all__ = [
     "build_trend_snapshot_pack_md",
     "build_trend_synthesis_pass_output",
     "normalize_trend_ideas_payload",
+    "normalize_trend_ideas_payload_with_stats",
 ]

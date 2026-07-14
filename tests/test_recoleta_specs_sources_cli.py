@@ -14,6 +14,11 @@ from huggingface_hub import HfApi
 from huggingface_hub.hf_api import PaperInfo
 
 from recoleta.sources import (
+    ArxivPullRequest,
+    FeedPullRequest,
+    HFDailyPapersPullRequest,
+    HNPullRequest,
+    OpenReviewPullRequest,
     fetch_arxiv_drafts,
     fetch_hn_drafts,
     fetch_hf_daily_papers_drafts,
@@ -22,6 +27,81 @@ from recoleta.sources import (
     SourcePullResult,
     SourcePullStateSnapshot,
 )
+
+
+def test_source_fetchers_preserve_legacy_keyword_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import recoleta.source_pullers as source_pullers
+
+    captured: dict[str, object] = {}
+
+    def _capture(name: str, request: object) -> list[object]:
+        captured[name] = request
+        return []
+
+    monkeypatch.setattr(
+        source_pullers,
+        "pull_hf_daily_papers",
+        lambda request: _capture("hf", request),
+    )
+    monkeypatch.setattr(
+        source_pullers,
+        "pull_arxiv_drafts",
+        lambda request, *, pool_backend=None: _capture("arxiv", request),
+    )
+    monkeypatch.setattr(
+        source_pullers,
+        "pull_openreview_drafts",
+        lambda request: _capture("openreview", request),
+    )
+    monkeypatch.setattr(
+        source_pullers,
+        "pull_rss_drafts",
+        lambda request: _capture("rss", request),
+    )
+    monkeypatch.setattr(
+        source_pullers,
+        "pull_hn_drafts",
+        lambda request: _capture("hn", request),
+    )
+
+    fetch_hf_daily_papers_drafts(max_items=3)
+    fetch_arxiv_drafts(queries=["cat:cs.AI"], max_results_per_run=4)
+    fetch_openreview_drafts(
+        venues=["ICLR.cc/2026/Conference"],
+        max_results_per_venue=5,
+    )
+    fetch_rss_drafts(
+        feed_urls=["https://example.com/feed.xml"],
+        source="rss",
+        max_items_per_feed=6,
+    )
+    fetch_hn_drafts(
+        feed_urls=["https://news.ycombinator.com/rss"],
+        max_items_per_feed=7,
+    )
+
+    assert captured == {
+        "hf": HFDailyPapersPullRequest(max_items=3),
+        "arxiv": ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=4,
+        ),
+        "openreview": OpenReviewPullRequest(
+            venues=["ICLR.cc/2026/Conference"],
+            max_results_per_venue=5,
+        ),
+        "rss": FeedPullRequest(
+            feed_urls=["https://example.com/feed.xml"],
+            source="rss",
+            max_items_per_feed=6,
+        ),
+        "hn": HNPullRequest(
+            feed_urls=["https://news.ycombinator.com/rss"],
+            max_items_per_feed=7,
+        ),
+    }
 
 
 def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed(
@@ -47,7 +127,11 @@ def test_fetch_rss_drafts_fetches_via_httpx_and_parses_feed(
         headers={"Content-Type": "application/rss+xml; charset=utf-8"},
     )
     drafts = fetch_rss_drafts(
-        feed_urls=["https://example.com/feed.xml"], source="rss", max_items_per_feed=10
+        request=FeedPullRequest(
+            feed_urls=["https://example.com/feed.xml"],
+            source="rss",
+            max_items_per_feed=10,
+        )
     )
     assert len(drafts) == 1
     assert drafts[0].canonical_url == "https://example.com/hello"
@@ -86,7 +170,11 @@ def test_fetch_rss_drafts_discovers_feed_from_site_url(
     )
 
     drafts = fetch_rss_drafts(
-        feed_urls=["https://jack.example/"], source="rss", max_items_per_feed=1
+        request=FeedPullRequest(
+            feed_urls=["https://jack.example/"],
+            source="rss",
+            max_items_per_feed=1,
+        )
     )
 
     assert len(drafts) == 1
@@ -145,7 +233,11 @@ def test_fetch_rss_drafts_prefers_primary_feed_over_comments_feed(
     )
 
     drafts = fetch_rss_drafts(
-        feed_urls=["https://jack.example/"], source="rss", max_items_per_feed=1
+        request=FeedPullRequest(
+            feed_urls=["https://jack.example/"],
+            source="rss",
+            max_items_per_feed=1,
+        )
     )
 
     assert len(drafts) == 1
@@ -189,11 +281,13 @@ def test_fetch_rss_drafts_filters_to_requested_event_window_before_limit(
     )
 
     drafts = fetch_rss_drafts(
-        feed_urls=["https://feeds.example/windowed.xml"],
-        source="rss",
-        max_items_per_feed=1,
-        period_start=datetime(2025, 1, 20, tzinfo=UTC),
-        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        request=FeedPullRequest(
+            feed_urls=["https://feeds.example/windowed.xml"],
+            source="rss",
+            max_items_per_feed=1,
+            period_start=datetime(2025, 1, 20, tzinfo=UTC),
+            period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        )
     )
 
     assert len(drafts) == 1
@@ -216,18 +310,20 @@ def test_fetch_rss_drafts_uses_conditional_headers_from_pull_state(
     respx_mock.get("https://example.com/feed.xml").mock(side_effect=capture_request)
 
     drafts = fetch_rss_drafts(
-        feed_urls=["https://example.com/feed.xml"],
-        source="rss",
-        max_items_per_feed=10,
-        pull_state_lookup=lambda scope_kind, scope_key: (
-            SourcePullStateSnapshot(
-                scope_kind=scope_kind,
-                scope_key=scope_key,
-                etag='"feed-etag"',
-                last_modified="Wed, 22 Jan 2025 00:00:00 GMT",
-            )
-            if scope_kind == "feed" and scope_key == "https://example.com/feed.xml"
-            else None
+        request=FeedPullRequest(
+            feed_urls=["https://example.com/feed.xml"],
+            source="rss",
+            max_items_per_feed=10,
+            pull_state_lookup=lambda scope_kind, scope_key: (
+                SourcePullStateSnapshot(
+                    scope_kind=scope_kind,
+                    scope_key=scope_key,
+                    etag='"feed-etag"',
+                    last_modified="Wed, 22 Jan 2025 00:00:00 GMT",
+                )
+                if scope_kind == "feed" and scope_key == "https://example.com/feed.xml"
+                else None
+            ),
         ),
     )
 
@@ -270,19 +366,21 @@ def test_fetch_rss_drafts_counts_watermark_filtered_entries(
     result = cast(
         SourcePullResult,
         fetch_rss_drafts(
-            feed_urls=["https://feeds.example/incremental.xml"],
-            source="rss",
-            max_items_per_feed=10,
-            include_stats=True,
-            pull_state_lookup=lambda scope_kind, scope_key: (
-                SourcePullStateSnapshot(
-                    scope_kind=scope_kind,
-                    scope_key=scope_key,
-                    watermark_published_at=watermark,
-                )
-                if scope_kind == "feed"
-                and scope_key == "https://feeds.example/incremental.xml"
-                else None
+            request=FeedPullRequest(
+                feed_urls=["https://feeds.example/incremental.xml"],
+                source="rss",
+                max_items_per_feed=10,
+                include_stats=True,
+                pull_state_lookup=lambda scope_kind, scope_key: (
+                    SourcePullStateSnapshot(
+                        scope_kind=scope_kind,
+                        scope_key=scope_key,
+                        watermark_published_at=watermark,
+                    )
+                    if scope_kind == "feed"
+                    and scope_key == "https://feeds.example/incremental.xml"
+                    else None
+                ),
             ),
         ),
     )
@@ -323,7 +421,7 @@ def test_fetch_hf_daily_papers_drafts_uses_hf_api_and_preserves_daily_submission
 
     monkeypatch.setattr(HfApi, "list_daily_papers", fake_list_daily_papers)
 
-    drafts = fetch_hf_daily_papers_drafts(max_items=1)
+    drafts = fetch_hf_daily_papers_drafts(request=HFDailyPapersPullRequest(max_items=1))
 
     assert calls == [{"date": None, "limit": 2}]
     assert len(drafts) == 1
@@ -375,9 +473,11 @@ def test_fetch_hf_daily_papers_drafts_fetches_each_day_in_requested_window(
     monkeypatch.setattr(HfApi, "list_daily_papers", fake_list_daily_papers)
 
     drafts = fetch_hf_daily_papers_drafts(
-        max_items=10,
-        period_start=datetime(2025, 1, 20, tzinfo=UTC),
-        period_end=datetime(2025, 1, 22, tzinfo=UTC),
+        request=HFDailyPapersPullRequest(
+            max_items=10,
+            period_start=datetime(2025, 1, 20, tzinfo=UTC),
+            period_end=datetime(2025, 1, 22, tzinfo=UTC),
+        )
     )
 
     assert calls == ["2025-01-20", "2025-01-21"]
@@ -428,16 +528,18 @@ def test_fetch_hf_daily_papers_drafts_keeps_watermark_when_limit_hides_backlog(
     result = cast(
         SourcePullResult,
         fetch_hf_daily_papers_drafts(
-            max_items=1,
-            include_stats=True,
-            pull_state_lookup=lambda scope_kind, scope_key: (
-                SourcePullStateSnapshot(
-                    scope_kind=scope_kind,
-                    scope_key=scope_key,
-                    watermark_published_at=watermark,
-                )
-                if scope_kind == "global" and scope_key == "daily"
-                else None
+            request=HFDailyPapersPullRequest(
+                max_items=1,
+                include_stats=True,
+                pull_state_lookup=lambda scope_kind, scope_key: (
+                    SourcePullStateSnapshot(
+                        scope_kind=scope_kind,
+                        scope_key=scope_key,
+                        watermark_published_at=watermark,
+                    )
+                    if scope_kind == "global" and scope_key == "daily"
+                    else None
+                ),
             ),
         ),
     )
@@ -475,10 +577,12 @@ def test_fetch_arxiv_drafts_adds_submitted_date_range_when_window_requested(
     monkeypatch.setattr(source_module.arxiv, "Client", FakeClient)
 
     fetch_arxiv_drafts(
-        queries=["cat:cs.AI"],
-        max_results_per_run=5,
-        period_start=datetime(2025, 1, 20, tzinfo=UTC),
-        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=5,
+            period_start=datetime(2025, 1, 20, tzinfo=UTC),
+            period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        )
     )
 
     assert searches == [
@@ -529,10 +633,12 @@ def test_fetch_openreview_drafts_uses_window_filters_and_excludes_future_notes(
     monkeypatch.setattr(source_module.openreview, "Client", FakeClient)
 
     drafts = fetch_openreview_drafts(
-        venues=["ICLR.cc/2026/Conference"],
-        max_results_per_venue=5,
-        period_start=datetime(2025, 1, 20, tzinfo=UTC),
-        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        request=OpenReviewPullRequest(
+            venues=["ICLR.cc/2026/Conference"],
+            max_results_per_venue=5,
+            period_start=datetime(2025, 1, 20, tzinfo=UTC),
+            period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        )
     )
 
     assert calls[0]["mintcdate"] == int(
@@ -584,10 +690,12 @@ def test_fetch_openreview_drafts_accepts_mapping_wrapped_note_content(
     monkeypatch.setattr(source_module.openreview, "Client", FakeClient)
 
     drafts = fetch_openreview_drafts(
-        venues=["ICLR.cc/2026/Conference"],
-        max_results_per_venue=5,
-        period_start=datetime(2025, 1, 20, tzinfo=UTC),
-        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        request=OpenReviewPullRequest(
+            venues=["ICLR.cc/2026/Conference"],
+            max_results_per_venue=5,
+            period_start=datetime(2025, 1, 20, tzinfo=UTC),
+            period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        )
     )
 
     assert len(drafts) == 1
@@ -624,10 +732,12 @@ def test_fetch_hn_drafts_uses_algolia_search_for_requested_window(
     )
 
     drafts = fetch_hn_drafts(
-        feed_urls=["https://news.ycombinator.com/rss"],
-        max_items_per_feed=5,
-        period_start=datetime(2025, 1, 20, tzinfo=UTC),
-        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        request=HNPullRequest(
+            feed_urls=["https://news.ycombinator.com/rss"],
+            max_items_per_feed=5,
+            period_start=datetime(2025, 1, 20, tzinfo=UTC),
+            period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        )
     )
 
     assert len(drafts) == 1
@@ -689,10 +799,12 @@ def test_fetch_hn_drafts_keeps_scanning_after_zero_keep_page(
     )
 
     drafts = fetch_hn_drafts(
-        feed_urls=["https://news.ycombinator.com/rss"],
-        max_items_per_feed=5,
-        period_start=datetime(2025, 1, 20, tzinfo=UTC),
-        period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        request=HNPullRequest(
+            feed_urls=["https://news.ycombinator.com/rss"],
+            max_items_per_feed=5,
+            period_start=datetime(2025, 1, 20, tzinfo=UTC),
+            period_end=datetime(2025, 1, 21, tzinfo=UTC),
+        )
     )
 
     assert observed_pages == ["0", "1"]
@@ -726,16 +838,18 @@ def test_fetch_arxiv_drafts_uses_saved_watermark_when_no_window_requested(
     monkeypatch.setattr(source_module.arxiv, "Client", FakeClient)
 
     fetch_arxiv_drafts(
-        queries=["cat:cs.AI"],
-        max_results_per_run=5,
-        pull_state_lookup=lambda scope_kind, scope_key: (
-            SourcePullStateSnapshot(
-                scope_kind=scope_kind,
-                scope_key=scope_key,
-                watermark_published_at=datetime(2025, 1, 20, 12, 34, tzinfo=UTC),
-            )
-            if scope_kind == "query" and scope_key == "cat:cs.AI"
-            else None
+        request=ArxivPullRequest(
+            queries=["cat:cs.AI"],
+            max_results_per_run=5,
+            pull_state_lookup=lambda scope_kind, scope_key: (
+                SourcePullStateSnapshot(
+                    scope_kind=scope_kind,
+                    scope_key=scope_key,
+                    watermark_published_at=datetime(2025, 1, 20, 12, 34, tzinfo=UTC),
+                )
+                if scope_kind == "query" and scope_key == "cat:cs.AI"
+                else None
+            ),
         ),
     )
 

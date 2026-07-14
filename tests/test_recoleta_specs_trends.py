@@ -278,9 +278,11 @@ def test_trends_index_items_clears_stale_content_chunks_when_content_shrinks(
     )
     _ = repository.save_analysis(item_id=item_id, result=analysis)
 
-    # First run: content splits into 2 chunks (200 + remainder).
+    # First run: content splits into 2 chunks.
     _ = repository.upsert_content(
-        item_id=item_id, content_type="pdf_text", text="A" * 350
+        item_id=item_id,
+        content_type="pdf_text",
+        text="obsoletekeyword " * 25,
     )
     period_start = datetime(2026, 1, 1, tzinfo=UTC)
     period_end = datetime(2026, 1, 2, tzinfo=UTC)
@@ -314,11 +316,30 @@ def test_trends_index_items_clears_stale_content_chunks_when_content_shrinks(
                 )
             )
         )
-        assert any(c.chunk_index == 2 for c in chunks)
+        stale_chunk = next(c for c in chunks if c.chunk_index == 2)
+        assert stale_chunk.id is not None
+        stale_chunk_id = int(stale_chunk.id)
+
+    _ = repository.upsert_chunk_embedding(
+        chunk_id=stale_chunk_id,
+        model="test/embedding-model",
+        dimensions=3,
+        text_hash=str(stale_chunk.text_hash),
+        vector=[0.1, 0.2, 0.3],
+    )
+    assert repository.search_chunks_text(
+        query="obsoletekeyword",
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
 
     # Second run: content shrinks to 1 chunk; chunk_index=2 should be removed.
     _ = repository.upsert_content(
-        item_id=item_id, content_type="pdf_text", text="B" * 150
+        item_id=item_id,
+        content_type="pdf_text",
+        text="replacementkeyword " * 8,
     )
     _ = index_items_as_documents(
         repository=repository,
@@ -339,6 +360,31 @@ def test_trends_index_items_clears_stale_content_chunks_when_content_shrinks(
             )
         ).first()
         assert stale is None
+
+    assert (
+        repository.get_chunk_embedding(
+            chunk_id=stale_chunk_id,
+            model="test/embedding-model",
+        )
+        is None
+    )
+    assert (
+        repository.search_chunks_text(
+            query="obsoletekeyword",
+            doc_type="item",
+            period_start=period_start,
+            period_end=period_end,
+            limit=10,
+        )
+        == []
+    )
+    assert repository.search_chunks_text(
+        query="replacementkeyword",
+        doc_type="item",
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
 
 
 def test_index_items_as_documents_excludes_low_relevance_items(
@@ -698,9 +744,8 @@ def test_index_items_as_documents_batches_writes_to_reduce_sql_commits(
 
     assert stats["docs_upserted"] == 4
     assert stats["content_chunks_upserted"] > 0
-    assert sql_diag.queries_total > 0
-    assert sql_diag.commits_total > 0
-    assert sql_diag.commits_total <= 4
+    assert 0 < sql_diag.queries_total <= 12
+    assert sql_diag.commits_total == 1
 
 
 def test_index_items_as_documents_passes_chunk_limit_to_segmenter(

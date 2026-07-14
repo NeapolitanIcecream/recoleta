@@ -426,18 +426,57 @@ def _build_rubric_stub(
     run_id: str | None,
     doc_id: int | None,
 ) -> dict[str, Any]:
+    dimension_definitions = {
+        "temporal_validity": (
+            "Claims about change, acceleration, emergence, decline, or continuity are "
+            "supported by evidence from the compared periods; a current-period theme is "
+            "not mislabeled as a trend."
+        ),
+        "cross_source_synthesis": (
+            "The report combines independent documents into a conclusion that is more "
+            "useful than a sequence of single-paper summaries."
+        ),
+        "mechanism": (
+            "The report explains what causes or enables the observed pattern, while "
+            "separating source claims from the author's inference."
+        ),
+        "counterevidence": (
+            "Material limitations, contradictory results, boundary conditions, and "
+            "plausible alternative explanations are surfaced where relevant."
+        ),
+        "citation_entailment": (
+            "Each cited source was consulted and directly supports the nearby factual "
+            "claim; citations are not attached after generation merely by lexical fit."
+        ),
+        "decision_value": (
+            "A reader can use the output to change a research, product, evaluation, or "
+            "investment decision, rather than only learn that papers exist."
+        ),
+        "readability": (
+            "The report is concise, specific, non-repetitive, and clear about confidence "
+            "without relying on worksheet-like labels or generic filler."
+        ),
+        "tool_efficiency": (
+            "Searches and document reads materially improve coverage or verification, "
+            "with no obvious redundant calls or avoidable prompt/context waste."
+        ),
+    }
     return {
         "status": "pending_manual_review",
         "run_id": run_id,
         "doc_id": doc_id,
         "window_id": str(window_manifest.get("id", "") or ""),
-        "scores": {
-            "grounding": None,
-            "distinctness": None,
-            "representative_quality": None,
-            "readability": None,
-            "tool_efficiency": None,
+        "scoring_method": (
+            "manual review only; assign scores after inspecting the report, payload, "
+            "cited documents, history windows, and tool trace"
+        ),
+        "score_scale": {
+            "minimum": 1,
+            "maximum": 5,
+            "unset": None,
         },
+        "dimension_definitions": dimension_definitions,
+        "scores": {dimension: None for dimension in dimension_definitions},
         "notes": [],
     }
 

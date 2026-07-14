@@ -107,9 +107,7 @@ def _seed_materialize_fixture(
         period_start=datetime(2026, 3, 2, tzinfo=UTC),
         period_end=datetime(2026, 3, 3, tzinfo=UTC),
         overview_md=(
-            "## Overview\n\n"
-            "Start with "
-            "[Robometer](https://example.com/robometer).\n"
+            "## Overview\n\nStart with [Robometer](https://example.com/robometer).\n"
         ),
         clusters=[
             {
@@ -680,6 +678,7 @@ def test_materialize_outputs_rebuilds_ideas_notes_from_pass_outputs_and_exports_
         f"[Robometer: Scaling General-Purpose Robotic Reward Models](../Inbox/{item_note_path.name})"
         in idea_markdown
     )
+
     assert "Kind:" not in idea_markdown
     assert "Time horizon:" not in idea_markdown
     assert "User/job:" not in idea_markdown
@@ -794,8 +793,14 @@ def test_materialize_outputs_deduplicates_idea_evidence_by_document(
     idea_markdown = idea_note_path.read_text(encoding="utf-8")
     item_link = f"[Robometer: Scaling General-Purpose Robotic Reward Models](../Inbox/{item_note_path.name})"
     assert idea_markdown.count(item_link) == 2
-    assert f"- {item_link}: The summary chunk anchors the paper-level evidence." in idea_markdown
-    assert f"- {item_link}: The body chunk shows the verifier loop details." in idea_markdown
+    assert (
+        f"- {item_link}: The summary chunk anchors the paper-level evidence."
+        in idea_markdown
+    )
+    assert (
+        f"- {item_link}: The body chunk shows the verifier loop details."
+        in idea_markdown
+    )
     assert "The summary chunk anchors the paper-level evidence." in idea_markdown
     assert "The body chunk shows the verifier loop details." in idea_markdown
     assert "(chunk 1)" not in idea_markdown
@@ -928,8 +933,29 @@ def test_materialize_outputs_repairs_obsidian_notes_for_trends_and_ideas(
         in idea_markdown
     )
 
+    repository.create_pass_output(
+        run_id="run-materialize-new-suppressed-trend",
+        pass_kind="trend_synthesis",
+        status="suppressed",
+        granularity="day",
+        period_start=period_start,
+        period_end=period_end,
+        payload=trend_payload.model_dump(mode="json"),
+    )
+    materialize_outputs(
+        repository=repository,
+        target_spec=MaterializeTargetSpec(
+            output_dir=output_dir,
+            obsidian_vault_path=vault_path,
+            obsidian_base_folder="Recoleta",
+        ),
+    )
 
-def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppressed(
+    assert not obsidian_trend_note.exists()
+    assert not obsidian_idea_note.exists()
+
+
+def test_materialize_outputs_uses_latest_suppressed_ideas_as_absence_tombstone(
     tmp_path: Path,
 ) -> None:
     repository = Repository(db_path=tmp_path / "recoleta.db")
@@ -1024,13 +1050,9 @@ def test_materialize_outputs_prefers_latest_ideas_pass_output_even_when_suppress
     )
 
     idea_note_path = output_dir / "Ideas" / "day--2026-03-02--ideas.md"
-    note_text = idea_note_path.read_text(encoding="utf-8")
-
     assert result.output.ideas_outputs_total == 1
-    assert "status: suppressed" in note_text
-    assert "# Latest suppressed ideas" in note_text
-    assert "No ideas were retained for this period." in note_text
-    assert "Stale idea that should disappear" not in note_text
+    assert not idea_note_path.exists()
+    assert not presentation_sidecar_path(note_path=idea_note_path).exists()
 
 
 def test_materialize_outputs_skips_empty_corpus_ideas_and_site_excludes_empty_trends(

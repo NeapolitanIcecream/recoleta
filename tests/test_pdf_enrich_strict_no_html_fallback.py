@@ -7,7 +7,6 @@ import httpx
 import pytest
 from loguru import logger
 
-import recoleta.extract as extract
 from recoleta.config import Settings
 from recoleta.pipeline import PipelineService
 from recoleta.storage import Repository
@@ -72,13 +71,16 @@ def test_pdf_enrich_is_strict_and_does_not_fallback_to_html(
 
     blank_pdf = _build_blank_pdf_bytes()
 
-    monkeypatch.setattr(extract, "extract_pdf_text", lambda *_a, **_k: None)
+    import recoleta.pipeline.enrich_stage as enrich_stage
 
-    import recoleta.pipeline as pipeline
-
-    monkeypatch.setattr(pipeline, "fetch_url_bytes", lambda _client, _url: blank_pdf)  # noqa: ARG005
+    monkeypatch.setattr(enrich_stage, "extract_pdf_text", lambda *_a, **_k: None)
     monkeypatch.setattr(
-        pipeline,
+        enrich_stage,
+        "fetch_url_bytes",
+        lambda _client, _url: blank_pdf,  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        enrich_stage,
         "fetch_url_html",
         lambda *_a, **_k: (_ for _ in ()).throw(  # noqa: ARG005
             AssertionError("HTML fallback must not be used for pdf_text enrich")

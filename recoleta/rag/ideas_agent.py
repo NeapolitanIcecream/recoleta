@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
 from loguru import logger
 from pydantic import BaseModel, field_validator
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, ModelRetry, RunContext
 
 from recoleta.llm_costs import (
     estimate_cost_usd_from_tokens as estimate_llm_cost_usd_from_tokens,
@@ -21,6 +23,42 @@ from recoleta.rag.agent_runtime import _extract_raw_tool_trace
 from recoleta.rag.pydantic_ai_model import build_pydantic_ai_model
 from recoleta.rag.vector_store import LanceVectorStore
 from recoleta.trends import TrendPayload
+
+_BUNDLE_TITLE_MAX_CHARS = 96
+_BUNDLE_TITLE_DATE_RE = re.compile(
+    r"(?<!\d)(?:20\d{2}(?:[-/.]\d{1,2}){0,2}|\d{4}-W\d{2})(?!\d)",
+    re.IGNORECASE,
+)
+_BUNDLE_TITLE_FORBIDDEN_RE = re.compile(
+    r"\b(?:idea|ideas|notes?|evidence[- ]grounded|trend snapshot|opportunit(?:y|ies)|why now)\b"
+    r"|(?:创意|想法|趋势快照|为什么现在)",
+    re.IGNORECASE,
+)
+_BUNDLE_TITLE_PLACEHOLDER_RE = re.compile(
+    r"\b(?:unnormalized|placeholder|untitled|should be replaced|todo|tbd)\b",
+    re.IGNORECASE,
+)
+_IDEA_WORD_RE = re.compile(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*")
+_IDEA_COMPACT_SCRIPT_RE = re.compile(
+    "["
+    "\u0e00-\u0eff"  # Thai and Lao
+    "\u1000-\u109f"  # Myanmar
+    "\u1100-\u11ff"  # Hangul Jamo
+    "\u1780-\u17ff"  # Khmer
+    "\u3040-\u30ff"  # Hiragana and Katakana
+    "\u3130-\u318f"  # Hangul compatibility Jamo
+    "\u3400-\u4dbf"  # CJK extension A
+    "\u4e00-\u9fff"  # CJK unified ideographs
+    "\uac00-\ud7af"  # Hangul syllables
+    "\uf900-\ufaff"  # CJK compatibility ideographs
+    "\uff66-\uff9f"  # Halfwidth Katakana
+    "\U00020000-\U000323af"  # CJK extensions B-H
+    "]"
+)
+_IDEA_MAX_SPACED_WORDS = 280
+_IDEA_MAX_DENSE_PROSE_CHARS = 550
+_IDEA_MAX_NON_WHITESPACE_CHARS = 3_200
+_IDEA_MAX_UNBROKEN_CHARS = 1_200
 
 
 class _TrendIdeasBundleTitle(BaseModel):
@@ -59,6 +97,36 @@ def _normalize_bundle_title_value(value: str) -> str:
     return normalized
 
 
+def bundle_title_rewrite_reason(
+    value: str, *, source_title: str | None = None
+) -> str | None:
+    """Return a bounded reason when a generated bundle title needs repair."""
+
+    raw = str(value or "")
+    normalized = _normalize_bundle_title_value(raw)
+    if not normalized:
+        return "empty"
+    if "\n" in raw or "\r" in raw:
+        return "multiline"
+    if len(normalized) > _BUNDLE_TITLE_MAX_CHARS:
+        return "too_long"
+    if any(token in normalized for token in (":", "：", "?", "？")):
+        return "punctuation"
+    if _BUNDLE_TITLE_DATE_RE.search(normalized):
+        return "date"
+    if _BUNDLE_TITLE_FORBIDDEN_RE.search(normalized):
+        return "generic_label"
+    if _BUNDLE_TITLE_PLACEHOLDER_RE.search(normalized):
+        return "placeholder"
+    normalized_source_title = _normalize_bundle_title_value(source_title or "")
+    if (
+        normalized_source_title
+        and normalized.casefold() == normalized_source_title.casefold()
+    ):
+        return "copied_source_title"
+    return None
+
+
 @dataclass(slots=True)
 class IdeasAgentDeps:
     repository: TrendRepositoryPort
@@ -92,6 +160,7 @@ class TrendIdeasGenerationRequest:
     period_end: datetime
     trend_payload: TrendPayload
     trend_snapshot_pack_md: str
+    prior_ideas_pack_md: str | None = None
     output_language: str | None = None
     embedding_failure_mode: str = "continue"
     embedding_max_errors: int = 0
@@ -126,6 +195,9 @@ def _coerce_trend_ideas_generation_request(
         period_end=values["period_end"],
         trend_payload=values["trend_payload"],
         trend_snapshot_pack_md=str(values["trend_snapshot_pack_md"]),
+        prior_ideas_pack_md=(
+            str(values.get("prior_ideas_pack_md") or "").strip() or None
+        ),
         rag_sources=values.get("rag_sources"),
         include_debug=bool(values.get("include_debug", False)),
         metric_namespace=str(
@@ -163,22 +235,25 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " Return a TrendIdeasPayload."
     )
     base += (
-        " Look for concrete build, workflow, evaluation, or adoption changes that"
-        " the local evidence now makes credible: a buildable tool, a workflow"
-        " change, a missing support layer, or a newly practical applied direction."
+        " An idea is a non-obvious, evidence-backed hypothesis derived from a"
+        " combination, tension, or unresolved gap between at least two independent"
+        " item documents. Direct adoption or productization of one paper is not enough."
     )
     base += (
         " Avoid generic advice such as 'build an AI platform' or 'make an assistant'."
-        " Each idea must identify a concrete build, test, or adoption change for a"
-        " specific user or workflow during analysis."
+        " Each idea must name the specific user and job or workflow, explain the"
+        " cross-source novelty basis, and propose a concrete build or evaluation change."
     )
     base += (
         " Emit 0 to 3 ideas total, ordered by confidence and practical upside."
         " Use ordering to express priority; do not expose priority as tier labels."
     )
     base += (
-        " Every emitted idea must include at least one evidence_refs entry with"
-        " concrete doc_id and chunk_index values grounded in the local corpus."
+        " Every emitted idea must cite at least two distinct item doc_id values that"
+        " you actually inspected with get_doc_bundle or read_chunk. A get_doc call"
+        " returns metadata only and does not count as reading evidence."
+        " Multiple chunks from one document still count as one source. Search results"
+        " and trend documents may guide discovery but do not count as evidence."
     )
     base += (
         " If the evidence is too weak, return an empty ideas list and explain that"
@@ -210,9 +285,16 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
     )
     base += (
         " Use internal reasoning to judge whether a concrete case now has enough"
-        " evidence, who would care first, what cheap check would validate it, and what"
-        " would make it too weak to publish."
+        " evidence, who would care first, which source facts support it, what synthesis"
+        " or inference is new, and what would make it too weak to publish."
         " Do not expose those axes as separate reader-facing fields."
+    )
+    base += (
+        " In ordinary prose, separate source facts from your synthesis or inference."
+        " End with a cheap, falsifiable first test and an explicit kill threshold: a"
+        " measurable outcome that would cause the reader to stop or revise the idea."
+        " Do not present an editorial cutoff as a result supported by the sources;"
+        " label it as a pilot decision threshold when it is a proposed operating choice."
     )
     base += (
         " Do not use internal rubric labels in public prose. Convert those checks into"
@@ -222,6 +304,14 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " Each idea must be a finished short piece."
         " Use ideas[].title for a literal descriptive label, ideas[].content_md for the"
         " prose body, and ideas[].evidence_refs for grounded supporting references."
+    )
+    base += (
+        " Keep each idea compact: normally three short paragraphs and no more than"
+        " about 220 English words or 450 non-whitespace characters for compact-script"
+        " prose such as Chinese, Japanese, or Korean. State the user and job once,"
+        " explain the cross-source inference once, then combine the concrete build,"
+        " first test, and kill threshold. Do not repeat source summaries or restate"
+        " the same rationale under multiple labels."
     )
     base += (
         " summary_md should summarize the set directly."
@@ -236,8 +326,15 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " its title or summary phrasing. Write from the underlying evidence."
     )
     base += (
-        " Start with search_hybrid for broad discovery, then use get_doc_bundle"
-        " or read_chunk to confirm specific evidence before finalizing ideas."
+        " When prior_ideas_pack_md is present, use it only to reject ideas that are"
+        " semantically the same as prior output. Never cite that pack as evidence."
+    )
+    base += (
+        " Start from the item doc_id values already listed in the supplied evidence"
+        " pack and inspect a diverse subset of normally 6 to 8 documents with"
+        " get_doc_bundle. Do not search again for material already listed there."
+        " Use search_hybrid only when the pack lacks enough independent evidence or"
+        " one complementary source is needed to test a concrete synthesis."
     )
     base += (
         " Do not let task language leak into public prose."
@@ -268,20 +365,20 @@ def build_trend_ideas_prompt_payload(
     granularity: str,
     period_start: datetime,
     period_end: datetime,
-    trend_payload: TrendPayload,
     trend_snapshot_pack_md: str,
+    prior_ideas_pack_md: str | None = None,
     rag_sources: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "task": "Draft up to three concrete short pieces from the supplied evidence pack.",
+        "task": "Propose up to three non-obvious, cross-source ideas from the supplied evidence pack.",
         "granularity": granularity,
         "period_start": period_start.isoformat(),
         "period_end": period_end.isoformat(),
-        "trend_title": str(trend_payload.title or "").strip(),
-        "trend_topics": list(trend_payload.topics or []),
         "trend_snapshot_pack_md": trend_snapshot_pack_md,
         "notes": _trend_ideas_prompt_notes(),
     }
+    if str(prior_ideas_pack_md or "").strip():
+        payload["prior_ideas_pack_md"] = str(prior_ideas_pack_md).strip()
     if rag_sources is not None:
         payload["rag_sources"] = rag_sources
     return payload
@@ -289,12 +386,15 @@ def build_trend_ideas_prompt_payload(
 
 def _trend_ideas_prompt_notes() -> list[str]:
     return [
-        "Use tools to verify and sharpen candidate ideas against the active local corpus.",
         "Prefer 0-3 ideas; omit weak ideas instead of filling the list.",
         "Use idea ordering to express priority; do not emit best-bet or alternate labels.",
         "During analysis, decide what concrete build, test, or workflow change the piece covers, who would care first, what new evidence supports it, and what cheap check would validate it.",
         "Name the concrete operational pain or adoption blocker directly instead of using generic platform language.",
-        "Use evidence_refs to point to the strongest supporting documents.",
+        "Use evidence_refs to cite at least two distinct item documents read with get_doc_bundle or read_chunk for each idea; get_doc metadata does not count, and multiple chunks from one document count once.",
+        "Treat prior_ideas_pack_md only as a deduplication exclusion list; never cite it as evidence.",
+        "Each retained idea needs a specific user and job, a cross-source novelty basis, a falsifiable first test, and an observable kill threshold.",
+        "When a kill threshold is an editorial operating choice rather than a source result, call it a pilot decision threshold.",
+        "Keep each idea to about three short paragraphs: state the user/job and cross-source inference once, then combine the build, first test, and kill threshold without repeating source summaries.",
         "Do not restate the trend summary as the final output.",
         "Do not let task labels or collection labels leak into public prose.",
         "Do not coin new umbrella terms or marketing-style labels.",
@@ -351,6 +451,69 @@ def build_trend_ideas_title_prompt_payload(
     }
 
 
+def _require_distinct_evidence_documents(
+    payload: TrendIdeasPayload,
+) -> TrendIdeasPayload:
+    invalid_ideas: list[str] = []
+    for index, idea in enumerate(payload.ideas):
+        doc_ids = {int(ref.doc_id) for ref in idea.evidence_refs if int(ref.doc_id) > 0}
+        if len(doc_ids) < 2:
+            invalid_ideas.append(f"{index + 1} ({idea.title})")
+    if invalid_ideas:
+        invalid_list = ", ".join(invalid_ideas)
+        raise ModelRetry(
+            "Every emitted idea must include evidence_refs with at least two "
+            "different positive doc_id values. Add or deduplicate the references, "
+            "remove unsupported ideas, or return ideas=[] when the evidence is "
+            f"insufficient. Invalid ideas: {invalid_list}."
+        )
+    oversized_ideas = [
+        f"{index + 1} ({idea.title})"
+        for index, idea in enumerate(payload.ideas)
+        if _idea_content_is_oversized(idea.content_md)
+    ]
+    if oversized_ideas:
+        oversized_list = ", ".join(oversized_ideas)
+        raise ModelRetry(
+            "Each idea must stay within 280 whitespace-delimited words or 550 non-whitespace "
+            "characters for compact-script prose. Every idea also has a 3,200 "
+            "non-whitespace character ceiling and a 1,200 character ceiling for "
+            "any unbroken run. Remove repeated source summaries and merge the "
+            "novelty restatement into the user, build, or test paragraphs. "
+            f"Oversized ideas: {oversized_list}."
+        )
+    return payload
+
+
+def _idea_content_is_oversized(content_md: str) -> bool:
+    normalized = str(content_md or "").strip()
+    runs = normalized.split()
+    compact = "".join(runs)
+    compact_length = len(compact)
+    english_word_count = len(_IDEA_WORD_RE.findall(normalized))
+    spaced_word_count = sum(
+        any(char.isalnum() for char in run) for run in runs
+    )
+    compact_script_count = sum(
+        bool(_IDEA_COMPACT_SCRIPT_RE.fullmatch(char))
+        or unicodedata.category(char) in {"So", "Sk"}
+        for char in compact
+    )
+    dense_prose = bool(
+        compact_script_count >= 300
+        or compact_script_count * 4 >= max(1, compact_length)
+    )
+    return (
+        max(english_word_count, spaced_word_count) > _IDEA_MAX_SPACED_WORDS
+        or compact_length > _IDEA_MAX_NON_WHITESPACE_CHARS
+        or any(len(run) > _IDEA_MAX_UNBROKEN_CHARS for run in runs)
+        or (
+            dense_prose
+            and compact_length > _IDEA_MAX_DENSE_PROSE_CHARS
+        )
+    )
+
+
 def build_trend_ideas_agent(
     *,
     llm_model: str,
@@ -366,6 +529,7 @@ def build_trend_ideas_agent(
         output_retries=4,
         defer_model_check=True,
     )
+    agent.output_validator(_require_distinct_evidence_documents)
 
     @agent.tool
     def list_docs(
@@ -546,8 +710,8 @@ def generate_trend_ideas_payload(
             granularity=resolved_request.granularity,
             period_start=resolved_request.period_start,
             period_end=resolved_request.period_end,
-            trend_payload=resolved_request.trend_payload,
             trend_snapshot_pack_md=resolved_request.trend_snapshot_pack_md,
+            prior_ideas_pack_md=resolved_request.prior_ideas_pack_md,
             rag_sources=resolved_request.rag_sources,
         ),
         ensure_ascii=False,
@@ -581,6 +745,7 @@ def generate_trend_ideas_payload(
         "trend_snapshot_pack_chars": len(
             str(resolved_request.trend_snapshot_pack_md or "")
         ),
+        "prior_ideas_pack_chars": len(str(resolved_request.prior_ideas_pack_md or "")),
         "include_debug": bool(resolved_request.include_debug),
     }
     log.info(
@@ -635,6 +800,7 @@ __all__ = [
     "build_trend_ideas_title_prompt_payload",
     "build_trend_ideas_agent",
     "build_trend_ideas_prompt_payload",
+    "bundle_title_rewrite_reason",
     "generate_trend_ideas_bundle_title",
     "generate_trend_ideas_payload",
 ]

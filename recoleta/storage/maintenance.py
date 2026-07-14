@@ -19,11 +19,13 @@ from recoleta.models import (
     ITEM_STATE_PUBLISHED,
     Item,
     Metric,
+    PassOutput,
     Run,
     RUN_STATUS_FAILED,
     RUN_STATUS_SUCCEEDED,
+    WorkflowStepReceipt,
 )
-from recoleta.storage_common import (
+from recoleta.storage.common import (
     CURRENT_SCHEMA_VERSION,
     ArtifactPruneResult,
     ChunkCachePruneResult,
@@ -251,6 +253,7 @@ class MaintenanceStoreMixin:
         *,
         older_than: datetime,
         dry_run: bool = False,
+        artifact_older_than: datetime | None = None,
     ) -> OperationalPruneResult:
         with Session(self.engine) as session:
             runs = list(
@@ -277,18 +280,70 @@ class MaintenanceStoreMixin:
                 if run_ids
                 else []
             )
+            canonical_run_ids = self._canonical_reference_run_ids(
+                session=session,
+                run_ids=run_ids,
+            )
+            artifact_run_ids = self._retained_artifact_run_ids(
+                session=session,
+                run_ids=run_ids,
+                artifact_older_than=artifact_older_than,
+            )
+            retained_run_ids = canonical_run_ids | artifact_run_ids
+            deletable_runs = [
+                run for run in runs if str(run.id) not in retained_run_ids
+            ]
 
             if not dry_run:
                 for metric in metrics:
                     session.delete(metric)
-                for run in runs:
+                for run in deletable_runs:
                     session.delete(run)
                 self._commit(session)
 
         return OperationalPruneResult(
-            run_rows=len(runs),
+            run_rows=len(deletable_runs),
             metric_rows=len(metrics),
+            retained_run_rows=len(retained_run_ids),
+            retained_canonical_run_rows=len(canonical_run_ids),
+            retained_artifact_run_rows=len(artifact_run_ids),
         )
+
+    @staticmethod
+    def _canonical_reference_run_ids(
+        *,
+        session: Session,
+        run_ids: list[str],
+    ) -> set[str]:
+        if not run_ids:
+            return set()
+        pass_output_ids = session.exec(
+            select(PassOutput.run_id).where(cast(Any, PassOutput.run_id).in_(run_ids))
+        )
+        receipt_ids = session.exec(
+            select(WorkflowStepReceipt.run_id).where(
+                cast(Any, WorkflowStepReceipt.run_id).in_(run_ids)
+            )
+        )
+        return {str(run_id) for run_id in [*pass_output_ids, *receipt_ids]}
+
+    @staticmethod
+    def _retained_artifact_run_ids(
+        *,
+        session: Session,
+        run_ids: list[str],
+        artifact_older_than: datetime | None,
+    ) -> set[str]:
+        if not run_ids:
+            return set()
+        statement = select(Artifact.run_id).where(
+            cast(Any, Artifact.run_id).in_(run_ids)
+        )
+        if artifact_older_than is not None:
+            statement = statement.where(
+                cast(Any, Artifact.created_at) >= artifact_older_than
+            )
+        return {str(run_id) for run_id in session.exec(statement)}
 
     def clear_document_chunk_cache(
         self,

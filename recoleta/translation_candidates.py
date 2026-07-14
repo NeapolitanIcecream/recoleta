@@ -14,6 +14,13 @@ from recoleta.idea_projection import (
     persist_idea_document_projection,
 )
 from recoleta.models import Analysis, Document, DocumentChunk, Item, PassOutput
+from recoleta.pass_output_selection import (
+    CANONICAL_PASS_OUTPUT_STATUSES,
+    is_suppressed_pass_output,
+    latest_canonical_pass_outputs_by_window,
+    latest_idea_pass_output_states_by_window,
+    pass_output_window_key,
+)
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.trends import TrendPayload
 
@@ -29,16 +36,6 @@ class CandidateWindowRequest:
     period_end: datetime | None = None
     all_history: bool = True
     materialize_missing_idea_projections: bool = True
-
-
-@dataclass(frozen=True, slots=True)
-class PassOutputPayloadRequest:
-    repository: Any
-    pass_kind: str
-    granularity: str | None
-    period_start: datetime | None
-    period_end: datetime | None
-    payload_model: type[BaseModel]
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,20 +138,13 @@ def load_item_candidates(
         return list(session.exec(statement))
 
 
-def latest_pass_output_payload(
-    request: PassOutputPayloadRequest,
+def _canonical_pass_output_payload(
+    *, row: Any, payload_model: type[BaseModel]
 ) -> dict[str, Any] | None:
-    row = request.repository.get_latest_pass_output(
-        pass_kind=request.pass_kind,
-        status="succeeded",
-        granularity=request.granularity,
-        period_start=request.period_start,
-        period_end=request.period_end,
-    )
-    if row is None:
+    if is_suppressed_pass_output(row):
         return None
     try:
-        return request.payload_model.model_validate(
+        return payload_model.model_validate(
             json.loads(str(getattr(row, "payload_json", "") or "{}"))
         ).model_dump(mode="json")
     except Exception:
@@ -190,7 +180,7 @@ def load_trend_candidates(
             doc_type="trend",
             request=request,
         )
-        return _document_candidates(
+        candidates = _document_candidates(
             session=session,
             repository=request.repository,
             documents=documents,
@@ -200,6 +190,8 @@ def load_trend_candidates(
                 meta_source_content_type="trend_payload_json",
             ),
         )
+    normalized_limit = _normalized_limit(request.limit)
+    return candidates if normalized_limit is None else candidates[:normalized_limit]
 
 
 def _ideas_upstream_pass_output_id(*, row: PassOutput) -> int | None:
@@ -228,10 +220,16 @@ def _latest_idea_pass_outputs(request: CandidateWindowRequest) -> list[PassOutpu
     rows = _idea_pass_output_rows(request)
     unique_rows = _unique_windowed_rows(rows)
     filtered_rows = _filtered_pass_output_rows(unique_rows, request)
-    normalized_limit = _normalized_limit(request.limit)
-    return (
-        filtered_rows if normalized_limit is None else filtered_rows[:normalized_limit]
+    states_by_window = latest_idea_pass_output_states_by_window(
+        repository=request.repository,
+        windows=(pass_output_window_key(row) for row in filtered_rows),
     )
+    return [
+        row
+        for row in filtered_rows
+        if (state := states_by_window.get(pass_output_window_key(row))) is not None
+        and state.active
+    ]
 
 
 def _ensure_idea_document_projection(
@@ -284,12 +282,11 @@ def load_idea_candidates(
             repository=request.repository,
             documents=documents,
         )
-    _extend_backfilled_idea_candidates(
+    return _ranked_idea_candidates(
         candidates=candidates,
         seen_windows=seen_windows,
         request=request,
     )
-    return candidates
 
 
 def incremental_candidates(
@@ -359,7 +356,7 @@ def _load_candidate_documents(
     return limit_documents_for_backfill(
         documents=documents,
         all_history=request.all_history,
-        limit=request.limit,
+        limit=None,
     )
 
 
@@ -377,8 +374,7 @@ def _window_filtered_documents(
             period_end=request.period_end,
         )
     ]
-    normalized_limit = _normalized_limit(request.limit)
-    return selected if normalized_limit is None else selected[:normalized_limit]
+    return selected
 
 
 def _document_candidates(
@@ -389,12 +385,17 @@ def _document_candidates(
     spec: DocumentPayloadSpec,
 ) -> list[tuple[Document, dict[str, Any]]]:
     candidates: list[tuple[Document, dict[str, Any]]] = []
+    canonical_by_window = latest_canonical_pass_outputs_by_window(
+        repository=repository,
+        pass_kind=spec.pass_kind,
+        windows=(pass_output_window_key(document) for document in documents),
+    )
     for document in documents:
         payload = _payload_for_document(
             session=session,
-            repository=repository,
             document=document,
             spec=spec,
+            canonical_row=canonical_by_window.get(pass_output_window_key(document)),
         )
         if payload is not None:
             candidates.append((document, payload))
@@ -404,25 +405,18 @@ def _document_candidates(
 def _payload_for_document(
     *,
     session: Session,
-    repository: Any,
     document: Document,
     spec: DocumentPayloadSpec,
+    canonical_row: Any | None,
 ) -> dict[str, Any] | None:
     doc_id = int(getattr(document, "id") or 0)
     if doc_id <= 0:
         return None
-    payload = latest_pass_output_payload(
-        PassOutputPayloadRequest(
-            repository=repository,
-            pass_kind=spec.pass_kind,
-            granularity=_normalized_granularity(getattr(document, "granularity", None)),
-            period_start=getattr(document, "period_start", None),
-            period_end=getattr(document, "period_end", None),
+    if canonical_row is not None:
+        return _canonical_pass_output_payload(
+            row=canonical_row,
             payload_model=spec.payload_model,
         )
-    )
-    if payload is not None:
-        return payload
     return _meta_chunk_payload(
         session=session,
         doc_id=doc_id,
@@ -457,7 +451,7 @@ def _idea_pass_output_rows(request: CandidateWindowRequest) -> list[PassOutput]:
     with Session(request.repository.engine) as session:
         statement = select(PassOutput).where(
             PassOutput.pass_kind == "trend_ideas",
-            PassOutput.status == "succeeded",
+            cast(Any, PassOutput.status).in_(CANONICAL_PASS_OUTPUT_STATUSES),
         )
         if request.granularity is not None:
             statement = statement.where(PassOutput.granularity == request.granularity)
@@ -518,49 +512,98 @@ def _existing_idea_candidates(
     repository: Any,
     documents: list[Document],
 ) -> tuple[list[tuple[Document, dict[str, Any]]], set[WindowKey]]:
+    states_by_window = latest_idea_pass_output_states_by_window(
+        repository=repository,
+        windows=(pass_output_window_key(document) for document in documents),
+    )
     candidates: list[tuple[Document, dict[str, Any]]] = []
-    seen_windows: set[WindowKey] = set()
     for document in documents:
-        payload = _payload_for_document(
+        state = states_by_window.get(pass_output_window_key(document))
+        payload = _idea_document_payload(
             session=session,
-            repository=repository,
             document=document,
-            spec=DocumentPayloadSpec(
-                pass_kind="trend_ideas",
-                payload_model=TrendIdeasPayload,
-                meta_source_content_type="trend_ideas_payload_json",
-            ),
+            state=state,
         )
-        if payload is None:
-            continue
-        candidates.append((document, payload))
-        seen_windows.add(_window_key(document))
-    return candidates, seen_windows
+        if payload is not None:
+            candidates.append((document, payload))
+    return candidates, {_window_key(document) for document, _payload in candidates}
 
 
-def _extend_backfilled_idea_candidates(
+def _idea_document_payload(
+    *, session: Session, document: Document, state: Any | None
+) -> dict[str, Any] | None:
+    if state is not None:
+        if not state.active:
+            return None
+        return _canonical_pass_output_payload(
+            row=state.row,
+            payload_model=TrendIdeasPayload,
+        )
+    return _meta_chunk_payload(
+        session=session,
+        doc_id=int(getattr(document, "id") or 0),
+        payload_model=TrendIdeasPayload,
+        source_content_type="trend_ideas_payload_json",
+    )
+
+
+def _ranked_idea_candidates(
     *,
     candidates: list[tuple[Document, dict[str, Any]]],
     seen_windows: set[WindowKey],
     request: CandidateWindowRequest,
-) -> None:
-    if not request.materialize_missing_idea_projections:
-        return
+) -> list[tuple[Document, dict[str, Any]]]:
+    ranked: list[tuple[tuple[float, int], str, Any]] = [
+        (_document_candidate_recency_key(candidate), "existing", candidate)
+        for candidate in candidates
+    ]
+    if request.materialize_missing_idea_projections:
+        ranked.extend(
+            (
+                _pass_output_recency_key(row),
+                "backfill",
+                row,
+            )
+            for row in _latest_idea_pass_outputs(request)
+            if _window_key(row) not in seen_windows
+        )
+    ranked.sort(key=lambda entry: entry[0], reverse=True)
     normalized_limit = _normalized_limit(request.limit)
-    for row in _latest_idea_pass_outputs(request):
-        window_key = _window_key(row)
-        if window_key in seen_windows:
-            continue
-        if normalized_limit is not None and len(candidates) >= normalized_limit:
-            return
-        candidate = _backfilled_idea_candidate(
-            repository=request.repository,
-            row=row,
+    selected: list[tuple[Document, dict[str, Any]]] = []
+    for _recency, kind, value in ranked:
+        candidate = (
+            value
+            if kind == "existing"
+            else _backfilled_idea_candidate(
+                repository=request.repository,
+                row=value,
+            )
         )
         if candidate is None:
             continue
-        candidates.append(candidate)
-        seen_windows.add(window_key)
+        selected.append(candidate)
+        if normalized_limit is not None and len(selected) >= normalized_limit:
+            break
+    return selected
+
+
+def _document_candidate_recency_key(
+    candidate: tuple[Document, dict[str, Any]],
+) -> tuple[float, int]:
+    document, _payload = candidate
+    period_start = normalize_utc_datetime(getattr(document, "period_start", None))
+    return (
+        period_start.timestamp() if period_start is not None else 0.0,
+        int(getattr(document, "id", 0) or 0),
+    )
+
+
+def _pass_output_recency_key(row: PassOutput) -> tuple[float, int]:
+    period_start = normalize_utc_datetime(getattr(row, "period_start", None))
+    return (
+        period_start.timestamp() if period_start is not None else 0.0,
+        int(getattr(row, "id", 0) or 0),
+    )
 
 
 def _backfilled_idea_candidate(
@@ -568,6 +611,8 @@ def _backfilled_idea_candidate(
     repository: Any,
     row: PassOutput,
 ) -> tuple[Document, dict[str, Any]] | None:
+    if is_suppressed_pass_output(row):
+        return None
     try:
         payload_model = TrendIdeasPayload.model_validate(
             json.loads(str(getattr(row, "payload_json", "") or "{}"))

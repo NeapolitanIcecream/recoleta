@@ -9,6 +9,8 @@ from loguru import logger
 
 from recoleta.config import LocalizationConfig
 from recoleta.passes.trend_ideas import TrendIdeasPayload
+from recoleta.pass_output_selection import is_suppressed_pass_output
+from recoleta.presentation import remove_note_projection_artifacts
 from recoleta.publish import (
     write_markdown_ideas_note,
     write_markdown_note,
@@ -19,6 +21,7 @@ from recoleta.publish import (
 )
 from recoleta.publish.item_note_writer import ItemNoteSpec
 from recoleta.publish.idea_notes import resolve_ideas_note_path
+from recoleta.publish.trend_notes import resolve_trend_note_path
 from recoleta.translation import (
     localized_language_root,
     materialize_localized_languages,
@@ -440,9 +443,15 @@ def _materialize_trend_notes(
     *, ctx: _MaterializeContext, granularity: str | None
 ) -> None:
     materialize_module = _materialize_module()
-    trend_documents = materialize_module._materialize_trend_documents(
-        repository=ctx.repository,
-        granularity=granularity,
+    trend_documents, suppressed_documents = (
+        materialize_module._materialize_trend_document_partition(
+            repository=ctx.repository,
+            granularity=granularity,
+        )
+    )
+    _cleanup_suppressed_trend_outputs(
+        ctx=ctx,
+        documents=suppressed_documents,
     )
     ctx.result.trend_docs_total = len(trend_documents)
     for document in trend_documents:
@@ -478,6 +487,43 @@ def _materialize_trend_notes(
         _materialize_trend_pdf(ctx=ctx, document=document, note_path=note_path)
 
 
+def _cleanup_suppressed_trend_outputs(
+    *,
+    ctx: _MaterializeContext,
+    documents: list[Any],
+) -> None:
+    for document in documents:
+        doc_id = int(getattr(document, "id") or 0)
+        period_start = getattr(document, "period_start", None)
+        if doc_id <= 0 or not isinstance(period_start, datetime):
+            continue
+        granularity = str(getattr(document, "granularity", "") or "").strip()
+        if not granularity:
+            continue
+        remove_note_projection_artifacts(
+            note_path=resolve_trend_note_path(
+                note_dir=ctx.output_dir / "Trends",
+                trend_doc_id=doc_id,
+                granularity=granularity,
+                period_start=period_start,
+            ),
+            include_pdf=True,
+        )
+        if ctx.obsidian_vault_path is None or ctx.obsidian_base_folder is None:
+            continue
+        remove_note_projection_artifacts(
+            note_path=resolve_trend_note_path(
+                note_dir=(
+                    ctx.obsidian_vault_path / ctx.obsidian_base_folder / "Trends"
+                ),
+                trend_doc_id=doc_id,
+                granularity=granularity,
+                period_start=period_start,
+            ),
+            include_pdf=True,
+        )
+
+
 def _ideas_note_context(
     *, ctx: _MaterializeContext, row: Any, payload: TrendIdeasPayload
 ) -> dict[str, Any]:
@@ -510,10 +556,9 @@ def _ideas_note_context(
     }
 
 
-def _cleanup_empty_corpus_idea_outputs(
+def _cleanup_idea_outputs(
     *,
     ctx: _MaterializeContext,
-    row: Any,
     granularity_value: str,
     period_start: datetime,
 ) -> None:
@@ -522,7 +567,7 @@ def _cleanup_empty_corpus_idea_outputs(
         granularity=granularity_value,
         period_start=period_start,
     )
-    note_path.unlink(missing_ok=True)
+    remove_note_projection_artifacts(note_path=note_path)
     if ctx.obsidian_vault_path is None or ctx.obsidian_base_folder is None:
         return
     obsidian_note_path = resolve_ideas_note_path(
@@ -530,7 +575,7 @@ def _cleanup_empty_corpus_idea_outputs(
         granularity=granularity_value,
         period_start=period_start,
     )
-    obsidian_note_path.unlink(missing_ok=True)
+    remove_note_projection_artifacts(note_path=obsidian_note_path)
 
 
 def _log_obsidian_ideas_failure(
@@ -608,49 +653,11 @@ def _materialize_idea_notes(
     for row in idea_pass_outputs:
         pass_output_id = int(getattr(row, "id") or 0)
         try:
-            localized_idea_payload = (
-                materialize_module._localized_idea_payload_for_pass_output(
-                    repository=ctx.repository,
-                    row=row,
-                    language_code=ctx.language_code,
-                )
+            obsidian_request = _materialize_idea_output(
+                ctx=ctx,
+                row=row,
+                materialize_module=materialize_module,
             )
-            payload = (
-                TrendIdeasPayload.model_validate(localized_idea_payload)
-                if localized_idea_payload is not None
-                else materialize_module._load_ideas_payload(row=row)
-            )
-            period_start = getattr(row, "period_start")
-            period_end = getattr(row, "period_end")
-            if not isinstance(period_start, datetime) or not isinstance(
-                period_end, datetime
-            ):
-                raise ValueError("ideas pass output is missing period bounds")
-            idea_ctx = _ideas_note_context(ctx=ctx, row=row, payload=payload)
-            if idea_ctx["ideas_empty_corpus"]:
-                _cleanup_empty_corpus_idea_outputs(
-                    ctx=ctx,
-                    row=row,
-                    granularity_value=idea_ctx["granularity_value"],
-                    period_start=period_start,
-                )
-                continue
-            write_markdown_ideas_note(
-                repository=ctx.repository,
-                output_dir=ctx.output_dir,
-                pass_output_id=pass_output_id,
-                upstream_pass_output_id=idea_ctx["upstream_pass_output_id"],
-                granularity=idea_ctx["granularity_value"],
-                period_start=period_start,
-                period_end=period_end,
-                run_id=str(getattr(row, "run_id")),
-                status=str(getattr(row, "status")),
-                payload=payload,
-                topics=idea_ctx["topics"],
-                output_language=ctx.output_language,
-                language_code=ctx.language_code,
-            )
-            ctx.result.ideas_notes_total += 1
         except Exception as exc:  # noqa: BLE001
             ctx.result.ideas_failures_total += 1
             ctx.log.bind(pass_output_id=pass_output_id).warning(
@@ -659,16 +666,67 @@ def _materialize_idea_notes(
                 str(exc),
             )
             continue
-        _materialize_obsidian_ideas_note(
-            request=_ObsidianIdeasNoteRequest(
-                ctx=ctx,
-                row=row,
-                payload=payload,
-                idea_ctx=idea_ctx,
-                period_start=period_start,
-                period_end=period_end,
-            )
+        if obsidian_request is not None:
+            _materialize_obsidian_ideas_note(request=obsidian_request)
+
+
+def _materialize_idea_output(
+    *, ctx: _MaterializeContext, row: Any, materialize_module: Any
+) -> _ObsidianIdeasNoteRequest | None:
+    period_start = getattr(row, "period_start")
+    period_end = getattr(row, "period_end")
+    if not isinstance(period_start, datetime) or not isinstance(period_end, datetime):
+        raise ValueError("ideas pass output is missing period bounds")
+    granularity_value = str(getattr(row, "granularity", "") or "day")
+    if is_suppressed_pass_output(row):
+        _cleanup_idea_outputs(
+            ctx=ctx,
+            granularity_value=granularity_value,
+            period_start=period_start,
         )
+        return None
+    localized_idea_payload = materialize_module._localized_idea_payload_for_pass_output(
+        repository=ctx.repository,
+        row=row,
+        language_code=ctx.language_code,
+    )
+    payload = (
+        TrendIdeasPayload.model_validate(localized_idea_payload)
+        if localized_idea_payload is not None
+        else materialize_module._load_ideas_payload(row=row)
+    )
+    idea_ctx = _ideas_note_context(ctx=ctx, row=row, payload=payload)
+    if idea_ctx["ideas_empty_corpus"]:
+        _cleanup_idea_outputs(
+            ctx=ctx,
+            granularity_value=idea_ctx["granularity_value"],
+            period_start=period_start,
+        )
+        return None
+    write_markdown_ideas_note(
+        repository=ctx.repository,
+        output_dir=ctx.output_dir,
+        pass_output_id=int(getattr(row, "id") or 0),
+        upstream_pass_output_id=idea_ctx["upstream_pass_output_id"],
+        granularity=idea_ctx["granularity_value"],
+        period_start=period_start,
+        period_end=period_end,
+        run_id=str(getattr(row, "run_id")),
+        status=str(getattr(row, "status")),
+        payload=payload,
+        topics=idea_ctx["topics"],
+        output_language=ctx.output_language,
+        language_code=ctx.language_code,
+    )
+    ctx.result.ideas_notes_total += 1
+    return _ObsidianIdeasNoteRequest(
+        ctx=ctx,
+        row=row,
+        payload=payload,
+        idea_ctx=idea_ctx,
+        period_start=period_start,
+        period_end=period_end,
+    )
 
 
 def materialize_outputs_for_target(*, request: MaterializeTargetOutputsRequest) -> Any:

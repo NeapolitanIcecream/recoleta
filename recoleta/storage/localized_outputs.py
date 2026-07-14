@@ -7,7 +7,7 @@ from sqlalchemy import desc
 from sqlmodel import Session, select
 
 from recoleta.models import LocalizedOutput
-from recoleta.storage_common import _to_json
+from recoleta.storage.common import _to_json
 from recoleta.types import utc_now
 
 

@@ -42,8 +42,6 @@ from recoleta.pipeline import metrics as pipeline_metrics
 from recoleta.pipeline.ingest_stage import (
     IngestStageRequest,
     RebalanceItemsRequest,
-    SourcePullStageRequest,
-    pull_source_drafts as run_source_pull_stage,
     rebalance_items_by_source as rebalance_stage_items_by_source,
     run_ingest_stage,
 )
@@ -284,32 +282,6 @@ class PipelineService:
         return len("".join(str(text or "").split()))
 
     @staticmethod
-    def _empty_source_pull_stats() -> dict[str, dict[str, int]]:
-        return {
-            source_name: {
-                "drafts_total": 0,
-                "pull_failed_total": 0,
-                "pull_duration_ms": 0,
-                "filtered_out_total": 0,
-                "in_window_total": 0,
-                "missing_published_at_total": 0,
-                "deduped_total": 0,
-                "deferred_total": 0,
-                "not_modified_total": 0,
-                "oldest_published_at_unix": 0,
-                "newest_published_at_unix": 0,
-                "inserted_total": 0,
-                "updated_total": 0,
-                "pool_drafts_total": 0,
-                "pool_window_unavailable_total": 0,
-                "pool_window_immature_total": 0,
-                "pool_window_immature_allowed_total": 0,
-                "pool_window_analysis_ready_total": 0,
-            }
-            for source_name in _SOURCE_DIAGNOSTIC_NAMES
-        }
-
-    @staticmethod
     def _invoke_callable_with_supported_kwargs(fn: Any, **kwargs: Any) -> Any:
         try:
             signature = inspect.signature(fn)
@@ -329,10 +301,6 @@ class PipelineService:
             }
         )
         return fn(**filtered_kwargs)
-
-    @staticmethod
-    def _invoke_source_pull(fn: Any, **kwargs: Any) -> Any:
-        return PipelineService._invoke_callable_with_supported_kwargs(fn, **kwargs)
 
     def _invoke_repository_method(self, method_name: str, /, **kwargs: Any) -> Any:
         method = getattr(self.repository, method_name)
@@ -388,14 +356,6 @@ class PipelineService:
             run_id=run_id,
             diagnostics=diagnostics,
         )
-
-    @staticmethod
-    def _normalize_source_pull_result(raw: Any) -> sources.SourcePullResult:
-        if isinstance(raw, sources.SourcePullResult):
-            return raw
-        if raw is None:
-            return sources.SourcePullResult()
-        return sources.SourcePullResult(drafts=list(raw or []))
 
     @staticmethod
     def _new_source_enrich_bucket() -> dict[str, Any]:
@@ -1134,62 +1094,16 @@ class PipelineService:
             int(limit) * int(self.settings.triage_candidate_factor),
         )
 
-    def _load_stored_content_for_analysis(self, *, item: Any) -> str | None:
-        item_id = getattr(item, "id", None)
-        if item_id is None:
-            return None
-        normalized_item_id = int(item_id)
-        source = str(getattr(item, "source", "") or "").strip().lower()
-        if source == "arxiv":
-            return self._load_arxiv_content_for_analysis(item_id=normalized_item_id)
-        if source == "openreview":
-            existing_pdf = self._get_latest_content_text(
-                item_id=normalized_item_id,
-                content_type="pdf_text",
-            )
-            if existing_pdf is not None:
-                return existing_pdf
-        return self._get_latest_content_text(
-            item_id=normalized_item_id,
-            content_type="html_maintext",
-        )
-
     def _get_latest_content_text(
         self, *, item_id: int, content_type: str
     ) -> str | None:
         existing_content = self.repository.get_latest_content(
-            item_id=item_id, content_type=content_type
+            item_id=item_id,
+            content_type=content_type,
         )
         if existing_content is None or not existing_content.text:
             return None
         return existing_content.text
-
-    def _load_arxiv_content_for_analysis(self, *, item_id: int) -> str | None:
-        method = self.settings.sources.arxiv.enrich_method
-        failure_mode = self.settings.sources.arxiv.enrich_failure_mode
-        primary_by_method = {
-            "pdf_text": "pdf_text",
-            "latex_source": "latex_source",
-            "html_document": "html_document_md",
-        }
-        content_types: list[str] = [primary_by_method.get(method, "pdf_text")]
-        if failure_mode == "fallback":
-            for candidate_type in (
-                "pdf_text",
-                "html_maintext",
-                "html_document_md",
-                "html_document",
-                "latex_source",
-            ):
-                if candidate_type not in content_types:
-                    content_types.append(candidate_type)
-        for content_type in content_types:
-            loaded = self._get_latest_content_text(
-                item_id=item_id, content_type=content_type
-            )
-            if loaded is not None:
-                return loaded
-        return None
 
     def _ensure_item_content(
         self,
@@ -1387,15 +1301,6 @@ class PipelineService:
             anchor_date=anchor_date,
             llm_model=llm_model,
         )
-
-    def _pull_source_drafts(
-        self,
-        *,
-        request: SourcePullStageRequest | None = None,
-        **legacy_kwargs: Any,
-    ) -> tuple[list[ItemDraft], int, dict[str, dict[str, int]]]:
-        normalized_request = request or SourcePullStageRequest(**legacy_kwargs)
-        return run_source_pull_stage(self, normalized_request)
 
     def _write_debug_artifact(
         self,

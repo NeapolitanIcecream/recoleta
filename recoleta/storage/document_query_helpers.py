@@ -8,7 +8,7 @@ from sqlalchemy import desc, text
 from sqlmodel import Session, select
 
 from recoleta.models import Document, DocumentChunk
-from recoleta.storage_common import _to_fts5_query
+from recoleta.storage.common import _to_fts5_query
 from recoleta.types import sha256_hex
 
 
