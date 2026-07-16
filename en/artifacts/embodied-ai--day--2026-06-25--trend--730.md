@@ -32,14 +32,14 @@ pass_kind: trend_synthesis
 ## Overview
 Robot vision-language-action (VLA) research is focused on real manipulation evidence: open rollouts, deployment checks, and safety metrics. ABC makes behavior cloning more reproducible. E-TTS adds inference-time candidate scoring. ForesightSafety-VLA scores unsafe success during full trajectories.
 
-## Clusters
+## Findings
 
 ### Open manipulation data and denser action supervision
 ABC raises the reproducibility bar for behavior cloning by releasing data, code, hardware details, model weights, simulation assets, and real rollout scores. Its ABC-130K dataset contains 3,553 hours, 134,806 episodes, and 195 tasks, with more than 100 hours of real policy rollouts in ABC-Eval. The paper also reports that simulation and some offline diagnostics track real-world success, giving researchers cheaper signals for model choices.
 
 LA4VLA attacks a different data problem inside VLA pretraining. Long demonstrations often pair one high-level instruction with many image-action frames, so the language signal is sparse. LA4VLA cuts demonstrations into short language-action segments, keeps 33,116 human-verified episodes, and trains a 1B model with image-free language, proprioception, and action trajectories before VLA training. Its mixed language-action and VLA pretraining reports 83.3% real-world manipulation success and a 45.0 point gain over no pretraining on real tasks.
 
-#### Evidence
+#### Sources
 - [Scalable Behavior Cloning with Open Data, Training, and Evaluation](../Inbox/2026-06-25--scalable-behavior-cloning-with-open-data-training-and-evaluation.md): ABC dataset scale, released stack, rollout evaluation, and diagnostic correlations.
 - [LA4VLA: Learning to Act without Seeing via Language-Action Pretraining](../Inbox/2026-06-25--la4vla-learning-to-act-without-seeing-via-language-action-pretraining.md): LA4VLA language-action dataset construction and reported simulation and real-world gains.
 
@@ -50,7 +50,7 @@ PhysReflect-VLA adds physical-feasibility scoring before action execution and co
 
 RouterVLA shows that pre-deployment smoke tests can also guide policy choice. On LIBERO-Plus, a simple probe-success rule selects among frozen experts and reaches 0.6149 held-out success, compared with 0.4686 for the global best expert.
 
-#### Evidence
+#### Sources
 - [E-TTS: A New Embodied Test-Time Scaling Framework for Robotic Manipulation](../Inbox/2026-06-25--e-tts-a-new-embodied-test-time-scaling-framework-for-robotic-manipulation.md): E-TTS reasoning-action sampling, verifier scoring, history buffer, and success gains.
 - [PhysReflect-VLA: Physical Feasibility and Self-Reflective Regulation for Reliable Vision-Language-Action Policies](../Inbox/2026-06-25--physreflect-vla-physical-feasibility-and-self-reflective-regulation-for-reliable-vision-language-action-policies.md): PhysReflect-VLA feasibility checks, reflection mechanism, and real-robot gains.
 - [RouterVLA: Turning Smoke Tests into Supervision for Heterogeneous VLA Selection](../Inbox/2026-06-25--routervla-turning-smoke-tests-into-supervision-for-heterogeneous-vla-selection.md): RouterVLA smoke-test routing protocol and held-out success improvement.
@@ -62,7 +62,7 @@ VibeAct adds a compact tactile channel for dexterous control. Piezoelectric fing
 
 The LeHome garment-folding system gives a competition-scale example for deformable objects. It combines a flow-matching VLA policy with reinforcement learning, replay, human corrections, and sim-to-real tuning, placing first in the online simulation round and second in the real-world final.
 
-#### Evidence
+#### Sources
 - [PAMAE: Phase-Aware-MoE Action Experts Towards Reliable Flow-Matching Vision-Language-Action Policies](../Inbox/2026-06-25--pamae-phase-aware-moe-action-experts-towards-reliable-flow-matching-vision-language-action-policies.md): PAMAE phase-aware expert routing and simulated multi-stage task gains.
 - [VibeAct: Vibration to Actions for Contact-Rich Reactive Robot Dexterity](../Inbox/2026-06-25--vibeact-vibration-to-actions-for-contact-rich-reactive-robot-dexterity.md): VibeAct tactile sensing setup and simulation and hardware results.
 - [Learning to Fold: prizewinning solution at LeHome Challenge 2026 (1st place online, 2nd offline)](../Inbox/2026-06-25--learning-to-fold-prizewinning-solution-at-lehome-challenge-2026-1st-place-online-2nd-offline.md): LeHome folding system components and competition outcomes.
@@ -72,5 +72,5 @@ ForesightSafety-VLA makes safety the main measurement target for VLA policies. I
 
 The reported baselines all show remaining risk. OpenVLA-oft has the best listed safety-adjusted success rate at 0.35, while unsafe success still appears at 0.06. Among successful episodes, the unsafe share is 12.5% for OpenVLA-oft and 37.5% for ACT. That scoring choice matters because a robot can complete an instruction while colliding with objects, entering hot zones, or violating clearance limits.
 
-#### Evidence
+#### Sources
 - [ForesightSafety-VLA: A Unified Diagnostic Safety Benchmark for Vision-Language-Action Models](../Inbox/2026-06-25--foresightsafety-vla-a-unified-diagnostic-safety-benchmark-for-vision-language-action-models.md): ForesightSafety-VLA safety taxonomy, benchmark design, and baseline safety metrics.

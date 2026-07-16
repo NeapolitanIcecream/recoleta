@@ -30,14 +30,14 @@ pass_kind: trend_synthesis
 ## Overview
 The period’s strongest signal is practical deployment pressure on Vision-Language-Action (VLA) robot policies. MolmoAct2 makes the reproducibility case with open weights and robot datasets. Latent Bridge and the asynchronous-inference benchmark focus on whether policies can keep control rates high without losing task success.
 
-## Clusters
+## Findings
 
 ### Open VLA models and robot datasets
 MolmoAct2 is the clearest deployment-oriented release in the period. The paper describes an open VLA system with released weights, code, and training data. Its backbone, Molmo2-ER, is a 4B vision-language model (VLM) trained on a 3.3M-sample embodied-reasoning corpus, then connected to robot actions through an action tokenizer and a continuous action expert.
 
 The data release is a large part of the claim. The authors report 720 hours of bimanual YAM data, a filtered SO-100/101 community dataset with 38,059 episodes, and a filtered DROID Franka subset with 74,604 successful episodes. They also report 63.8% average performance across 13 embodied-reasoning benchmarks for Molmo2-ER, with a 17-point gain over Molmo2. The provided excerpt says MolmoAct2 beats strong baselines across simulation and real-world benchmarks, but it does not include the underlying task success rates.
 
-#### Evidence
+#### Sources
 - [MolmoAct2: Action Reasoning Models for Real-world Deployment](../Inbox/2026-05-04--molmoact2-action-reasoning-models-for-real-world-deployment.md): Summary lists MolmoAct2 components, released assets, datasets, and reported benchmark results.
 
 ### Simulation video transfer for VLA training data
@@ -45,7 +45,7 @@ Seeing Realism from Simulation targets the data bottleneck by turning simulated 
 
 The gains are strongest when evaluation adds visual or language variation. On RoboTwin 2.0, RDT-1B improved by 10.0 points on Hard single-task settings and 8.0 points in a 32-task multi-task setting with a 10% augmented coreset. On LIBERO-Plus, pi_0 improved by 5.1 points overall, with larger gains on object layout and instruction changes. Standard LIBERO saw small drops, which fits the paper’s own explanation that train and test settings there are already similar.
 
-#### Evidence
+#### Sources
 - [Seeing Realism from Simulation: Efficient Video Transfer for Vision-Language-Action Data Augmentation](../Inbox/2026-05-04--seeing-realism-from-simulation-efficient-video-transfer-for-vision-language-action-data-augmentation.md): Summary gives the augmentation pipeline and reported RoboTwin, LIBERO-Plus, and LIBERO results.
 
 ### Inference speed and stale-observation control
@@ -53,6 +53,6 @@ Two papers treat latency as a core VLA deployment constraint. Latent Bridge redu
 
 The asynchronous-inference benchmark studies the related problem of stale observations when action chunks are generated too slowly. It compares IT-RTC, TT-RTC, VLASH, and A2C2 under matched settings. A2C2 performs best at high delay in the reported tests: on Kinetix it stays above 90% solve rate up to delay d=8, and on LIBERO it reaches about 58% success at d=20 while the naive asynchronous baseline is around 10–12%. TT-RTC has the simplest runtime profile when it works, with no added inference overhead.
 
-#### Evidence
+#### Sources
 - [Latent Bridge: Feature Delta Prediction for Efficient Dual-System Vision-Language-Action Model Inference](../Inbox/2026-05-04--latent-bridge-feature-delta-prediction-for-efficient-dual-system-vision-language-action-model-inference.md): Summary reports Latent Bridge method, VLM-call reduction, latency, and success rates.
 - [Understanding Asynchronous Inference Methods for Vision-Language-Action Models](../Inbox/2026-05-04--understanding-asynchronous-inference-methods-for-vision-language-action-models.md): Summary reports the asynchronous-inference comparison and high-delay results.

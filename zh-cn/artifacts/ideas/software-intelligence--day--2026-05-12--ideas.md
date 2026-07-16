@@ -27,7 +27,7 @@ language_code: zh-CN
 
 # 可审计的代理运维
 
-## Summary
+## 摘要
 代理团队现在有了可以直接照搬的审计关卡：基准的发布前 reward-hacking 运行、带 trace 要求的集中治理 MCP 服务器，以及代码翻译的路径级审查。共同的压力是运维层面的：分数、工具调用和翻译后的代码都需要保留证据，供别的团队事后检查。
 
 ## Pre-release reward-hacking audits for agent benchmarks
@@ -35,7 +35,7 @@ language_code: zh-CN
 
 发布清单里也应该加入同一批基准运行的 rollout-card 导出。Rollout Cards 会保存任务、环境状态、观察、模型输出、工具调用、工具结果、产物、时间、终态、失败、声明的评分视图、报告规则和省略字段。论文对 50 个仓库的审计发现，没有一个在头部准确率或分数旁边报告失败、报错或跳过的 rollout；对固定产物重新评分后，报告分数最多变化 20.9 个百分点。基准发布可以把未公开的利用扫描和缺失的 rollout 记录都当作阻断项，因为两者都会影响后来用户是否能信任报告分数。
 
-### Evidence
+### 资料来源
 - [Do Androids Dream of Breaking the Game? Systematically Auditing AI Agent Benchmarks with BenchJack](../Inbox/2026-05-12--do-androids-dream-of-breaking-the-game-systematically-auditing-ai-agent-benchmarks-with-benchjack.md): BenchJack’s audit design, exploit generation results, flaw count, and patching-loop outcomes support a concrete pre-release benchmark security gate.
 - [Rollout Cards: A Reproducibility Standard for Agent Research](../Inbox/2026-05-12--rollout-cards-a-reproducibility-standard-for-agent-research.md): Rollout Cards specifies the rollout evidence bundle and reports repository-audit and re-grading results that justify score-trace publication.
 
@@ -44,7 +44,7 @@ language_code: zh-CN
 
 在 MCP 审批环节就应该明确 trace 要求。一项针对代理决策可重建性的试点发现，在 6 种 SDK 体系中，严格治理完整性从 42.9% 到 85.7% 不等，而且多数被调查体系里推理证据缺失或不可用。一个合适的起点是先在一个高风险内部工具上试点，默认关闭写入，按用户授权，加入 DLP 规则，并为每次工具调用保存决策记录：执行者、策略、工具、参数、结果、授权来源，以及可用的推理证据。这样安全团队就能拿到一份事件记录，回答谁授权了某个工具动作，以及适用的是哪条策略。
 
-### Evidence
+### 资料来源
 - [Scaling MCP adoption: Our ref architecture – simpler,safer&cheaper deployments](../Inbox/2026-05-12--scaling-mcp-adoption-our-ref-architecture-simpler-safer-cheaper-deployments.md): Cloudflare’s MCP deployment details provide the concrete controls: remote servers, approvals, OAuth checks, audit logging, DLP, default-deny writes, portal access, and shadow MCP detection.
 - [Property-Level Reconstructability of Agent Decisions: An Anchor-Level Pilot Across Vendor SDK Adapter Regimes](../Inbox/2026-05-12--property-level-reconstructability-of-agent-decisions-an-anchor-level-pilot-across-vendor-sdk-adapter-regimes.md): The reconstructability pilot shows that current agent traces often lack decision evidence needed for post-hoc investigation.
 
@@ -53,6 +53,6 @@ language_code: zh-CN
 
 这适合渐进式内存安全迁移，因为自动翻译器、人工移植和修 bug 都可能改变行为。cozy 报告的实验规模都不大：插入排序、一个手表更新时间函数和一个 box blur 滤镜。即便如此，这个流程对一个边界清楚、输入输出明确的实用函数试点已经足够具体。这个材料包里的 APL 到 C# 工作也指向同样的采用模式：先生成带类型的目标代码，编译后跑输入输出测试，再把编译器或测试失败喂给修复尝试。主要缺口是规模，所以第一个落点应该是一个已有测试、状态定义清楚的小模块。
 
-### Evidence
+### 资料来源
 - [Finding a Crab in the C: Assured Translation via Comparative Symbolic Execution](../Inbox/2026-05-12--finding-a-crab-in-the-c-assured-translation-via-comparative-symbolic-execution.md): cozy provides the comparative symbolic execution workflow, developer review loop, and small C/Rust experiments.
 - [Neural Code Translation of Legacy Code: APL to C#](../Inbox/2026-05-12--neural-code-translation-of-legacy-code-apl-to-c.md): The APL-to-C# study supports compile-and-run evaluation, iterative repair with compiler and test feedback, and the legacy-code migration pain point.

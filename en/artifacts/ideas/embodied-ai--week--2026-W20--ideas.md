@@ -37,7 +37,7 @@ Task success alone is a weak release gate for household manipulation policies. A
 
 A practical first build is a trace logger that records contacts, object poses, gripper state, fixture state, and task events, then binds those signals to task-specific checks such as `Collision`, `StableGrasp`, `Sanitized`, `Contained`, and `FixOpen`. Kitchen and home-robot teams would use the output during model selection and regression testing, especially for contamination, release stability, and access-to-fixture tasks where unsafe behavior can occur before the final state looks correct.
 
-### Evidence
+### Sources
 - [SafeManip: A Property-Driven Benchmark for Temporal Safety Evaluation in Robotic Manipulation](../Inbox/2026-05-12--safemanip-a-property-driven-benchmark-for-temporal-safety-evaluation-in-robotic-manipulation.md): SafeManip defines LTL_f temporal safety templates, rollout predicate traces, and metrics separating task success from safe execution, with reported pi_0 and pi_0.5 success and violation rates.
 - [SafeManip: A Property-Driven Benchmark for Temporal Safety Evaluation in Robotic Manipulation](../Inbox/2026-05-12--safemanip-a-property-driven-benchmark-for-temporal-safety-evaluation-in-robotic-manipulation.md): The source text explains that temporal failures include contaminated contact and early release, and describes task-specific predicate bindings and evaluation metrics.
 
@@ -46,7 +46,7 @@ Robot demonstration datasets need a training-data pass that preserves manipulati
 
 The workflow change is small enough for teams already training Open X-Embodiment-style policies: score frames by action variation, visual-action coherence, task progress, and gripper or end-effector transitions, then mix pruned minibatches with full-frame anchor minibatches after warmup. The first check should be tasks with sparse decisive moments, such as alignment, contact, grasp closure, and release. If success gains appear only on long approach segments, the scoring recipe is probably hiding the real manipulation bottleneck.
 
-### Evidence
+### Sources
 - [FrameSkip: Learning from Fewer but More Informative Frames in VLA Training](../Inbox/2026-05-13--frameskip-learning-from-fewer-but-more-informative-frames-in-vla-training.md): FrameSkip describes the dense-demonstration imbalance, the dataloader-only frame selection method, protected transition frames, and the 66.50% to 76.15% macro-average gain.
 - [FrameSkip: Learning from Fewer but More Informative Frames in VLA Training](../Inbox/2026-05-13--frameskip-learning-from-fewer-but-more-informative-frames-in-vla-training.md): The paper abstract states that FrameSkip operates in the dataloader and targets alignment, contact, grasping, and release frames while leaving the model and inference path unchanged.
 
@@ -55,6 +55,6 @@ New manipulation tasks can be tested with imagined RL before collecting hundreds
 
 The adoption path is a limited adaptation loop for new objects, layouts, or instructions: pretrain the world model on broad play-style robot behavior, anchor the policy with a few demonstrations, run imagined rollouts, and filter unstable wins with dual-noise verification. Teams should compare this against short online RL or fresh world-model tuning on the same task budget. RAW-Dream’s reported in-domain world-model tuning result, 66.0% average success using 510 target data, gives a useful upper reference for deciding when the zero-shot world model is too far from the target scene.
 
-### Evidence
+### Sources
 - [Reinforcing VLAs in Task-Agnostic World Models](../Inbox/2026-05-12--reinforcing-vlas-in-task-agnostic-world-models.md): RAW-Dream describes task-agnostic world-model RL, Qwen3-VL reward judgments, dual-noise verification, and LIBERO gains with 10 target demonstrations and no target rollouts for world-model training.
 - [Reinforcing VLAs in Task-Agnostic World Models](../Inbox/2026-05-12--reinforcing-vlas-in-task-agnostic-world-models.md): The source text states the problem of prior methods requiring target-task rollout data for world and reward models before adaptation.

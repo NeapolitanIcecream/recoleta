@@ -39,7 +39,7 @@ Probe-and-Refine gives a concrete shape to this workflow. On 500 SWE-bench Verif
 
 A cheap adoption test is to run the same agent on a small set of recent fixed bugs with three guidance variants: no file, a hand-written file, and a probe-refined file. Track whether the agent finds the right files, runs the right tests, and produces a patch that reaches review. If the refined file only adds generic advice, it should be rejected like any other unhelpful repository artifact.
 
-### Evidence
+### Sources
 - [Probe-and-Refine Tuning of Repository Guidance for Coding Agents](../Inbox/2026-06-18--probe-and-refine-tuning-of-repository-guidance-for-coding-agents.md): Reports the Probe-and-Refine method, the SWE-bench Verified resolve-rate comparison, and the finding that refined guidance mainly increases evaluable patch coverage.
 - [Probe-and-Refine Tuning of Repository Guidance for Coding Agents](../Inbox/2026-06-18--probe-and-refine-tuning-of-repository-guidance-for-coding-agents.md): Describes the operational knowledge AGENTS.md-style files are meant to capture, including entry points, tests, conventions, and debugging strategies.
 
@@ -50,7 +50,7 @@ ProcGrep shows why this is practical. It turns coding-agent trajectories into ac
 
 GlueRun-go points to an implementation pattern for teams already running parallel agents. Each worker runs in a separate Git worktree, holds a JSON lease, writes a state packet with changed files, commands, tests, and evidence, and sends gate results into an audit and recovery path. The project evidence is engineering evidence, not a standard benchmark, but the shape is useful: isolate the work, record the task evidence, and make gate failure a first-class outcome.
 
-### Evidence
+### Sources
 - [Agent trajectories as programs: fingerprinting and programming coding-agent behavior](../Inbox/2026-06-15--agent-trajectories-as-programs-fingerprinting-and-programming-coding-agent-behavior.md): Defines ProcGrep’s action-trace representation, deterministic trace queries, SWE-bench Verified attribution result, and episodic-search result.
 - [Show HN: Agentic coding workflows built on Git worktrees and task evidence](../Inbox/2026-06-20--show-hn-agentic-coding-workflows-built-on-git-worktrees-and-task-evidence.md): Describes Git worktree isolation, JSON leases, state packets, gate results, audit verdicts, and recovery actions for parallel coding-agent work.
 - [Show HN: Agentic coding workflows built on Git worktrees and task evidence](../Inbox/2026-06-20--show-hn-agentic-coding-workflows-built-on-git-worktrees-and-task-evidence.md): Shows the concrete state-packet and gate-result flow used after worker runs.
@@ -62,7 +62,7 @@ StudyBench makes this evaluation concrete. It pairs a corpus with a hidden exam 
 
 A team can start with 20 to 40 private questions drawn from recent incidents, API migrations, and maintainer review comments. Passing the exam should require cited file paths or document references. Failed answers are useful even when the agent later writes code, because they identify the missing notes, stale docs, and retrieval paths that will cause bad patches.
 
-### Evidence
+### Sources
 - [Machine Studying](../Inbox/2026-06-21--machine-studying.md): Describes StudyBench, its corpus-plus-hidden-exam setup, token-budget expertise metric, and early results showing weak use of available evidence.
 - [Machine Studying](../Inbox/2026-06-21--machine-studying.md): Frames the practical setting of agents working with new libraries, research papers, and private corpora after training.
 - [Show HN: Vitrus – the company brain that tells you what it doesn't know](../Inbox/2026-06-20--show-hn-vitrus-the-company-brain-that-tells-you-what-it-doesn-t-know.md): Shows a source-backed memory design that returns citations, stale or unsupported verdicts, and deterministic gap reports for human and agent workflows.

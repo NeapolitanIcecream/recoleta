@@ -35,7 +35,7 @@ Repository issue agents need a requirement-writing step before they attempt a pa
 
 A practical build is a repo-connected triage tool that opens every incoming bug or feature request by drafting the requirement record first, showing missing fields to the developer, and only then handing the task to the patch agent. The first users are teams with high issue volume and uneven ticket quality, where missing reproduction steps and unclear success criteria waste agent runs. A cheap check is simple: take a sample of your own unresolved issues, add the requirement record and test-generation loop, and compare patch acceptance and rerun count against the current flow.
 
-### Evidence
+### Sources
 - [REAgent: Requirement-Driven LLM Agents for Software Issue Resolution](../Inbox/2026-04-08--reagent-requirement-driven-llm-agents-for-software-issue-resolution.md): REAgent reports requirement generation, requirement scoring with generated tests, iterative refinement, and 9.17% to 24.83% gains in resolved issues.
 - [REAgent: Requirement-Driven LLM Agents for Software Issue Resolution](../Inbox/2026-04-08--reagent-requirement-driven-llm-agents-for-software-issue-resolution.md): The paper states that repository-level issue resolution remains far below function-level performance, which supports demand for a requirements layer.
 
@@ -44,7 +44,7 @@ Repository migration tools can now be sold as planned translation plus validatio
 
 That supports a concrete service for teams moving codebases across languages: ingest the source repository, produce a target-project design and dependency-aware implementation plan, then keep a visible validation ledger for compile status, translated-test status, and newly generated test coverage. Migration buyers care about auditability and rollback points more than raw code output. A useful first trial is a narrow migration queue inside one engineering org, measured by compile success, human rework hours, and the share of translated modules that pass repository tests without manual repair.
 
-### Evidence
+### Sources
 - [ReCodeAgent: A Multi-Agent Workflow for Language-agnostic Translation and Validation of Large-scale Repositories](../Inbox/2026-04-08--recodeagent-a-multi-agent-workflow-for-language-agnostic-translation-and-validation-of-large-scale-repositories.md): ReCodeAgent describes the four-agent workflow and reports 99.4% compilation success and 86.5% test pass rate across 118 projects.
 
 ## Black-box CLI generation harness for empty-workspace agent evals
@@ -52,6 +52,6 @@ Teams evaluating coding agents need a black-box repository test harness that che
 
 This points to an internal eval product for agent teams shipping code generation features. Start each run in a blank container, feed in a requirement, the `--help` interface, and one verified example per command class, then compare return code, stdout, and file-system side effects against an oracle implementation. The same harness can also catch regressions in planning quality, repo layout, and termination behavior that unit tests miss. If a team already generates small apps or CLIs from prompts, this is a low-cost way to find where the agent still breaks before users do.
 
-### Evidence
+### Sources
 - [Evaluating LLM-Based 0-to-1 Software Generation in End-to-End CLI Tool Scenarios](../Inbox/2026-04-08--evaluating-llm-based-0-to-1-software-generation-in-end-to-end-cli-tool-scenarios.md): CLI-Tool-Bench defines empty-workspace CLI generation and black-box evaluation over return code, stdout, and file-system side effects, with top models below 43% success.
 - [Evaluating LLM-Based 0-to-1 Software Generation in End-to-End CLI Tool Scenarios](../Inbox/2026-04-08--evaluating-llm-based-0-to-1-software-generation-in-end-to-end-cli-tool-scenarios.md): The paper reports monolithic code structures and infinite generation loops as observed failure modes, which a black-box harness can surface.

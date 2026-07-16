@@ -37,7 +37,7 @@ A robot team running π0-style or other stochastic VLA policies can add a small 
 
 This is a practical fit for manipulation cells where a wrong first motion is expensive but a few extra policy samples are cheap. The same logging layer can include velocity-field disagreement for flow-based VLAs, so uncertain starts are routed to an expert demonstration queue. That turns deployment telemetry into a triage list: successful verified rollouts become self-training data, and high-disagreement cases become the next demonstrations to collect.
 
-### Evidence
+### Sources
 - [Visual Verification Enables Inference-time Steering and Autonomous Policy Improvement](../Inbox/2026-06-16--visual-verification-enables-inference-time-steering-and-autonomous-policy-improvement.md): VERITAS samples short action chunks, verifies them visually before execution, reports success gains across policies, and logs verified rollouts for fine-tuning.
 - [Uncertainty Quantification for Flow-Based Vision-Language-Action Models](../Inbox/2026-06-16--uncertainty-quantification-for-flow-based-vision-language-action-models.md): The uncertainty paper uses velocity-field disagreement across flow-based VLA action-head ensembles for failure detection and active fine-tuning case selection.
 
@@ -46,7 +46,7 @@ Teams with demonstrations spread across Franka, UR, ALOHA, ARX, or similar arms 
 
 The immediate build is a dataset adapter that converts each robot log into a shared schema before pretraining or fine-tuning. A cheap validation run can train on two or three robot families and hold out one embodiment, then compare zero-shot transfer and few-shot adaptation against a per-robot action encoding. Qwen-RobotManip reports a 38,100-hour corpus and real-robot validation across AgileX ALOHA, Franka, UR, and ARX, so the schema choices are now concrete enough to copy in smaller labs.
 
-### Evidence
+### Sources
 - [Qwen-RobotManip Technical Report: Alignment Unlocks Scale for Robotic Manipulation Foundation Models](../Inbox/2026-06-16--qwen-robotmanip-technical-report-alignment-unlocks-scale-for-robotic-manipulation-foundation-models.md): Qwen-RobotManip describes canonical state-action alignment, binary masks, camera-frame delta end-effector actions, execution-history conditioning, a 38,100-hour corpus, and real-robot validation across several platform families.
 - [Qwen-RobotManip Technical Report: Alignment Unlocks Scale for Robotic Manipulation Foundation Models](../Inbox/2026-06-16--qwen-robotmanip-technical-report-alignment-unlocks-scale-for-robotic-manipulation-foundation-models.md): The source text says the system builds a roughly 38,100-hour corpus using open-source robot datasets and human demonstration videos, with human-to-robot synthesis across 15 platforms.
 
@@ -55,6 +55,6 @@ A lab choosing a generalist manipulation policy should add a pre-deployment test
 
 Industrial teams handling wires or cables need an extra contact-rich test. WireCraft shows that privileged state RL can solve Ethernet connector insertion in simulation, with State PPO at 95.86% insert success, while Vision PPO reaches 17.74% insert success on the same task and simulation-only ACT gives 0/10 real UR5 insertions in the reported run. Acceptance testing should include staged metrics such as reach, align, insert, route, and seat, so a policy that reaches the port but fails contact alignment is caught before a hardware trial.
 
-### Evidence
+### Sources
 - [EBench: Elemental Diagnosis of Generalist Mobile Manipulation Policies](../Inbox/2026-06-16--ebench-elemental-diagnosis-of-generalist-mobile-manipulation-policies.md): EBench defines capability axes and generalization shifts and reports close overall success rates that hide large skill-profile differences across generalist policies.
 - [WireCraft: A Simulation Benchmark for Industrial DLO Manipulation](../Inbox/2026-06-16--wirecraft-a-simulation-benchmark-for-industrial-dlo-manipulation.md): WireCraft reports a large gap between privileged state RL and vision-based policies on industrial wire and connector tasks, including real UR5 insertion results.

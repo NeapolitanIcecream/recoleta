@@ -37,7 +37,7 @@ Robot teams that keep retraining a policy for each new arm or hand now have a cl
 
 The first cheap check is a narrow porting trial across two embodiments you already control, such as a lab arm and a mobile manipulator or two gripper types. Use one long-horizon household task and one cluttered pick task. Measure whether a shared action space plus a few hours of embodiment-specific post-training beats a same-size model trained only on the target robot. If the gap closes on setup time and trial count, the value is immediate for labs and product teams that keep paying the same data collection cost every time hardware changes.
 
-### Evidence
+### Sources
 - [JoyAI-RA 0.1: A Foundation Model for Robotic Autonomy](../Inbox/2026-04-22--joyai-ra-0-1-a-foundation-model-for-robotic-autonomy.md): Reports the unified action space design and concrete gains across RoboTwin, RoboCasa, and a real humanoid benchmark.
 
 ## Cross-platform post-training workflow for surgical robot policies
@@ -45,7 +45,7 @@ Medical robotics groups now have enough open paired video and kinematics to trea
 
 A concrete build from this is a cross-platform surgical adaptation benchmark for institutions that already have small logs from more than one system. Standardize paired video and kinematics, fine-tune one policy across platforms, and track whether short per-site adaptation runs are enough to recover useful subtask performance on pickup, handover, throw, and extract. A cheap validation step is to reproduce the paper's low-data condition inside one lab network: hold out one platform, fine-tune with only a few hours, and compare against a policy trained only on that platform's local data. If the shared model lifts early subtask completion before full end-to-end autonomy is ready, that is already useful for training, assistance, and simulator bootstrapping.
 
-### Evidence
+### Sources
 - [Open-H-Embodiment: A Large-Scale Dataset for Enabling Foundation Models in Medical Robotics](../Inbox/2026-04-22--open-h-embodiment-a-large-scale-dataset-for-enabling-foundation-models-in-medical-robotics.md): Provides the dataset scale, platform coverage, suturing results, and cross-platform evaluation figures.
 
 ## Black-box rollout success prediction for VLA execution gating
@@ -53,5 +53,5 @@ Teams deploying VLA policies can add a success predictor on top of black-box act
 
 This supports a concrete support layer for anyone using foundation robot policies through an API or a frozen checkpoint. Log action probabilities over time, train a rollout-success head against final task outcome, and expose a threshold that can pause execution or hand control back to teleoperation when predicted success drops. The low-cost test is simple: pick one existing benchmark or real-robot routine with known recovery failures, compare uninterrupted execution against confidence-gated execution, and measure task completion, wasted motion, and operator interventions. The paper's black-box result matters because many deployment teams cannot access internal hidden states even when they can record policy outputs.
 
-### Evidence
+### Sources
 - [Temporal Difference Calibration in Sequential Tasks: Application to Vision-Language-Action Models](../Inbox/2026-04-22--temporal-difference-calibration-in-sequential-tasks-application-to-vision-language-action-models.md): Describes the sequential calibration method, black-box applicability, early failure detection, and the 15% OpenVLA improvement on LIBERO.

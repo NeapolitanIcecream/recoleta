@@ -41,7 +41,7 @@ RADAR is the clearest production case. At Meta, significant lines of code per hu
 
 A practical first rollout is a dry-run gate on recent low-risk diffs. Score each diff, run the automated checks, withhold landing authority, and compare approve rate, reviewer latency, revert rate, and incident rate against human-reviewed changes. Landing authority should start with small allowlisted sources and explicit caps.
 
-### Evidence
+### Sources
 - [Automating Low-Risk Code Review at Meta: RADAR, Risk Calibration, and Review Efficiency](../Inbox/2026-05-28--automating-low-risk-code-review-at-meta-radar-risk-calibration-and-review-efficiency.md): RADAR combines source eligibility, Diff Risk Score thresholds, LLM review, deterministic checks, caps, and denylists, with production outcomes over 535K reviewed diffs.
 - [Automating Low-Risk Code Review at Meta: RADAR, Risk Calibration, and Review Efficiency](../Inbox/2026-05-28--automating-low-risk-code-review-at-meta-radar-risk-calibration-and-review-efficiency.md): The paper describes review backlogs from AI-driven code growth and the need to preserve rigor while directing human attention to higher-risk changes.
 
@@ -52,7 +52,7 @@ EviACT reports this pattern across Defects4J 2.0 and SWE-bench variants. With GP
 
 Failed runs also need a trace audit. TrajAudit targets the earliest decisive error step in long repository-level trajectories, using failed-test hints, folded observations, and tool inspection. Teams running agents on real bug queues can store step-by-step traces, patch diffs, tool calls, compiler output, and test output, then replay a sample of failures to label whether the first wrong step was bad localization, a weak plan, an invalid edit, or premature validation.
 
-### Evidence
+### Sources
 - [EviACT: An Evidence-to-Action Framework for Agentic Program Repair](../Inbox/2026-05-26--eviact-an-evidence-to-action-framework-for-agentic-program-repair.md): EviACT defines evidence gates across localization, patching, compile checks, failing-test reruns, and regression validation, with reported resolve-rate and cost gains.
 - [TrajAudit: Automated Failure Diagnosis for Agentic Coding Systems](../Inbox/2026-05-26--trajaudit-automated-failure-diagnosis-for-agentic-coding-systems.md): TrajAudit diagnoses failed repository-level coding-agent runs by finding the earliest decisive error step in long traces and reports higher localization accuracy with fewer tokens.
 
@@ -63,6 +63,6 @@ SNARE gives a concrete design. It builds benign scenarios with success predicate
 
 A small internal version can start with fixture repositories containing harmless fake secrets, protected files, and unrelated data. Each candidate agent release should run the same task set under logged filesystem and shell permissions, with failure predicates for unauthorized reads, writes, deletes, and network calls.
 
-### Evidence
+### Sources
 - [SNARE: Adaptive Scenario Synthesis for Eliciting Overeager Behavior in Coding Agents](../Inbox/2026-05-27--snare-adaptive-scenario-synthesis-for-eliciting-overeager-behavior-in-coding-agents.md): SNARE measures authorization-scope overreach in benign coding-agent tasks using success predicates, trap predicates, and a 10,000-run agent-model evaluation.
 - [SNARE: Adaptive Scenario Synthesis for Eliciting Overeager Behavior in Coding Agents](../Inbox/2026-05-27--snare-adaptive-scenario-synthesis-for-eliciting-overeager-behavior-in-coding-agents.md): The paper gives examples of agents opening .envrc and embedding production credentials into artifacts during otherwise benign coding tasks.

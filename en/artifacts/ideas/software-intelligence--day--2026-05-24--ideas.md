@@ -35,7 +35,7 @@ Platform and security teams can package one repetitive maintenance class as a fa
 
 The useful build is the wrapper around the coding agent: intake, classification, isolated workspace setup, implementation, tests, evidence capture, retry limit, and review queue. The first pilot can run on 10 repos and count how many jobs produce reviewable PRs, justified no-ops, or escalations. The safety check should live in tests, logs, screenshots, traces, ADR checks, or other reviewer-visible evidence, since the agent’s explanation is not enough for maintenance work that touches production code.
 
-### Evidence
+### Sources
 - [How to build your own software factory](../Inbox/2026-05-24--how-to-build-your-own-software-factory.md): Defines task packets, external validation, terminal states, no-op rules, retry limits, and a dependency-update example across repos.
 - [Don't Fear the Dark Factory](../Inbox/2026-05-24--don-t-fear-the-dark-factory.md): Describes bounded maintenance automation through a validation harness, with candidate tasks including dependency upgrades and security vulnerability mitigation.
 
@@ -44,7 +44,7 @@ Teams using coding agents for authorization, payment, policy, or data-access log
 
 This is best tested on code where the correctness property is compact: balance cannot go negative, an authorization rule denies by default, a policy update preserves an invariant, or an input parser rejects undefined cases. The evidence supports a constrained pilot, not a broad claim that natural-language requirements can already produce verified production systems end to end. The gap to watch is specification generation: the current vericoding results are strongest when the formal spec already exists or when a human can review the generated spec before code generation.
 
-### Evidence
+### Sources
 - [Vericoding: The End of "Trust Me Bro, The AI Wrote It"](../Inbox/2026-05-24--vericoding-the-end-of-trust-me-bro-the-ai-wrote-it.md): Describes the proposed pipeline from natural-language intent to Dafny-style specs, Z3 checks, verified code, and proof artifacts, while noting no new end-to-end quantitative evaluation.
 - [Vericoding: The End of "Trust Me Bro, The AI Wrote It"](../Inbox/2026-05-24--vericoding-the-end-of-trust-me-bro-the-ai-wrote-it.md): Cites a vericoding benchmark with 12,504 formal specifications and up to 82% success in Dafny using off-the-shelf LLMs.
 
@@ -53,6 +53,6 @@ Repositories that rely on coding agents should add a PR check for changes that i
 
 ContextLevy is a concrete implementation pattern: scan the GitHub pull request diff, estimate context weight, classify risky files, and post a focused comment when thresholds are exceeded. It can run as a GitHub Action or npm CLI, and it does not call an LLM or upload code. A low-risk rollout is to comment only for two weeks, tune ignored paths and thresholds, then make the check blocking for file classes the team already agrees should not enter the repo.
 
-### Evidence
+### Sources
 - [Built a small PR guardrail for token bloat, worth maintaining?](../Inbox/2026-05-24--built-a-small-pr-guardrail-for-token-bloat-worth-maintaining.md): Explains ContextLevy’s target failure mode: PRs that add low-signal files and create persistent overhead for AI coding agents.
 - [Built a small PR guardrail for token bloat, worth maintaining?](../Inbox/2026-05-24--built-a-small-pr-guardrail-for-token-bloat-worth-maintaining.md): Shows the GitHub Action setup, required permissions, and behavior of reading PR diffs and commenting when thresholds are exceeded.

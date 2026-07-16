@@ -27,7 +27,7 @@ language_code: zh-CN
 
 # 机器人策略接口校准
 
-## Summary
+## 摘要
 机器人 VLA 团队可以通过调整现有策略周围的控制接口和评估流程取得进展。最实用的做法包括：用于低数据操作调优的体素热图动作头、用于 VLA checkpoint 筛选的闭环世界模型，以及在混合机器人数据集训练前进行 3D 坐标对齐。
 
 ## 用于低数据操作微调的体素热图动作头
@@ -37,7 +37,7 @@ language_code: zh-CN
 
 这个方案最适合受限于演示稀缺，或在抓取、扫动和插入中遇到毫米级偏差的团队。低成本验证方式是在当前策略上按任务替换动作头，不改 backbone，并在真实机器人上同时报告成功率和末端执行器误差。
 
-### Evidence
+### 资料来源
 - [ActionMap: Robot Policy Learning via Voxel Action Heatmap](../Inbox/2026-06-05--actionmap-robot-policy-learning-via-voxel-action-heatmap.md): 概述 ActionMap 的即插式体素热图头、LIBERO 增益、低数据结果和真实 Franka 试验次数。
 - [ActionMap: Robot Policy Learning via Voxel Action Heatmap](../Inbox/2026-06-05--actionmap-robot-policy-learning-via-voxel-action-heatmap.md): 确认该热图头直接替换现有 VLA 动作解码器，并报告训练步数匹配的 LIBERO 改进。
 
@@ -48,7 +48,7 @@ language_code: zh-CN
 
 可行的采用路径是用目标工作单元中少量真实成功和失败轨迹校准世界模型，再用想象 rollout 排序 checkpoint 和任务变体。发布仍应以硬件试验为准，但筛选预算可以集中到那些闭环 rollout 能保持场景状态、夹爪运动和多视角一致性的 checkpoint 上。
 
-### Evidence
+### 资料来源
 - [PiL-World: A Chunk-Wise World Model for VLA Policy-in-the-Loop Evaluation](../Inbox/2026-06-04--pil-world-a-chunk-wise-world-model-for-vla-policy-in-the-loop-evaluation.md): 概述 PiL-World 的 policy-in-the-loop 方法、训练输入、真实-想象成功率差距和相关性结果。
 - [PiL-World: A Chunk-Wise World Model for VLA Policy-in-the-Loop Evaluation](../Inbox/2026-06-04--pil-world-a-chunk-wise-world-model-for-vla-policy-in-the-loop-evaluation.md): 确认需要观测-动作闭环测试，以及真实机器人评估的成本限制。
 
@@ -59,6 +59,6 @@ language_code: zh-CN
 
 直接测试方式是建立一个相机位姿扰动套件，并加入少量透明、薄片或插入类任务。如果成功率主要在视角变化或局部几何需求下下降，应该先把 3D 对齐放进数据管线，再增加更多演示。
 
-### Evidence
+### 资料来源
 - [Dexterity-BEV: Aligning 3D World and Actions for Generalizable Robot Policies Learning](../Inbox/2026-06-01--dexterity-bev-aligning-3d-world-and-actions-for-generalizable-robot-policies-learning.md): 概述 Dex-BEV 的共享 3D 坐标系、BEV 预处理、修改版 LIBERO 泛化和 RoboTwin 结果。
 - [GeoAlign: Beyond Semantics with State-Guided Spatial Alignment in VLA Models](../Inbox/2026-06-02--geoalign-beyond-semantics-with-state-guided-spatial-alignment-in-vla-models.md): 概述 GeoAlign 的 RGB 派生几何特征、本体感知查询、真实 ALOHA 增益和透明物体结果。

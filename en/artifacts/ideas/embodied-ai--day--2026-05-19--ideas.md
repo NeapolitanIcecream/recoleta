@@ -39,7 +39,7 @@ A practical release check would split each hardware task into language understan
 
 This is useful for model selection and repair work. MetaFine reports that replacing pi_0.5’s SigLIP encoder with a multi-scale cross-attention encoder, while freezing the VLM backbone and action head, raises grasp success from 39% to 67% and alignment from 0% to 32%. That gives evaluation teams a direct path from failed stage to component-level fix.
 
-### Evidence
+### Sources
 - [Beyond Binary Success: A Diagnostic Meta-Evaluation Framework for Fine-Grained Manipulation](../Inbox/2026-05-19--beyond-binary-success-a-diagnostic-meta-evaluation-framework-for-fine-grained-manipulation.md): MetaFine reports atomic manipulation skills, perturbation tests, stage metrics, headline inflation, and component repair results.
 - [Beyond Binary Success: A Diagnostic Meta-Evaluation Framework for Fine-Grained Manipulation](../Inbox/2026-05-19--beyond-binary-success-a-diagnostic-meta-evaluation-framework-for-fine-grained-manipulation.md): The paper describes the diagnostic setup and its use for finding visual encoder bottlenecks in fine-grained manipulation.
 
@@ -50,7 +50,7 @@ The failure can be measured with a delay sweep. On Kinetix, naive asynchronous r
 
 A cheap adoption test is to replay existing trajectories with injected delays d=0-7, log the age of the visual observation used for each executed chunk, and track success by delay bucket. Teams using flow-matching VLA policies can then test a DEFLECT-style offline post-training step without changing the runtime inference path.
 
-### Evidence
+### Sources
 - [DEFLECT: Delay-Robust Execution via Flow-matching Likelihood-Estimated Counterfactual Tuning for VLA Policies](../Inbox/2026-05-19--deflect-delay-robust-execution-via-flow-matching-likelihood-estimated-counterfactual-tuning-for-vla-policies.md): DEFLECT defines the asynchronous inference failure, the fresh-versus-stale offline training method, and delay-sweep results.
 - [DEFLECT: Delay-Robust Execution via Flow-matching Likelihood-Estimated Counterfactual Tuning for VLA Policies](../Inbox/2026-05-19--deflect-delay-robust-execution-via-flow-matching-likelihood-estimated-counterfactual-tuning-for-vla-policies.md): The abstract states the async rollout collapse and frames DEFLECT as a drop-in offline refinement for existing async VLA stacks.
 - [DEFLECT: Delay-Robust Execution via Flow-matching Likelihood-Estimated Counterfactual Tuning for VLA Policies](../Inbox/2026-05-19--deflect-delay-robust-execution-via-flow-matching-likelihood-estimated-counterfactual-tuning-for-vla-policies.md): The paper gives the real-world stale-observation mechanism, including a conveyor example where execution lags behind the conditioned observation.
@@ -62,6 +62,6 @@ The reported scale is large enough for a pilot dataset. FlyMirage contains 500 g
 
 A useful first check is to generate 20 to 50 scenes in the target domain, inspect object-box quality after distance pruning, and run the planner through the same safety and travel-distance constraints used in the paper. If model training improves on generated scenes but fails on a small real-flight validation set, the gap is likely in visual realism, annotation quality, or trajectory dynamics rather than dataset size alone.
 
-### Evidence
+### Sources
 - [FlyMirage: A Fully Automated Generation Pipeline for Diverse and Scalable UAV Flight Data via Generative World Model](../Inbox/2026-05-19--flymirage-a-fully-automated-generation-pipeline-for-diverse-and-scalable-uav-flight-data-via-generative-world-model.md): FlyMirage gives the automated scene-generation, annotation, target-selection, planning, filtering, scale, and cost details.
 - [FlyMirage: A Fully Automated Generation Pipeline for Diverse and Scalable UAV Flight Data via Generative World Model](../Inbox/2026-05-19--flymirage-a-fully-automated-generation-pipeline-for-diverse-and-scalable-uav-flight-data-via-generative-world-model.md): The abstract describes the full aerial VLN generation pipeline with LLM scene design, 3DGS scenes, semantic acquisition, and feasible UAV trajectories.

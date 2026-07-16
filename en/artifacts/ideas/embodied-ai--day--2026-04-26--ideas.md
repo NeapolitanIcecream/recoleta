@@ -35,7 +35,7 @@ A two-phase manipulation policy is now a concrete build target for teams trainin
 
 The practical workflow change is straightforward: label demonstration segments as approach or contact, then stop asking one action head to learn both behaviors from the same gradients. The paper’s own labeling pipeline uses video, language, subtask decomposition, and end-effector velocity cues, which makes this test cheap enough for an existing imitation-learning stack. A first check is to replay your current logs, split trajectories at contact onset, fine-tune two small adapters or heads, and measure whether final-stage failures drop on press, click, insert, and placement tasks. This looks most useful for labs and robotics teams that already have a base VLA policy but keep losing reliability at the last centimeter of motion.
 
-### Evidence
+### Sources
 - [Move-Then-Operate: Behavioral Phasing for Human-Like Robotic Manipulation](../Inbox/2026-04-26--move-then-operate-behavioral-phasing-for-human-like-robotic-manipulation.md): Summary gives the two-phase design, the dual-expert router, the 50-demo setup, and benchmark gains including the average success rate.
 - [Move-Then-Operate: Behavioral Phasing for Human-Like Robotic Manipulation](../Inbox/2026-04-26--move-then-operate-behavioral-phasing-for-human-like-robotic-manipulation.md): Abstract confirms explicit decoupling into move and operate phases with a dual-expert policy and automatic phase labeling.
 
@@ -44,7 +44,7 @@ Visual-tactile policies need a within-chunk correction layer when contact condit
 
 That points to a buildable support layer for anyone already using chunked action policies on tactile tasks. The job is not a full new policy stack; it is an execution module that rewrites the rest of the current horizon after each observation. The cheap validation is to add disturbances during insertion, pushing, or deformable-object handling and compare open-loop chunk execution against step-wise corrected execution on recovery rate, contact loss, and overshoot. The missing evidence here is exact benchmark margins, so the immediate claim is about control architecture and test design, not a fixed expected gain.
 
-### Evidence
+### Sources
 - [Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation](../Inbox/2026-04-26--tube-diffusion-policy-reactive-visual-tactile-policy-learning-for-contact-rich-manipulation.md): Summary describes the action-tube design, the learned streaming feedback flow, and the reported qualitative performance scope.
 - [Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation](../Inbox/2026-04-26--tube-diffusion-policy-reactive-visual-tactile-policy-learning-for-contact-rich-manipulation.md): Content states consistent outperformance on Push-T and three additional tasks, real-world disturbance experiments, and reduced denoising needs for real-time control.
 - [Tube Diffusion Policy: Reactive Visual-Tactile Policy Learning for Contact-rich Manipulation](../Inbox/2026-04-26--tube-diffusion-policy-reactive-visual-tactile-policy-learning-for-contact-rich-manipulation.md): Introduction explains why high-frequency tactile sensing and slow per-step diffusion inference create a reactivity gap in contact-rich manipulation.
@@ -54,7 +54,7 @@ VLA deployment now needs a runtime safety gate and a threat-based evaluation che
 
 A concrete adoption change follows from that map. Before deployment, teams can run a fixed preflight suite that perturbs camera input, language instructions, and state streams, then record action deviations, refusal behavior, stop latency, and recovery on longer trajectories. During operation, the same threat model supports a small runtime monitor that checks for prompt anomalies, observation inconsistency, and unsafe action sequences before execution continues. This is less a new model than a missing safety layer around existing VLA stacks. The survey does not provide a benchmark to adopt directly, so the near-term value is in turning its taxonomy into a local red-team and gating process.
 
-### Evidence
+### Sources
 - [Vision-Language-Action Safety: Threats, Challenges, Evaluations, and Mechanisms](../Inbox/2026-04-26--vision-language-action-safety-threats-challenges-evaluations-and-mechanisms.md): Summary provides the two-axis taxonomy, the main threat classes, and the call for runtime safety architectures and standard evaluation.
 - [Vision-Language-Action Safety: Threats, Challenges, Evaluations, and Mechanisms](../Inbox/2026-04-26--vision-language-action-safety-threats-challenges-evaluations-and-mechanisms.md): Content lists the threat types and connects them to training-time and inference-time defenses, evaluation, and deployment.
 - [Vision-Language-Action Safety: Threats, Challenges, Evaluations, and Mechanisms](../Inbox/2026-04-26--vision-language-action-safety-threats-challenges-evaluations-and-mechanisms.md): Abstract explains the embodied safety risks, multimodal attack surface, latency constraints, and trajectory-level error propagation that motivate deployment gating.

@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # Robot Policy Transfer and Execution Reliability
 
-## Summary
+## 摘要
 近期最明确的工作集中在迁移接口、跨平台医疗后训练，以及机器人执行的置信度层。证据最强的是这些论文把变化和具体系统及可测增益绑在一起：JoyAI-RA 对跨实体共享动作空间迁移，Open-H-Embodiment 对跨平台手术后训练，Temporal Difference Calibration 对现有 VLA 策略上的失败预测和动作选择。
 
 ## Shared action-space retargeting for multi-robot manipulation training
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 最便宜的检查方式，是在你已经控制的两个实体之间做一次窄范围迁移试验，比如实验室机械臂和移动操作臂，或者两种夹爪。选一个长时程家务任务和一个杂乱场景下的抓取任务。测量共享动作空间加上几小时面向实体的后训练，是否能超过只在目标机器人上训练的同规模模型。如果在搭建时间和试验次数上差距缩小，对一直为硬件变化反复付出同样数据采集成本的实验室和产品团队来说，这个结果已经有直接价值。
 
-### Evidence
+### 资料来源
 - [JoyAI-RA 0.1: A Foundation Model for Robotic Autonomy](../Inbox/2026-04-22--joyai-ra-0-1-a-foundation-model-for-robotic-autonomy.md): Reports the unified action space design and concrete gains across RoboTwin, RoboCasa, and a real humanoid benchmark.
 
 ## Cross-platform post-training workflow for surgical robot policies
@@ -41,7 +41,7 @@ language_code: zh-CN
 
 由此可以直接做一个跨平台手术适配基准，适合那些已经有多个系统少量日志的机构。把配对视频和运动学统一格式，跨平台微调同一个策略，并跟踪短时的站点级适配运行是否足以恢复有用的子任务表现，尤其是抓取、递交、投掷和取出。一个低成本验证步骤，是在同一实验室网络里复现论文的低数据条件：留出一个平台，只用几小时做微调，再和只用该平台本地数据训练的策略比较。如果共享模型能在完整端到端自主还没准备好之前，就提升早期子任务完成率，这对训练、辅助和模拟器冷启动都已经有用。
 
-### Evidence
+### 资料来源
 - [Open-H-Embodiment: A Large-Scale Dataset for Enabling Foundation Models in Medical Robotics](../Inbox/2026-04-22--open-h-embodiment-a-large-scale-dataset-for-enabling-foundation-models-in-medical-robotics.md): Provides the dataset scale, platform coverage, suturing results, and cross-platform evaluation figures.
 
 ## Black-box rollout success prediction for VLA execution gating
@@ -49,5 +49,5 @@ language_code: zh-CN
 
 这给通过 API 或冻结检查点使用基础机器人策略的人提供了一层直接可用的支持模块。记录随时间变化的动作概率，用最终任务结果训练一个 rollout-success head，并暴露一个阈值，在预测成功率下降时暂停执行或把控制权交回遥操作。低成本测试也很简单：选一个已有的基准或一个已知会出现恢复失败的真实机器人流程，对比不中断执行和置信度门控执行，测量任务完成率、无效运动和操作员介入次数。论文的黑盒结果很关键，因为很多部署团队即使能记录策略输出，也拿不到内部隐藏状态。
 
-### Evidence
+### 资料来源
 - [Temporal Difference Calibration in Sequential Tasks: Application to Vision-Language-Action Models](../Inbox/2026-04-22--temporal-difference-calibration-in-sequential-tasks-application-to-vision-language-action-models.md): Describes the sequential calibration method, black-box applicability, early failure detection, and the 15% OpenVLA improvement on LIBERO.

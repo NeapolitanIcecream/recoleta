@@ -35,7 +35,7 @@ A Jira-linked agent loop is now concrete enough to pilot in teams that already m
 
 A first deployment target is recurring ticket families with clear verification, such as dependency updates, low-risk remediation, or backlog deduplication. The cheap test is operational: run the loop on one bounded queue for two weeks and measure duplicate ticket creation, terminal-state completion, verifier pass rate, and the share of items pushed to human review. The evidence here is better on control and traceability than on broad software delivery coverage, so the product should stay close to existing ticket workflows and avoid open-ended task intake at the start.
 
-### Evidence
+### Sources
 - [Closed-Loop Autonomous Software Development via Jira-Integrated Backlog Orchestration: A Case Study in Deterministic Control and Safety-Constrained Automation](../Inbox/2026-04-05--closed-loop-autonomous-software-development-via-jira-integrated-backlog-orchestration-a-case-study-in-deterministic-control-and-safety-constrained-automation.md): Jira-backed deterministic control loop, confidence thresholds, verifier gates, and observed terminal-state results support a concrete ticket automation workflow.
 - [Closed-Loop Autonomous Software Development via Jira-Integrated Backlog Orchestration: A Case Study in Deterministic Control and Safety-Constrained Automation](../Inbox/2026-04-05--closed-loop-autonomous-software-development-via-jira-integrated-backlog-orchestration-a-case-study-in-deterministic-control-and-safety-constrained-automation.md): Abstract content confirms bounded AI actions, run counts, adversarial review findings, and continuous-operation artifacts.
 
@@ -44,7 +44,7 @@ Compiler-guided repair for COBOL generation now looks practical enough for inter
 
 The strongest near-term use is not full application generation. It is targeted work such as translating change requests into candidate patches, filling repetitive boilerplate, or drafting isolated batch-job updates that already have test fixtures. The reported gains are large on compilation success, including GPT-4o moving from 41.8% to 95.89%, with pass@1 improvements as well. A useful evaluation plan is simple: sample a fixed set of maintenance tickets, compare one-shot generation against compiler-guided revision, and record compile success, test pass rate, and the error categories that still need human repair. The error taxonomy is also useful product input because incorrect program structure and built-in function misuse are recurrent failure modes.
 
-### Evidence
+### Sources
 - [COBOLAssist: Analyzing and Fixing Compilation Errors for LLM-Powered COBOL Code Generation](../Inbox/2026-04-05--cobolassist-analyzing-and-fixing-compilation-errors-for-llm-powered-cobol-code-generation.md): Summary reports the COBOL repair loop, error taxonomy, and large compilation-success gains after compiler feedback.
 - [COBOLAssist: Analyzing and Fixing Compilation Errors for LLM-Powered COBOL Code Generation](../Inbox/2026-04-05--cobolassist-analyzing-and-fixing-compilation-errors-for-llm-powered-cobol-code-generation.md): Abstract content confirms GPT-4o-mini and GPT-4o improvements under iterative compilation-guided repair.
 
@@ -53,7 +53,7 @@ Architecture review needs a separate check step before teams trust agents on dia
 
 The practical build is an architecture diff gate in CI or review tooling. Capture the prompt, generated file graph, dependency additions, infrastructure components, and any referenced diagram or ADR. Then require a structured review when the build introduces state stores, orchestration loops, external tools, or new interface contracts. For diagram inputs, keep the model on extraction and highlighting tasks that a reviewer can verify quickly, not final judgment over behavioral or relation-heavy diagrams. The cheapest validation is to run the gate on a week of agent-generated pull requests and count how often it catches unreviewed architecture changes that would otherwise pass as ordinary code edits.
 
-### Evidence
+### Sources
 - [Architecture Without Architects: How AI Coding Agents Shape Software Architecture](../Inbox/2026-04-05--architecture-without-architects-how-ai-coding-agents-shape-software-architecture.md): Summary reports prompt-driven architectural divergence and concrete component additions across variants.
 - [Benchmarking and Evaluating VLMs for Software Architecture Diagram Understanding](../Inbox/2026-04-05--benchmarking-and-evaluating-vlms-for-software-architecture-diagram-understanding.md): Summary reports SADU benchmark accuracy limits and failure patterns on architecture diagrams.
 - [Benchmarking and Evaluating VLMs for Software Architecture Diagram Understanding](../Inbox/2026-04-05--benchmarking-and-evaluating-vlms-for-software-architecture-diagram-understanding.md): Abstract content confirms the gap between current VLM performance and design-stage software engineering needs.

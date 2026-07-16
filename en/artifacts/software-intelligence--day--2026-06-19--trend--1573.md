@@ -32,14 +32,14 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s clearest signal is productization under evaluation pressure. Coding and security agents advertise guardrails, repair loops, and audit trails, while model-routing arguments put cost and latency beside quality. Several claims still lack public datasets or reproducible protocols.
 
-## Clusters
+## Findings
 
 ### Coding-agent release controls
 Minovative Mind CLI is framed as an agent that can edit a repository without leaving it in a broken state. Its claimed controls include local semantic code search, dependency tracing across 11 languages, parallel sub-agent work with a mutex registry, pre-flight syntax checks, fuzzy patching, transaction logs, sandboxed build trials, and `/revert` rollback. The build loop is bounded: up to 120 seconds per trial and up to 5 auto-correction attempts after compiler errors or regressions.
 
 The evidence is feature-level. The source gives no SWE-bench, HumanEval, RepoBench, pass rate, latency, cost, or baseline comparison. That makes it useful as a map of current coding-agent product requirements, not as proof that the system outperforms other agents.
 
-#### Evidence
+#### Sources
 - [What are good benchmarks to test my CLI AI agentic system?](../Inbox/2026-06-19--what-are-good-benchmarks-to-test-my-cli-ai-agentic-system.md): Summary lists the claimed context engine, sub-agent execution, verification loop, rollback, limits, and missing benchmarks.
 
 ### Agentic static security review
@@ -47,7 +47,7 @@ Aikido Code Audit targets vulnerabilities that require following intent and stat
 
 The claims are specific but mostly vendor-reported. Aikido says early use found a median of about 25 issues per codebase, that no audits came back clean, and that the tool covers roughly 70–80% of what a full pentest finds at about one-tenth the cost. The excerpt does not provide a public dataset, reproducible protocol, or independent evaluation.
 
-#### Evidence
+#### Sources
 - [Aikido Code Audit](../Inbox/2026-06-19--aikido-code-audit.md): Summary gives the product scope, cross-file vulnerability approach, vendor-reported results, and missing public evaluation protocol.
 
 ### Temporal debugging for production agents
@@ -55,7 +55,7 @@ StaleTrace focuses on a practical failure mode for deployed agents: acting on a 
 
 The design choice is determinism. StaleTrace claims no large language model calls, no embeddings, and no graph database during auditing. The same inputs are claimed to produce the same verdict. The source shows one reconstructed incident example and gives no accuracy, latency, dataset, or production-volume measurements.
 
-#### Evidence
+#### Sources
 - [Show HN: StaleTrace – A temporal ledger that catches stale-state agent bugs](../Inbox/2026-06-19--show-hn-staletrace-a-temporal-ledger-that-catches-stale-state-agent-bugs.md): Summary explains the stale-state problem, temporal ledger approach, deterministic claims, and lack of measured evaluation.
 
 ### Small-model routing for knowledge work
@@ -63,5 +63,5 @@ The model-routing article argues that many office tasks can be handled by small,
 
 The article pairs routing with domain post-training examples. It reports that MAI-Code-1-Flash, with about 5B active parameters, scores 51.2% on SWE-Bench Pro versus 35.2% for Claude Haiku 4.5 and uses up to 60% fewer tokens. It also claims the routing plus tuned small-language-model setup can cut cost by 75–90% and improve latency by 2–3×. These numbers make cost-quality tradeoffs the main evaluation claim.
 
-#### Evidence
+#### Sources
 - [Knowledge workers don't need frontier models](../Inbox/2026-06-19--knowledge-workers-don-t-need-frontier-models.md): Summary provides GDPVal-AA scores, routing method, MAI examples, and cost-latency claims.

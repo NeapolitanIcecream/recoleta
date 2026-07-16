@@ -37,7 +37,7 @@ A Dart-first documentation stack migration is now a concrete option for teams th
 
 The practical build is a migration starter for one documentation property, not a full site rewrite pitch. Keep Markdown content, rebuild shared page templates and interactive doc widgets in Jaspr, and measure whether a new contributor can clone, run, edit, and ship with only the Dart SDK installed. This is most relevant for teams with content-heavy sites, a small amount of interactivity, and repeated maintenance work across multiple web properties. The evidence supports the workflow and stack-consolidation case. It does not yet support a claim about better site performance or lower long-term cost without local measurement.
 
-### Evidence
+### Sources
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md): Confirms the production migration of dart.dev, flutter.dev, and docs.flutter.dev to Jaspr and the goal of a unified Dart-only contributor experience.
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md): Describes the prior Node.js and Python split, higher setup friction, reduced code sharing, and the need for richer interactive documentation features.
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md): Summarizes that Jaspr Content preserved Markdown, templating, and data-loading workflows close to the previous process.
@@ -47,7 +47,7 @@ Partial hydration for documentation pages with small interactive elements now ha
 
 A useful next step is a narrow component library for documentation teams: code sample runners, expandable API examples, quiz blocks, or version-aware notices built as Jaspr components that hydrate only where used. The cheap validation is page-level: check HTML output without JavaScript, then confirm that only the interactive islands load client code. The current evidence is enough for this architecture on content-heavy sites. It is not enough to claim specific Core Web Vitals gains because the post does not publish benchmark numbers.
 
-### Evidence
+### Sources
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md): States that Jaspr supports partial hydration, with static HTML prerendering and client logic attached only to components that need interaction.
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md): Names richer code samples and quizzes as concrete interactive features that were hard to add in the older setup.
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md): Notes that the post claims quick loading and SEO benefits but does not provide quantitative performance metrics.
@@ -57,6 +57,6 @@ Experimental WebAssembly support on dart.dev is a reason to add a browser-covera
 
 The concrete build here is a release check around one interactive documentation component. Record browser family, selected runtime path, hydration success, and visible failures. Keep the feature behind compatibility checks until the data shows stable behavior across the browsers your documentation audience actually uses. This is a support-layer task for teams adopting Jaspr on public docs sites where browser variance matters more than benchmark demos.
 
-### Evidence
+### Sources
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md): States that dart.dev already uses experimental WebAssembly support on compatible browsers and that the post provides no performance deltas or browser coverage figures.
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md): Confirms the article’s discussion of ongoing investment in Jaspr and its readiness to try, while leaving deployment details to adopters.

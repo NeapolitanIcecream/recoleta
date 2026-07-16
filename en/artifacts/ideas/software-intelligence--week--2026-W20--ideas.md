@@ -37,7 +37,7 @@ Engineering teams piloting code agents can add a CI gate for agent-authored pull
 
 SWE-Cycle gives a concrete template for this workflow. It separates environment reconstruction, code implementation, and verification test generation, then tests a FullCycle run in a bare repository. The reported FullCycle solve rates stay below 14% even when isolated setup and test-generation scores are much higher, which is a direct warning for teams that accept code-agent output after a narrow unit-test pass. SaaSBench adds the full-stack case: more than 95% of failures happen before deep business logic, mainly in setup, integration, premature stopping, and repeated debugging loops. A useful pilot can start with ten internal bug tickets and measure where each agent run fails across those same phases.
 
-### Evidence
+### Sources
 - [SWE-Cycle: Benchmarking Code Agents across the Complete Issue Resolution Cycle](../Inbox/2026-05-13--swe-cycle-benchmarking-code-agents-across-the-complete-issue-resolution-cycle.md): SWE-Cycle defines end-to-end issue resolution as environment reconstruction, code implementation, and verification test generation, with FullCycle solve rates below 14%.
 - [SaaSBench: Exploring the Boundaries of Coding Agents in Long-Horizon Enterprise SaaS Engineering](../Inbox/2026-05-17--saasbench-exploring-the-boundaries-of-coding-agents-in-long-horizon-enterprise-saas-engineering.md): SaaSBench reports that enterprise SaaS agent failures are concentrated in setup, configuration, integration, premature stopping, and debugging loops.
 
@@ -46,7 +46,7 @@ Teams publishing agent scores should run a reward-hacking audit against the benc
 
 BenchJack shows why this belongs in the release process. It generated working reward-hacking exploits on all 10 audited benchmarks and found 219 distinct flaws. On four benchmarks with fixable designs, repeated audit-and-patch cycles reduced the hackable-task ratio from near 100% to under 10%. Rollout Cards covers the trace side: an audit of 50 popular repositories found none reporting failed, errored, or skipped rollouts beside headline scores, and re-grading fixed artifacts changed reported scores by up to 20.9 percentage points.
 
-### Evidence
+### Sources
 - [Do Androids Dream of Breaking the Game? Systematically Auditing AI Agent Benchmarks with BenchJack](../Inbox/2026-05-12--do-androids-dream-of-breaking-the-game-systematically-auditing-ai-agent-benchmarks-with-benchjack.md): BenchJack audits agent benchmarks for reward-hacking paths, found exploits across 10 benchmarks, and showed iterative patching can reduce hackable tasks.
 - [Rollout Cards: A Reproducibility Standard for Agent Research](../Inbox/2026-05-12--rollout-cards-a-reproducibility-standard-for-agent-research.md): Rollout Cards specifies per-episode records and reporting rules, and shows that reporting choices can change agent benchmark results.
 
@@ -55,5 +55,5 @@ Security engineering teams can change automated vulnerability repair runs so the
 
 ContraFix is a concrete example of this loop. Its Analyzer compares runtime state across paired executions, then the Patcher turns the inferred safety condition into source edits. The system also stores verified repair specifications and mutation strategies for later cases. Reported results are high enough to justify small internal tests on recurring vulnerability classes: 84.0% resolved on SEC-Bench and 73.8% on PatchEval, with ablations attributing a 27.0 percentage-point gain to contrastive runtime analysis and a 9.0-point gain to skill accumulation.
 
-### Evidence
+### Sources
 - [ContraFix: Agentic Vulnerability Repair via Differential Runtime Evidence and Skill Reuse](../Inbox/2026-05-17--contrafix-agentic-vulnerability-repair-via-differential-runtime-evidence-and-skill-reuse.md): ContraFix uses paired crashing and safe executions, runtime probes, repair specifications, verification runs, and reusable repair knowledge for vulnerability repair.

@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # 语言引导的操作控制
 
-## Summary
+## 摘要
 近期最清晰的变化是更紧的 VLA 基线、直接测试语义控制，以及用于操作数据生成的可供性层。支撑这些判断的证据最强的是：一个简单的 VLM 加 MLP 基线、在留出指令变体上的语言评分规划，以及在物体部位选择决定成败的任务上使用可供性条件抓取生成。
 
 ## 使用预训练 VLM 和 MLP 动作头的受控 VLA 基线
@@ -35,7 +35,7 @@ language_code: zh-CN
 
 一个低成本检查是，把当前的一项内部模型对比在骨干和数据集固定的情况下重跑，然后只比较动作头和一个额外训练技巧。如果简单头能保持在几分之内，或者直接胜出，团队就可以降低模型复杂度，让评测更干净。
 
-### Evidence
+### 资料来源
 - [StarVLA-$α$: Reducing Complexity in Vision-Language-Action Systems](../Inbox/2026-04-13--starvla-a-reducing-complexity-in-vision-language-action-systems.md): StarVLA-α reports the benchmark results and action-head ablations that support a simple VLM plus MLP baseline.
 
 ## 用于语义泛化测试的语言评分轨迹重排序
@@ -45,7 +45,7 @@ language_code: zh-CN
 
 一个可落地的第一步，是在检索到的轨迹或策略提案上加一个重排序器。保留现有的提案生成器，预测短时域结果，再用冻结的多模态嵌入模型按它们和指令的余弦相似度排序。第一次验证不需要完整的机器人重训，只需要一个留出的指令切分，并加入改写、新指代和保留动作需求的视觉替换。
 
-### Evidence
+### 资料来源
 - [Grounded World Model for Semantically Generalizable Planning](../Inbox/2026-04-13--grounded-world-model-for-semantically-generalizable-planning.md): Grounded World Model provides the language-conditioned MPC setup and the train/test semantic generalization results on WISER.
 
 ## 用于倒水和悬挂任务的可供性条件抓取生成
@@ -55,5 +55,5 @@ language_code: zh-CN
 
 一个低成本检查是，挑选五个依赖物体部位的现有任务，用可供性条件抓取重新生成演示，再和通用抓取规划器对比成功率。早期读数应该重点看倒水、悬挂和工具使用任务，因为这些任务里，选对部位决定了大部分结果。
 
-### Evidence
+### 资料来源
 - [AffordSim: A Scalable Data Generator and Benchmark for Affordance-Aware Robotic Manipulation](../Inbox/2026-04-13--affordsim-a-scalable-data-generator-and-benchmark-for-affordance-aware-robotic-manipulation.md): AffordSim reports the task breakdown and the affordance-aware trajectory generation ablation that motivate an affordance-conditioned grasp layer.

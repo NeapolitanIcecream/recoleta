@@ -39,7 +39,7 @@ VLA manipulation teams should add a safety test stage that measures unsafe conta
 
 The operational reason is simple: a policy can finish easy manipulation tasks and still fail around clutter, human hands, or held objects. In LIBERO-Safety, OpenVLA-OFT drops to 1.3% success on hard affordance-aware grasping, and π0.5 reaches only 35.3% on the same level. A practical release gate would run the same policy on standard task suites and on safety suites, log success, collision, refusal, and recovery behavior, and block deployment on tasks where L2 safety cases fail repeatedly.
 
-### Evidence
+### Sources
 - [LIBERO-Safety: A Comprehensive Benchmark for Physical and Semantic Safety in Vision-Language-Action Models](../Inbox/2026-06-22--libero-safety-a-comprehensive-benchmark-for-physical-and-semantic-safety-in-vision-language-action-models.md): LIBERO-Safety defines the safety suites, dataset size, data-generation method, and baseline failures under hard physical safety settings.
 - [LIBERO-Safety: A Comprehensive Benchmark for Physical and Semantic Safety in Vision-Language-Action Models](../Inbox/2026-06-22--libero-safety-a-comprehensive-benchmark-for-physical-and-semantic-safety-in-vision-language-action-models.md): The paper abstract describes the parametric safety benchmark and the 19,664 collision-free demonstrations.
 
@@ -48,7 +48,7 @@ Assistive robot teams can test a frozen VLA with a contact-aware shared-control 
 
 This is a concrete fix for a common failure mode in home manipulation. Frozen VLAs can interpret broad intent but lose reliability at precise contact points. In a novice-user scene-recovery benchmark, Assistron reached 91.3% partial success, while the autonomous VLA reached 13.7% and timed out. The system still required active user input for 56.5% of the run, so the first adoption test should focus on whether the handoff reduces workload for weaker joystick users without creating new trust problems.
 
-### Evidence
+### Sources
 - [Assistron: Bayesian Shared Autonomy with Off-the-shelf Vision-Language-Action Models](../Inbox/2026-06-22--assistron-bayesian-shared-autonomy-with-off-the-shelf-vision-language-action-models.md): Assistron keeps the VLA frozen, triggers user intervention near contact-rich steps, and reports partial success, autonomy time, workload, and user-study results.
 - [Assistron: Bayesian Shared Autonomy with Off-the-shelf Vision-Language-Action Models](../Inbox/2026-06-22--assistron-bayesian-shared-autonomy-with-off-the-shelf-vision-language-action-models.md): The paper motivates direct use of VLAs in assistive settings and describes the zero-shot reliability problem.
 
@@ -57,6 +57,6 @@ Robot learning teams can shorten post-deployment adaptation by logging high-unce
 
 The useful workflow change is to stop treating every failed task as a request for a full start-state demonstration. Demonstrators can spend time on the substeps where the policy is unsure, then replay older tasks during training. In RECALL, strong INSIGHT online recovery with full replay reaches 72.4% overall LIBERO-10 success, compared with 60.2% for matched passive collection. Training only on the new recovery data collapses retained behavior, with the best new-only setting at 28.4% overall success and 0.4% collected-task success, so the replay mix is part of the workflow, not an optional cleanup step.
 
-### Evidence
+### Sources
 - [RECALL: Recovery Experience Collection for Active Lifelong Learning in Vision-Language-Action Models](../Inbox/2026-06-22--recall-recovery-experience-collection-for-active-lifelong-learning-in-vision-language-action-models.md): RECALL reports uncertainty-guided recovery collection, the active-versus-passive comparison, and the failure of new-only fine-tuning without replay.
 - [RECALL: Recovery Experience Collection for Active Lifelong Learning in Vision-Language-Action Models](../Inbox/2026-06-22--recall-recovery-experience-collection-for-active-lifelong-learning-in-vision-language-action-models.md): The paper explains why passive start-state demonstrations waste effort and why uncertain intermediate states are useful targets for new supervision.

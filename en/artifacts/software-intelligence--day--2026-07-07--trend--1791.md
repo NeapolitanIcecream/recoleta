@@ -32,7 +32,7 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s research treats coding agents as systems that need external checks during work. Aria shows verifier-gated proof search at unusual scale; SWE-Review adds repository-aware review; TraceProbe measures how a run searches, edits, and validates. The current emphasis is reliability evidence inside the workflow, with final task scores treated as one signal among many.
 
-## Clusters
+## Findings
 
 ### Verifier-gated coding and proof generation
 Aria is the sharpest result in the period. A general code agent writes Coq and Lean proofs while a harness rejects unsound outputs, altered lemmas, dropped obligations, divergent tactics, and unsafe shortcuts. The paper reports full coverage on all targeted proof sets: 4,257 Iris core lemmas, 217 Rust library lemmas built on Iris, 318 reglang theorems, and 72 Lean port lemmas.

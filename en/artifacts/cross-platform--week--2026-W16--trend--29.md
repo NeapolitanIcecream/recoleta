@@ -30,18 +30,18 @@ pass_kind: trend_synthesis
 ## Overview
 This week’s publishable signal is practical web and framework work, led by Lynx and Flutter. The strongest evidence comes from a concrete Jaspr website migration and a detailed Lynx roadmap. Both are useful for engineering direction. Neither adds strong empirical research results.
 
-## Clusters
+## Findings
 
 ### Lynx roadmap and tooling
 Lynx supplied the week’s clearest platform plan. The roadmap focused on release speed, upgrade stability, AI-facing documentation and tooling, and broader cross-platform infrastructure. The source is useful because it names shipping priorities. It is limited because it does not report benchmark results or research evaluation.
 
-#### Evidence
+#### Sources
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md)
 
 ### Jaspr migration in production
 Flutter’s strongest technical signal was an applied migration, not a new model or benchmark. The team rebuilt dart.dev, flutter.dev, and docs.flutter.dev on Jaspr, keeping web publishing in a Dart-only stack. Partial hydration is the main architectural point. The write-up gives implementation detail, but the evidence on speed or maintenance gains stays light.
 
-#### Evidence
+#### Sources
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md)
 - [Come meet the Flutter core team on tour in 2026](../Inbox/2026-04-14--come-meet-the-flutter-core-team-on-tour-in-2026.md)
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md)
@@ -49,7 +49,7 @@ Flutter’s strongest technical signal was an applied migration, not a new model
 ### Community signal without technical evidence
 One additional Flutter post added schedule context, not research weight. It described a 2026 feedback tour tied to Dart 3.12 and Flutter 3.44. That matters as an ecosystem planning signal, but the corpus for this week contains no experiments, benchmarks, or technical results behind it.
 
-#### Evidence
+#### Sources
 - [Come meet the Flutter core team on tour in 2026](../Inbox/2026-04-14--come-meet-the-flutter-core-team-on-tour-in-2026.md)
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md)
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md)

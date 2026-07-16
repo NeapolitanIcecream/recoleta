@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # agent 生成的 Flutter 代码检查
 
-## Summary
+## 摘要
 这组材料中的 Antigravity 工作指向两类可用做法：面向 ADK 前端的可复用 skill，以及面向 Flutter 游戏逻辑的检查辅助工具。共同的采用阻碍是对生成代码的信任：当平台行为、流式事件或对时序敏感的物理逻辑在 prompt 之外失败时，团队需要能检查和验证代码。
 
 ## 用于 ADK agent 的 Flutter 前端可复用 Antigravity skill
@@ -35,7 +35,7 @@ language_code: zh-CN
 
 一个低成本测试是用这个 skill 跑两个不同的 ADK 示例 agent，检查第二次运行是否需要更少的手动修复。验收线应包括一次 Web 构建、一个移动端目标、一条流式响应路径和一条工具调用显示路径，因为报告中的失败集中在这些地方。
 
-### Evidence
+### 资料来源
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): 概述可重复的 Antigravity 工作流、分阶段产物、双 agent 审查循环、13 次迭代，以及反复出现的 ADK 前端修复。
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): 点名 `flutter_frontend_for_adk` skill，以及代码生成前产出的规划文档。
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): 列出后续的具体修复，包括平台网络权限、markdown、lint、Web 网络、滚动和 ADK partial event。
@@ -47,7 +47,7 @@ agent 生成的前端工作需要在代码生成前设置明确的停止点。An
 
 这对维护内部 agent 模板的开发者赋能团队有用。它让团队能在工作推进时记录平台规则和项目约定，包括一些小但代价高的遗漏，例如 `frontend/lib` 文件被忽略，或缺少 macOS 和 iOS entitlement。
 
-### Evidence
+### 资料来源
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): 描述安装现有 Google Cloud 和 Flutter skill，然后建立由 coder agent 和 author agent 组成的迭代循环。
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): 展示一次具体更新：加入审查暂停并修复 gitignore 行为，随后清理文件并重新运行。
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): 把 skill 描述为开发者所学内容的记录，并报告经过 13 次迭代达到可分享版本。
@@ -59,7 +59,7 @@ agent 生成的前端工作需要在代码生成前设置明确的停止点。An
 
 一个实用的采用测试是要求每个由 agent 构建的游戏原型，在添加更多内容前都带有碰撞和物理状态的调试 overlay，以及确定性回放检查。这样生成代码出错时，人类审查者能拿到证据，尤其是那些视觉输出直到运行后期都看似合理的地方。
 
-### Evidence
+### 资料来源
 - [Vibe once, run anywhere with Antigravity and Flutter](../Inbox/2026-06-29--vibe-once-run-anywhere-with-antigravity-and-flutter.md): 报告最初的 Flutter 和 Flame 游戏、后续的 prompt 数量，以及为让代码可理解而进行重构和添加测试的需要。
 - [Vibe once, run anywhere with Antigravity and Flutter](../Inbox/2026-06-29--vibe-once-run-anywhere-with-antigravity-and-flutter.md): 描述带有地形数据、相对倾角和碰撞 hitbox overlay 的调试模式，并引入回放不同步 bug。
 - [Vibe once, run anywhere with Antigravity and Flutter](../Inbox/2026-06-29--vibe-once-run-anywhere-with-antigravity-and-flutter.md): 解释毫秒级调度漂移，以及使用 thruster event 处完整物理状态 checkpoint 的修复方法。

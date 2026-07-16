@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Repository-Scale Coding Agent Governance
 
-## Summary
+## 摘要
 代码代理的采用正在仓库边界上获得更具体的支持：更小的启动上下文、代码地图、使用日志、明确的工作流文件，以及保护领域词汇的审查做法。具体工作是先把 agent 行为做成可测、可重复，再让团队把它用在更大的代码变更上。
 
 ## Repository setup that caps startup context and measures coding-agent token use
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 最有用的是代码地图。它会索引源文件和导出符号，这样 agent 可以先查一个紧凑文件，再打开源代码。README 示例声称地图里有 142 个文件和 906 个顶层符号，`CLAUDE.md` 的启动 token 上限是 800，input tokens/day 从 12,340 降到 7,180。那些数字来自项目自己的说法，所以实际采用时最直接的检验方法是：在一个正在使用的仓库里跑一次初始化，保留基线，过一周正常的 agent 工作后对比 input tokens/day。
 
-### Evidence
+### 资料来源
 - [Agent-stack – one command to make any repo token-efficient for Claude Code](../Inbox/2026-05-31--agent-stack-one-command-to-make-any-repo-token-efficient-for-claude-code.md): Summarizes generated repo files, code map, usage logging, and the README token reduction claim.
 - [Agent-stack – one command to make any repo token-efficient for Claude Code](../Inbox/2026-05-31--agent-stack-one-command-to-make-any-repo-token-efficient-for-claude-code.md): Shows the setup output with 20 generated files, wired hooks, verified setup, and generated code map.
 - [Agent-stack – one command to make any repo token-efficient for Claude Code](../Inbox/2026-05-31--agent-stack-one-command-to-make-any-repo-token-efficient-for-claude-code.md): Describes the code map and the agent behavior of grepping the index before opening source files.
@@ -41,7 +41,7 @@ language_code: zh-CN
 
 这适合顺序很重要的任务：发布检查、支持分流、文件生成任务，或在已知条件下必须提前停止的代码库审计。README 给出一个 11 步示例，用 `end_id` 参数控制提前终止，还给出 `/workflow add` 命令，可以在不重启的情况下起草、预览、写入并注册 workflow。还缺少的是测量：团队应先记录任务完成率、分支准确率、延迟和 token 使用量，再说它比普通 agent prompt 更安全。
 
-### Evidence
+### 资料来源
 - [New AI Agent Architecture to fix LLM deviations and token costs](../Inbox/2026-05-31--new-ai-agent-architecture-to-fix-llm-deviations-and-token-costs.md): Summarizes BotCircuits’ deterministic workflow engine, JSON workflow files, branch conditions, and lack of benchmark results.
 - [New AI Agent Architecture to fix LLM deviations and token costs](../Inbox/2026-05-31--new-ai-agent-architecture-to-fix-llm-deviations-and-token-costs.md): Shows workflows stored under `.botcircuits/workflows/` and registered as callable tools.
 - [New AI Agent Architecture to fix LLM deviations and token costs](../Inbox/2026-05-31--new-ai-agent-architecture-to-fix-llm-deviations-and-token-costs.md): Shows workflow creation, preview, file writing, live registration, and direct workflow runs.
@@ -51,7 +51,7 @@ language_code: zh-CN
 
 一个实用改动，是在 pull request 审查里加一个简短的 generated-code 部分：列出所有新的领域术语，把它们映射到已有的 bounded context，或者说明新边界；在测试里标出不变量；让作者删掉那些只是照着 prompt 复述的名字。这样模型以后能拿到更好的上下文，审查者也有一个具体办法在认知债扩散到整个代码库之前把它抓出来。
 
-### Evidence
+### 资料来源
 - [What Is Code](../Inbox/2026-05-31--what-is-code.md): Summarizes the essay’s claim that LLM-assisted work depends on shared domain meaning, stable abstractions, and tests.
 - [What Is Code](../Inbox/2026-05-31--what-is-code.md): Describes concepts, names, boundaries, relationships, and shared vocabulary as the visible conceptual model.
 - [What Is Code](../Inbox/2026-05-31--what-is-code.md): Connects domain vocabulary to code structures such as types, interfaces, invariants, and workflows.

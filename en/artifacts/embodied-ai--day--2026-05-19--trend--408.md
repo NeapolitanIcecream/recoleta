@@ -32,14 +32,14 @@ pass_kind: trend_synthesis
 ## Overview
 Embodied AI dominates this period. Vision-language-action (VLA) work is judged by latency, lighting, perturbations, and fine-grained task stages, while world-model papers build longer rollouts and cheaper synthetic data. DEFLECT, MetaFine, and WEM give the clearest signals.
 
-## Clusters
+## Findings
 
 ### VLA deployment reliability
 Several papers treat VLA reliability as a runtime problem with concrete failure modes. DEFLECT targets asynchronous inference, where a robot executes an old action chunk while the next one is still being computed. It trains on fresh-versus-stale action preferences and raises Kinetix success to 83.3% across delays d=0–7, with 73.5% success at unseen high delays d=5–7.
 
 RoVLA adds consistency losses for paraphrased instructions, denoising timesteps, and perturbed observations. Its evidence is more qualitative in the available excerpt, but the setup covers LIBERO-Plus perturbations across layout, camera, robot initialization, language, light, background, and sensor noise. RoHIL gives a narrower real-robot case: it relights recorded trajectories and fine-tunes offline, reaching 1.00 source and 1.00 shifted-light USB insertion success in the reported anchored setup.
 
-#### Evidence
+#### Sources
 - [DEFLECT: Delay-Robust Execution via Flow-matching Likelihood-Estimated Counterfactual Tuning for VLA Policies](../Inbox/2026-05-19--deflect-delay-robust-execution-via-flow-matching-likelihood-estimated-counterfactual-tuning-for-vla-policies.md): DEFLECT method and delay-robust robot results.
 - [RoVLA: Multi-Consistency Constraints for Robust Vision-Language-Action Models](../Inbox/2026-05-19--rovla-multi-consistency-constraints-for-robust-vision-language-action-models.md): RoVLA consistency training and perturbation coverage.
 - [RoHIL: Robust Human-in-the-Loop Robotic Reinforcement Learning Against Illumination Variations](../Inbox/2026-05-19--rohil-robust-human-in-the-loop-robotic-reinforcement-learning-against-illumination-variations.md): RoHIL offline relighting and real-robot lighting adaptation results.
@@ -49,7 +49,7 @@ Training papers in this window focus on which updates matter for closed-loop con
 
 Pion addresses a lower-level optimizer failure. It argues that Muon can amplify noisy small singular directions in low-rank VLA action-module gradients and low-signal reinforcement learning with verifiable rewards (RLVR). Pion keeps the Muon-style update path but suppresses tail singular directions. On VLA-Adapter with LIBERO Object, it reaches 100% success after 1,500 steps, compared with 97.0% for Muon and 32.2% for AdamW.
 
-#### Evidence
+#### Sources
 - [PAPO-VLA: Planning-Aware Policy Optimization for Vision-Language-Action Models](../Inbox/2026-05-19--papo-vla-planning-aware-policy-optimization-for-vision-language-action-models.md): PAPO-VLA planning-aware advantage formulation.
 - [Rethinking Muon Beyond Pretraining: Spectral Failures and High-Pass Remedies for VLA and RLVR](../Inbox/2026-05-19--rethinking-muon-beyond-pretraining-spectral-failures-and-high-pass-remedies-for-vla-and-rlvr.md): Pion optimizer mechanism and LIBERO Object result.
 
@@ -58,7 +58,7 @@ MetaFine is the strongest evaluation paper in the period. It breaks manipulation
 
 The reported gaps are large. Conventional evaluation can inflate fine-grained capability by up to 70%. Object-level grasping is often above 95%, while the best policy reaches 80% on Grasp Part, 68% on Press Part, and 12% on Rotate Along under part-level constraints. In semantic substitution tests, all five evaluated VLAs score 0% on the modified instruction. On peg-in-hole, overall success stays near zero, but stage metrics show where policies fail.
 
-#### Evidence
+#### Sources
 - [Beyond Binary Success: A Diagnostic Meta-Evaluation Framework for Fine-Grained Manipulation](../Inbox/2026-05-19--beyond-binary-success-a-diagnostic-meta-evaluation-framework-for-fine-grained-manipulation.md): MetaFine diagnostic design and fine-grained manipulation results.
 
 ### World models are being built for longer embodied data and physics checks
@@ -66,7 +66,7 @@ World-model work spans robot rollouts, video physics, and synthetic aerial data.
 
 PhyWorld post-trains Wan2.2-I2V-A14B for video continuation and physics preference. Its results are video metrics, not robot control: 0.769 on VBench and 3.09 on a physical-faithfulness benchmark. FlyMirage applies generative scene creation to aerial vision-language navigation, producing 500 3D Gaussian Splatting scenes and about 50,000 dynamically feasible 6-DoF UAV trajectories at a reported cost of about $2 per scene.
 
-#### Evidence
+#### Sources
 - [World-Ego Modeling for Long-Horizon Evolution in Hybrid Embodied Tasks](../Inbox/2026-05-19--world-ego-modeling-for-long-horizon-evolution-in-hybrid-embodied-tasks.md): WEM world-ego split and HTEWorld scale.
 - [PhyWorld: Physics-Faithful World Model for Video Generation](../Inbox/2026-05-19--phyworld-physics-faithful-world-model-for-video-generation.md): PhyWorld video continuation and physics benchmark results.
 - [FlyMirage: A Fully Automated Generation Pipeline for Diverse and Scalable UAV Flight Data via Generative World Model](../Inbox/2026-05-19--flymirage-a-fully-automated-generation-pipeline-for-diverse-and-scalable-uav-flight-data-via-generative-world-model.md): FlyMirage synthetic UAV scene and trajectory generation results.

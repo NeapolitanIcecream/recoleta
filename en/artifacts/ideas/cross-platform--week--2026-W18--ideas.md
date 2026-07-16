@@ -37,7 +37,7 @@ The work should check the points the announcement leaves open: deploy steps, loc
 
 This is a developer-workflow change, so the first useful measure is practical: how many edits, reviews, and deploy commands are removed for a normal app-plus-function change. Latency and cost still need local measurement because the recap gives no numbers for production behavior.
 
-### Evidence
+### Sources
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): The source announces a preview of Dart support for Firebase Functions and says the Dart Admin SDK adds deeper Firebase integration to reduce context switching.
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): The summary states that the announcement gives no latency, cost, reliability, or deployment metrics, so adoption should start as a workflow spike.
 
@@ -48,6 +48,6 @@ The useful evaluation is task-level. Track whether users complete the order, whe
 
 The event evidence shows Flutter GenUI in demos and sessions, including an AI-powered coffee shop and a session on agents creating their own UI. It does not include production performance or release metrics, so a prototype should focus on interaction quality before broader rollout.
 
-### Evidence
+### Sources
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): The recap describes GenLatte, an AI-powered specialty coffee shop built with Flutter GenUI where attendees ordered drinks through a GenUI Flutter app.
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): The source describes a Generative UI session about giving agents the ability to create their own UI and cites Toyota and Talabat as customer stories without metrics.

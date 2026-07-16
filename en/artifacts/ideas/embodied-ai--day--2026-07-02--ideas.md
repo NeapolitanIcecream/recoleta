@@ -37,7 +37,7 @@ VLA-Corrector is a concrete template. It keeps the VLA backbone frozen, trains a
 
 The cheap test is an action-chunk audit on tasks with contact, slippage, or pose drift. Log expected visual-latent change, observed change, interrupt rate, success rate, and policy calls per episode. If interrupts cluster around real execution errors and reduce failed long chunks, the monitor can become a deployment guardrail for fixed-horizon VLA controllers.
 
-### Evidence
+### Sources
 - [VLA-Corrector: Lightweight Detect-and-Correct Inference for Adaptive Action Horizon](../Inbox/2026-07-02--vla-corrector-lightweight-detect-and-correct-inference-for-adaptive-action-horizon.md): Summarizes VLA-Corrector's frozen-backbone monitor, drift detection, corrective replanning, and reported success and policy-call gains.
 - [VLA-Corrector: Lightweight Detect-and-Correct Inference for Adaptive Action Horizon](../Inbox/2026-07-02--vla-corrector-lightweight-detect-and-correct-inference-for-adaptive-action-horizon.md): Describes the online deviation detection, truncation of stale actions, and corrective replanning mechanism.
 
@@ -48,7 +48,7 @@ The Moving Eye gives a workable collection pattern: one arm manipulates while a 
 
 A small adoption step is to add a camera-motion split and a one-diameter object-shift split to existing VLA evaluations. Teams can then collect a bounded batch of moving-camera episodes, try a Moving:Multi-Fixed ratio near 1:3 for Gr00t-style training, and check whether out-of-distribution success improves without harming the fixed-view case.
 
-### Evidence
+### Sources
 - [The Moving Eye: Enhancing VLA Spatial Generalization via Hybrid Dynamic Data Collection](../Inbox/2026-07-02--the-moving-eye-enhancing-vla-spatial-generalization-via-hybrid-dynamic-data-collection.md): Reports the dual-arm moving-camera setup, mixed-data ratios, fixed versus moving-camera results, and object-position shift results.
 - [The Moving Eye: Enhancing VLA Spatial Generalization via Hybrid Dynamic Data Collection](../Inbox/2026-07-02--the-moving-eye-enhancing-vla-spatial-generalization-via-hybrid-dynamic-data-collection.md): Details camera-object and object-position shortcut mechanisms that affect deployment under camera and layout changes.
 
@@ -59,6 +59,6 @@ TAP shows the workflow. It pretrains a VLA on task-agnostic trajectories by pred
 
 The practical check is to run 20 to 30 hours of safe random play, pretrain with the inverse-dynamics objective, and finetune on the same demonstration budget already used for behavior cloning. Keep the evaluation focused on tasks where contact, pushing, and viewpoint variation expose gaps in the baseline.
 
-### Evidence
+### Sources
 - [Learning to Move Before Learning to Do: Task-Agnostic pretraining for VLAs](../Inbox/2026-07-02--learning-to-move-before-learning-to-do-task-agnostic-pretraining-for-vlas.md): Summarizes TAP's task-agnostic trajectory sources, inverse-dynamics pretraining, random-play pipeline, and reported SIMPLER and WidowX results.
 - [Learning to Move Before Learning to Do: Task-Agnostic pretraining for VLAs](../Inbox/2026-07-02--learning-to-move-before-learning-to-do-task-agnostic-pretraining-for-vlas.md): Explains the motivation for using unlabeled autonomous interaction trajectories that current VLA pipelines often discard.

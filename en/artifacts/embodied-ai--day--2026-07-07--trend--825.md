@@ -34,7 +34,7 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s robot papers put physical detail inside policy pipelines. Vision-language-action (VLA) models add 3D structure, reusable demonstrations, cached action chunks, and explicit handoff checks. RynnWorld-4D, RynnWorld-Teleop, and Lift3D-VLA show the clearest emphasis: make robot control faster and more spatially grounded while reducing dependence on raw physical data collection.
 
-## Clusters
+## Findings
 
 ### 4D world models for manipulation and teleoperation
 RynnWorld-4D treats future prediction as RGB, depth, and optical flow together. Depth lifts pixels into 3D points, and optical flow links them over time, giving the policy a scene-flow view of contact and motion. The reported data scale is large for this period: Rynn4DDataset 1.0 has more than 254.4 million frames. The policy path still costs 1,106 ms per planning pass on an RTX 5090, with the world model taking 990 ms, so latency remains a central constraint.

@@ -39,7 +39,7 @@ Teams using coding agents on repository issues can split the fix loop into three
 
 This is a practical build for teams seeing agents pass weak self-written tests or lose track of long issue threads. Start with a small issue-quality gate: if a ticket names the file, function, fix strategy, and reproduction steps, send it directly to patching and validation; if it lacks those details, run exploration first. On SWE-bench Pro, i cat-agent with GPT-5.4-xhigh solved 67.4% of tasks, 8.3 percentage points above mini-SWE-agent with the same model, and the paper reports lower average per-instance cost than Claude Code on that benchmark.
 
-### Evidence
+### Sources
 - [Unlocking Model Potentials Through Adaptive Multi-Agent Scaffolding for Efficient Issue Resolution](../Inbox/2026-06-24--unlocking-model-potentials-through-adaptive-multi-agent-scaffolding-for-efficient-issue-resolution.md): Summarizes i cat-agent's Explorer, Patch Editor, Validator roles, hidden validator assertions, issue-quality gate, and SWE-bench results.
 - [Unlocking Model Potentials Through Adaptive Multi-Agent Scaffolding for Efficient Issue Resolution](../Inbox/2026-06-24--unlocking-model-potentials-through-adaptive-multi-agent-scaffolding-for-efficient-issue-resolution.md): Reports the 67.4% SWE-bench Pro result and cost comparison context.
 - [Unlocking Model Potentials Through Adaptive Multi-Agent Scaffolding for Efficient Issue Resolution](../Inbox/2026-06-24--unlocking-model-potentials-through-adaptive-multi-agent-scaffolding-for-efficient-issue-resolution.md): Describes test overfitting and patch overfitting as failure modes in single-agent trajectories.
@@ -49,7 +49,7 @@ Agent teams should add a local fault-injection test set for the tools their codi
 
 ToolBench-X gives a concrete template. It injects Specification Drift, Invocation Error, Execution Failure, Output Drift, and Cross-source Conflict across executable multi-step tasks. No evaluated model reached 0.60 overall accuracy, and the best score was 0.513. After a failed tool response, agents often retried the same tool, but retry frequency did not track task accuracy. The useful metric is whether the agent diagnoses the hazard and chooses the right recovery action. A small internal version can run in CI against recorded tool traces and block agent rollout when recovery accuracy falls on common hazards.
 
-### Evidence
+### Sources
 - [Beyond Function Calling: Benchmarking Tool-Using Agents under Tool-Environment Unreliability](../Inbox/2026-06-24--beyond-function-calling-benchmarking-tool-using-agents-under-tool-environment-unreliability.md): Summarizes ToolBench-X task design, hazard types, model accuracy, retry behavior, and targeted recovery hint results.
 - [Beyond Function Calling: Benchmarking Tool-Using Agents under Tool-Environment Unreliability](../Inbox/2026-06-24--beyond-function-calling-benchmarking-tool-using-agents-under-tool-environment-unreliability.md): Defines ToolBench-X as executable multi-step tasks with five recoverable reliability hazards and valid recovery paths.
 - [Beyond Function Calling: Benchmarking Tool-Using Agents under Tool-Environment Unreliability](../Inbox/2026-06-24--beyond-function-calling-benchmarking-tool-using-agents-under-tool-environment-unreliability.md): Explains real tool failures such as stale documentation, renamed fields, timeouts, incomplete returns, and conflicting evidence.
@@ -59,7 +59,7 @@ Maintainers porting behavior across similar libraries can use an intent-level mi
 
 This is most useful for libraries with overlapping domains and different APIs or languages, such as JSON, HTML, and Time libraries. IntentTester evaluated nine open-source projects in Java and Python. From 2,058 source tests, it produced 5,536 sub-tests and kept 3,257 after filtering. It generated 2,776 syntactically correct tests with 85% correctness, compared with 51% for MUT and 43% for METALLICUS. The generated tests exposed 25 real defects, including stack overflow and null dereference bugs. A team can trial the method on one source library and one target library, then measure executable migrated tests and newly failing behavior checks.
 
-### Evidence
+### Sources
 - [IntentTester: Intent-Driven Multi-agent Framework for Cross-Library Test Migration](../Inbox/2026-06-24--intenttester-intent-driven-multi-agent-framework-for-cross-library-test-migration.md): Summarizes IntentTester's TDL conversion, repository graph mapping, verification loop, evaluation scale, correctness rates, and defects found.
 - [IntentTester: Intent-Driven Multi-agent Framework for Cross-Library Test Migration](../Inbox/2026-06-24--intenttester-intent-driven-multi-agent-framework-for-cross-library-test-migration.md): States the cross-library and cross-language migration approach using language-agnostic Test Description Language and repository graph context.
 - [IntentTester: Intent-Driven Multi-agent Framework for Cross-Library Test Migration](../Inbox/2026-06-24--intenttester-intent-driven-multi-agent-framework-for-cross-library-test-migration.md): Reports generated test counts, 85% correctness, 74% effectiveness, and previously unknown defects.

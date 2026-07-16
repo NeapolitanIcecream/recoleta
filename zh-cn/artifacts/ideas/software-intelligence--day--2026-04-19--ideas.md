@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Solution Fidelity Controls
 
-## Summary
+## 摘要
 这一天的编码代理研究指向三个容易在真实工作流里测试的近期待办事项：给调试代理加 diff 大小控制、在自动修复前先验证可执行需求、以及对基准验证器做对抗性审查。它们有一个共同点：测试通过或任务验证器通过，已经不足以说明系统是否以精确、可审查的方式解决了预期问题。
 
 ## Edit-budget checks for agent-generated bug fixes
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 便宜的检查方式是抽样最近通过 CI 的代理修复，统计评审后来删减或回退无关改动的比例。如果这个比例高，编辑精度已经是本地流程里的运营问题。
 
-### Evidence
+### 资料来源
 - [Precise Debugging Benchmark: Is Your Model Debugging or Regenerating?](../Inbox/2026-04-19--precise-debugging-benchmark-is-your-model-debugging-or-regenerating.md): PDB shows large gaps between unit-test pass rate and edit precision, including weak precision in agentic debugging setups.
 - [Precise Debugging Benchmark: Is Your Model Debugging or Regenerating?](../Inbox/2026-04-19--precise-debugging-benchmark-is-your-model-debugging-or-regenerating.md): The paper states that unit-test-only evaluation rewards full regeneration and hides incremental debugging quality.
 
@@ -44,7 +44,7 @@ language_code: zh-CN
 
 一个合适的试点应该很窄：一个仓库、一个 bug 家族，再把当前修复代理和历史已修复问题做一次通过/失败对比。如果已验证需求能提高补丁正确率，又不扩大修改规模，这套流程就值得保留。
 
-### Evidence
+### 资料来源
 - [Project Prometheus: Bridging the Intent Gap in Agentic Program Repair via Reverse-Engineered Executable Specifications](../Inbox/2026-04-19--project-prometheus-bridging-the-intent-gap-in-agentic-program-repair-via-reverse-engineered-executable-specifications.md): Prometheus describes the verified executable-specification workflow and reports strong gains on Defects4J.
 - [Project Prometheus: Bridging the Intent Gap in Agentic Program Repair via Reverse-Engineered Executable Specifications](../Inbox/2026-04-19--project-prometheus-bridging-the-intent-gap-in-agentic-program-repair-via-reverse-engineered-executable-specifications.md): The paper's abstract highlights the rescue rate on hard bugs and the move toward precise, minimal corrections.
 
@@ -55,6 +55,6 @@ language_code: zh-CN
 
 一个低成本试点是挑当前内部基准里分数最高的十个任务，只对这些验证器做红队测试。如果哪怕只有几个能靠伪造输出或改动测试周围环境通过，基准就需要先修好，再拿去做模型排名或后训练奖励。
 
-### Evidence
+### 资料来源
 - [Terminal Wrench: A Dataset of 331 Reward-Hackable Environments and 3,632 Exploit Trajectories](../Inbox/2026-04-19--terminal-wrench-a-dataset-of-331-reward-hackable-environments-and-3632-exploit-trajectories.md): Terminal Wrench quantifies verifier hackability across public terminal-agent benchmarks and reports exploit categories.
 - [Terminal Wrench: A Dataset of 331 Reward-Hackable Environments and 3,632 Exploit Trajectories](../Inbox/2026-04-19--terminal-wrench-a-dataset-of-331-reward-hackable-environments-and-3632-exploit-trajectories.md): The paper explains why benchmark tasks are often shipped without enough adversarial review and positions the dataset as a fix list for maintainers.

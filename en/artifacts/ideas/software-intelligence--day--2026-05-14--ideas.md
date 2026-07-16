@@ -41,7 +41,7 @@ Orchard shows the shape of this layer: it injects a lightweight execution agent 
 
 The adoption case is strongest where the sandbox feeds executable qualification: unit tests, compiler output, CI state, logs, and metrics. A review of 92 studies found industrial agent use clustered in phases with executable feedback, while an interview study of 12 companies found stronger experimental agents blocked from production because human review remained the main qualification path. A practical first test is to run an existing code-agent pilot through a sandbox API and record pass rate, command latency, failed-action traces, and CI reproducibility across repeated runs.
 
-### Evidence
+### Sources
 - [Orchard: An Open-Source Agentic Modeling Framework](../Inbox/2026-05-14--orchard-an-open-source-agentic-modeling-framework.md): Orchard describes the Kubernetes-native environment service, sandbox lifecycle operations, latency results, and SWE-bench Verified results.
 - [Orchard: An Open-Source Agentic Modeling Framework](../Inbox/2026-05-14--orchard-an-open-source-agentic-modeling-framework.md): The paper reports Orchard-SWE results after SFT and RL and describes agent training through repeated sandbox interaction.
 - [Assistance to Autonomy: A Systematic Literature Review of Agentic AI across the Software Development Life Cycle](../Inbox/2026-05-14--assistance-to-autonomy-a-systematic-literature-review-of-agentic-ai-across-the-software-development-life-cycle.md): The systematic review links industrial adoption to verifiable software phases and executable feedback loops.
@@ -54,7 +54,7 @@ AuthBench gives teams a concrete evaluation pattern. Full access reached 94.0% t
 
 The same gate should cover third-party skills. Semantic Compliance Hijacking hides malicious intent in natural-language skill instructions, causing the agent to write and run the harmful code during normal work. In the reported tests, prose-only manipulated skills had a 0.00% detection rate under the scanners cited in the paper, while complete leakage and remote-code-execution success rates were high across tested configurations. A useful internal check is a small red-team suite of repository tasks with secrets, benign skills, poisoned skills, and expected allowlists, scored on task success and attack success.
 
-### Evidence
+### Sources
 - [Do Coding Agents Understand Least-Privilege Authorization?](../Inbox/2026-05-14--do-coding-agents-understand-least-privilege-authorization.md): AuthBench defines permission-boundary inference and reports task success and attack success under full access, golden permissions, and generated policies.
 - [Do Coding Agents Understand Least-Privilege Authorization?](../Inbox/2026-05-14--do-coding-agents-understand-least-privilege-authorization.md): The paper frames least-privilege authorization as a deployment requirement for agents with shell, repository, and file access.
 - [Exploiting LLM Agent Supply Chains via Payload-less Skills](../Inbox/2026-05-14--exploiting-llm-agent-supply-chains-via-payload-less-skills.md): The skill-supply-chain paper describes SCH, its attack setup, leakage and RCE success ranges, and scanner detection results.
@@ -67,7 +67,7 @@ The RAG study separates query processing, retrieval, context refinement, and gen
 
 Documentation can be part of the same context layer. MemDocAgent generates repository documentation in dependency order, keeps prior claims in memory, verifies consistency, and stores accepted documents for later steps. On 20 Python repositories, the GPT-5-mini run produced 3,323 documents and scored 0.958 completeness, 0.952 truthfulness, and 0.800 helpfulness. A practical rollout is to build docs for one service, run a retrieval evaluation on recent issues or pull requests, and check whether agent patches cite the files and docs that human reviewers consider relevant.
 
-### Evidence
+### Sources
 - [Not All RAGs Are Created Equal: A Component-Wise Empirical Study for Software Engineering Tasks](../Inbox/2026-05-14--not-all-rags-are-created-equal-a-component-wise-empirical-study-for-software-engineering-tasks.md): The RAG study compares pipeline components and reports that retriever-side choices often matter more than generator choice for software tasks.
 - [Not All RAGs Are Created Equal: A Component-Wise Empirical Study for Software Engineering Tasks](../Inbox/2026-05-14--not-all-rags-are-created-equal-a-component-wise-empirical-study-for-software-engineering-tasks.md): The paper describes the component-wise RAG evaluation across query processing, retrieval, context refinement, and generators.
 - [Remember Your Trace: Memory-Guided Long-Horizon Agentic Framework for Consistent and Hierarchical Repository-Level Code Documentation](../Inbox/2026-05-14--remember-your-trace-memory-guided-long-horizon-agentic-framework-for-consistent-and-hierarchical-repository-level-code-documentation.md): MemDocAgent reports dependency-ordered repository documentation, memory, verification, and aggregate documentation quality scores.

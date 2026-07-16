@@ -27,7 +27,7 @@ language_code: zh-CN
 
 # 具身任务可靠性
 
-## Summary
+## 摘要
 本周支持三项具体动作：在接触失败占主导的地方加入物理反馈；在把生成的机器人 rollout 用于训练或规划之前，先做可执行性筛选；扩展 VLA 评估，加入能暴露状态跟踪和组合失败的干预测试。共同主线是，在真实任务压力下看执行表现：接触、恢复和任务完成正在成为更有用的衡量单位。
 
 ## 面向重接触技能的预训练 VLA 物理反馈适配器
@@ -35,7 +35,7 @@ language_code: zh-CN
 
 第一类客户是已经有 vision-language-action 策略、在接近和大幅运动上表现正常，但一到首次接触就掉可靠性的机器人团队。一个低成本的验证办法是，对一两个反复出现的失败模式加监测，然后在同一台机器人上比较三个版本：纯视觉、单一物理模态、以及双流触觉加力矩。MoSS 的消融实验给这个测试提供了明确的设计约束。解耦流、分阶段训练和未来信号目标都很重要，所以快速原型应该保留这些选择，而不是把所有东西压进一个融合编码器里。如果这些增益能在一组小型接触任务上复现，且时延成本低于 1.1x，这就会成为一个很容易为生产操作场景争取通过的支撑层。
 
-### Evidence
+### 资料来源
 - [Modular Sensory Stream for Integrating Physical Feedback in Vision-Language-Action Models](../Inbox/2026-04-25--modular-sensory-stream-for-integrating-physical-feedback-in-vision-language-action-models.md): 真实机器人结果表明，给预训练 VLA 加入触觉和力矩流后，平均成功率明显提高，并且有具体任务例子和较低的推理开销。
 - [Modular Sensory Stream for Integrating Physical Feedback in Vision-Language-Action Models](../Inbox/2026-04-25--modular-sensory-stream-for-integrating-physical-feedback-in-vision-language-action-models.md): 论文解释了为什么插头插入这类任务在接触时同时需要触觉和力矩线索。
 
@@ -44,7 +44,7 @@ language_code: zh-CN
 
 这更像是工作流调整，不只是一个研究基准。任何在收集合成机器人视频、用 imagined futures 做规划、或用生成轨迹做微调的团队，都可以在数据进入训练前插入一道可执行性筛选。第一版不需要整套新的模拟器栈。它需要一小组带步骤检查的任务、一个适配当前 embodiment 的 video-to-action 重定向路径，以及一套能筛掉视觉上像样但力学上错误样本的通过/失败阈值。一个低成本试点是，拿当前两个任务中排名前 100 的生成 rollout，测量从接触到完成的成功率落差。如果这个落差很大，团队就有一个被图像级评估掩盖的数据质量问题。
 
-### Evidence
+### 资料来源
 - [RoboWM-Bench: A Benchmark for Evaluating World Models in Robotic Manipulation](../Inbox/2026-04-21--robowm-bench-a-benchmark-for-evaluating-world-models-in-robotic-manipulation.md): 这个基准围绕把生成的操作视频转换为可执行动作来设计，并展示了视觉真实感与任务完成之间的差距。
 - [RoboWM-Bench: A Benchmark for Evaluating World Models in Robotic Manipulation](../Inbox/2026-04-21--robowm-bench-a-benchmark-for-evaluating-world-models-in-robotic-manipulation.md): 论文点出了常见失败模式，如接触预测不稳定和不符合物理规律的形变，这些都适合作为训练前可执行性关卡的筛选依据。
 
@@ -53,6 +53,6 @@ language_code: zh-CN
 
 最直接的构建方式，是给团队已经在仿真或工作单元上跑的任务做一套内部压力测试包。论文里报告的失败点说明了该把注意力放在哪里。指令 grounding 可能会围绕属性词出现明显偏置，而没见过的子目标组合即使组成它的技能分别都见过，成功率也可能接近零。一个低成本检查方法是，复制五个现有基准任务，为每个任务加入一个受控干预，然后比较成功率变化量，而不是只看绝对分数。如果下降很严重，那么在布局、对象身份或步骤顺序会跨班次变化的场景里，团队就存在部署障碍。
 
-### Evidence
+### 资料来源
 - [Unmasking the Illusion of Embodied Reasoning in Vision-Language-Action Models](../Inbox/2026-04-20--unmasking-the-illusion-of-embodied-reasoning-in-vision-language-action-models.md): BeTTER 为指令 grounding、布局变化、重组和时间外推定义了受控干预，并给出了具体失败率。
 - [Unmasking the Illusion of Embodied Reasoning in Vision-Language-Action Models](../Inbox/2026-04-20--unmasking-the-illusion-of-embodied-reasoning-in-vision-language-action-models.md): 作者认为这些测试能把推理失败与底层控制限制区分开，并报告了模型在动态场景下的崩溃。

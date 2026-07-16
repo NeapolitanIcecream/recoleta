@@ -39,7 +39,7 @@ SWE-Edit gives a practical shape to the read and write split. Its Viewer receive
 
 A cheap adoption test is to wrap an existing coding agent without changing its base model. Route reads through a block-returning viewer, route edits through a patch executor, run the project’s tests after each patch, and compare edit success, unrelated diff size, resolved tasks, and token cost on a fixed issue set. The Claude Code regression report adds one implementation warning: repeated safety reminders inside Read and Grep results can cause subagents to refuse ordinary refactors and waste context. Safety text in the file-read path needs its own regression tests, including parallel subagent runs on benign repositories.
 
-### Evidence
+### Sources
 - [SWE-Edit: Rethinking Code Editing for Efficient SWE-Agent](../Inbox/2026-04-28--swe-edit-rethinking-code-editing-for-efficient-swe-agent.md): SWE-Edit reports the Viewer/Editor split, SWE-bench Verified gains, edit-success gains, and lower inference cost.
 - [SAFEdit: Does Multi-Agent Decomposition Resolve the Reliability Challenges of Instructed Code Editing?](../Inbox/2026-04-28--safedit-does-multi-agent-decomposition-resolve-the-reliability-challenges-of-instructed-code-editing.md): SAFEdit reports a Planner/Editor/Verifier loop with real unit tests, repair rounds, and higher EditBench task success than a ReAct baseline.
 - [Regression: malware reminder on every read still causes subagent refusals](../Inbox/2026-04-28--regression-malware-reminder-on-every-read-still-causes-subagent-refusals.md): The Claude Code bug report shows that repeated harness text in read results can cause subagent refusals and token waste during normal code-editing workflows.
@@ -51,7 +51,7 @@ Agentic Harness Engineering gives this workflow a concrete evaluation. It expose
 
 The first user is an engineering team that already has agent traces but handles harness changes through ad hoc prompt edits. A minimal trial can start with 30 to 100 representative tasks, a versioned directory for harness files, and a required change manifest for every prompt, tool, middleware, memory, or skill edit. The pass/fail check should include token use and regression cases, since the AHE ablations found gains mainly in memory, tools, and middleware, while system-prompt-only changes underperformed the seed.
 
-### Evidence
+### Sources
 - [Agentic Harness Engineering: Observability-Driven Automatic Evolution of Coding-Agent Harnesses](../Inbox/2026-04-28--agentic-harness-engineering-observability-driven-automatic-evolution-of-coding-agent-harnesses.md): AHE describes file-level harness components, rollout evidence, change manifests, outcome checks, reversions, Terminal-Bench 2 gains, SWE-bench-verified transfer, token use, and ablation results.
 - [Agentic Harness Engineering: Observability-Driven Automatic Evolution of Coding-Agent Harnesses](../Inbox/2026-04-28--agentic-harness-engineering-observability-driven-automatic-evolution-of-coding-agent-harnesses.md): The paper states that prompts, tools, middleware, context control, execution, and recovery are model-external harness components and that manual adaptation struggles as models change.
 
@@ -62,6 +62,6 @@ IssueSpecter gives a concrete version of this workflow. SlipCover finds uncovere
 
 This is most useful for projects with meaningful test suites and persistent uncovered modules, where maintainers already distrust raw AI issue floods. A controlled pilot can run weekly, open no public issues by default, and send only the top three reports per repository to maintainers with coverage location, reproduction steps, proposed fix, and test outcome. The review metric should be valid-or-actionable reports per maintainer hour, since the reported false positives still require triage discipline.
 
-### Evidence
+### Sources
 - [LLM-Guided Issue Generation from Uncovered Code Segments](../Inbox/2026-04-28--llm-guided-issue-generation-from-uncovered-code-segments.md): IssueSpecter describes uncovered-code discovery, structured LLM-generated reports, reranking, test-based demotion, human validation results, and ranking improvements.
 - [LLM-Guided Issue Generation from Uncovered Code Segments](../Inbox/2026-04-28--llm-guided-issue-generation-from-uncovered-code-segments.md): The paper reports the false-positive rate, ranking gains, bug-type coverage, and comparison with CoverUp under matched evaluation conditions.

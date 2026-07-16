@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Adaptive policy control
 
-## Summary
+## 摘要
 这里的具身 AI 工作在控制接口上变得更具体了。最清楚的近期开端是：给已部署的 VLA 策略做训练后遗忘流程，给机器人重规划加一层推理时自适应分块，以及为驾驶世界模型建立联合视频-轨迹评测线。每一项都对准了一个明确的操作痛点：在不丢掉任务能力的前提下移除不安全行为，减少操控里的固定块长调参，以及提升驾驶规划器的零样本迁移。
 
 ## Post-training unlearning workflow for deployed VLA robot policies
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 一个低成本验证步骤很直接：从现有策略里挑一个反复出现的禁用动作，或者一个已知的伪视觉触发器，做一次模块级编辑，然后在同一组评测集上并排看三项指标：遗忘成功率、保留任务成功率、量化后的安全违规恢复情况。如果这些数值一起变化，遗忘就会成为机器人部署审查里的实用支撑层。
 
-### Evidence
+### 资料来源
 - [VLA-Forget: Vision-Language-Action Unlearning for Embodied Foundation Models](../Inbox/2026-04-05--vla-forget-vision-language-action-unlearning-for-embodied-foundation-models.md): Summary of the staged unlearning method and benchmark results on OpenVLA-7B and pi0fast-base.
 - [VLA-Forget: Vision-Language-Action Unlearning for Embodied Foundation Models](../Inbox/2026-04-05--vla-forget-vision-language-action-unlearning-for-embodied-foundation-models.md): Abstract claims on forgetting efficacy, retention, and post-quantization recovery reduction.
 - [VLA-Forget: Vision-Language-Action Unlearning for Embodied Foundation Models](../Inbox/2026-04-05--vla-forget-vision-language-action-unlearning-for-embodied-foundation-models.md): Introduction frames the operational problem as unsafe or sensitive behaviors turning into physical actions.
@@ -45,7 +45,7 @@ language_code: zh-CN
 
 第一版实现应该是一层重规划中间件，接到一个现有策略上，并记录选中的块长、熵变化和任务结果。一个低成本检查是，在相同算力预算下，把固定块长和 AAC 都跑一遍基准或实验室任务集，再比较成功率、重规划次数和可见的运动不连续情况。这样机器人团队就能在动训练数据或模型权重之前判断自适应分块值不值得上。
 
-### Evidence
+### 资料来源
 - [Adaptive Action Chunking at Inference-time for Vision-Language-Action Models](../Inbox/2026-04-05--adaptive-action-chunking-at-inference-time-for-vision-language-action-models.md): Summary of AAC, the fixed-chunk deployment problem, and benchmark gains across RoboCasa and LIBERO.
 - [Adaptive Action Chunking at Inference-time for Vision-Language-Action Models](../Inbox/2026-04-05--adaptive-action-chunking-at-inference-time-for-vision-language-action-models.md): Abstract describes the responsiveness versus consistency trade-off in chunked execution.
 - [Adaptive Action Chunking at Inference-time for Vision-Language-Action Models](../Inbox/2026-04-05--adaptive-action-chunking-at-inference-time-for-vision-language-action-models.md): Introduction states that chunk size varies by policy and task, which supports a middleware-style deployment tool.
@@ -57,7 +57,7 @@ language_code: zh-CN
 
 一个实际的下一步是在现有驾驶栈里做一组配对消融：用同一份源数据训练一个只输出动作的规划器和一个联合视频-动作规划器，然后比较闭环分数、碰撞率，以及到一个留出的目标域的迁移表现。如果联合模型在较少采样步数下仍然保持优势，这个结果就支持把它作为规划器训练和仿真评测的新默认方案。
 
-### Evidence
+### 资料来源
 - [DriveVA: Video Action Models are Zero-Shot Drivers](../Inbox/2026-04-05--driveva-video-action-models-are-zero-shot-drivers.md): Summary of DriveVA, joint generation design, dense video supervision effect, and benchmark results.
 - [DriveVA: Video Action Models are Zero-Shot Drivers](../Inbox/2026-04-05--driveva-video-action-models-are-zero-shot-drivers.md): Abstract explains the video-trajectory consistency problem in prior loosely coupled planners.
 - [DriveVA: Video Action Models are Zero-Shot Drivers](../Inbox/2026-04-05--driveva-video-action-models-are-zero-shot-drivers.md): Reported closed-loop and zero-shot transfer metrics on NAVSIM, nuScenes, and Bench2Drive/CARLA v2.

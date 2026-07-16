@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # 机器人策略验证门
 
-## Summary
+## 摘要
 机器人团队可以在现有策略工作里加上三项实用检查：在训练前验证 UMI 风格示范，在接触密集任务上做触觉消融，在真实飞行测试前用跨环境预测质量给四旋翼世界模型排序。每项检查都针对最近结果里出现过的一种失效模式：不可执行轨迹、被摄像头掩盖的接触错误，以及没有选出真实世界赢家的仿真分数。
 
 ## Physical-validation gates for UMI demonstrations before VLA training
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 一个成本较低的落地测试，是把验证门跑在一批留出的 UMI 轨迹上，分别用保留和剔除后的数据训练两个小策略，然后在几个会考验可达范围和腕部相机遮挡的任务上比较真实执行结果。同一套流程还应记录哪些失败来自视觉定位，哪些来自运动学，因为这两类问题需要不同修复方式。
 
-### Evidence
+### 资料来源
 - [VISTA: Vision-Grounded and Physics-Validated Adaptation of UMI data for VLA Training](../Inbox/2026-06-03--vista-vision-grounded-and-physics-validated-adaptation-of-umi-data-for-vla-training.md): VISTA describes fisheye wrist-camera mismatch, robot-infeasible UMI trajectories, an 8M-sample UMI-VQA dataset, and physical-validation scores for completeness, continuity, self-collision risk, and execution fidelity.
 - [VISTA: Vision-Grounded and Physics-Validated Adaptation of UMI data for VLA Training](../Inbox/2026-06-03--vista-vision-grounded-and-physics-validated-adaptation-of-umi-data-for-vla-training.md): The paper abstract states that VISTA scores each valid trajectory before training and reports that physical-validation scores predict deployment success.
 
@@ -42,7 +42,7 @@ language_code: zh-CN
 
 最先加入的任务应是插销、擦拭、转瓶和倒液。HapTile 在这些任务里报告了明显收益，例如 π0 在插销任务上从仅视觉输入的 0% 升到原始触觉图像下的 90%，白板擦拭从 50% 升到使用触觉标记特征时的 100%。倒液结果提醒人们要按任务来做消融：在报告的基线里，触觉标记特征反而降低了成功率。一个实用的上线检查，是要求每个新策略先通过接触测试套件，并按任务报告模态效果，再进入更大范围的真实世界试验。
 
-### Evidence
+### 资料来源
 - [HapTile: A Haptic-Informed Vision-Tactile-Language-Action Dataset for Contact-Rich Imitation Learning](../Inbox/2026-06-03--haptile-a-haptic-informed-vision-tactile-language-action-dataset-for-contact-rich-imitation-learning.md): HapTile specifies the dataset fields, teleoperation haptic feedback, benchmark input settings, and task-level results showing both tactile gains and tactile regressions.
 - [HapTile: A Haptic-Informed Vision-Tactile-Language-Action Dataset for Contact-Rich Imitation Learning](../Inbox/2026-06-03--haptile-a-haptic-informed-vision-tactile-language-action-dataset-for-contact-rich-imitation-learning.md): The abstract states that most VLA datasets remain vision-only and that HapTile combines language conditioning, visuotactile observations, action trajectories, and haptic-informed demonstrations.
 
@@ -51,6 +51,6 @@ language_code: zh-CN
 
 这个提醒来自一个真实部署结果：仿真策略分数最好的模型在真实四旋翼上失败了，而另一些模型能穿过狭窄间隙到达目标。MAD 还提供了一种适合敏捷飞行的互补做法：训练潜变量模型，让它从深度和本体感觉预测机器人中心坐标系下的占用图和可见性图，再把这个潜状态用进策略里。一个最小验证流程可以把两者结合起来：先在留出重建和地图预测上比较世界模型候选，再用严格中止规则飞一段短间隙航线。
 
-### Evidence
+### 资料来源
 - [Generalization of World Models under Environmental Variability for Vision-based Quadrotor Navigation](../Inbox/2026-06-03--generalization-of-world-models-under-environmental-variability-for-vision-based-quadrotor-navigation.md): The quadrotor generalization study reports cross-environment reconstruction evaluation, real closed-loop tests, and the failure of the strongest simulation policy on the real platform.
 - [MAD: Mapping-Aware World Models for Agile Quadrotor Flight](../Inbox/2026-06-03--mad-mapping-aware-world-models-for-agile-quadrotor-flight.md): MAD describes occupancy and visibility map prediction from depth and proprioception, the learned latent state used for agile flight policies, and real-world forest flight at 5.05 m/s.

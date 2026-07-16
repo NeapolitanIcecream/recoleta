@@ -32,7 +32,7 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s research treats AI coding agents as systems that need runtime evidence, meaningful tests, and harness-aware scoring. PracRepair and LoopCoder-v2 show gains when repair evidence and latent compute are measured carefully; evaluation papers add pressure for component-level results.
 
-## Clusters
+## Findings
 
 ### Runtime feedback for code repair
 Automated program repair (APR) work is using execution evidence as first-class input. PracRepair combines static code context with failing-test traces, variable values, branch outcomes, validation diagnostics, and trace diffs. With GPT-4o, it reports 162 correct fixes on Defects4J V1.2 and 171 on V2.0, plus many fixes not found by ReInFix.
@@ -41,7 +41,7 @@ A separate code-correction study tests the same idea in a simpler loop: generate
 
 Test generation remains a weak point. In 86,156 agent-authored test-file patches, 80.2% contain weak or no explicit oracle signals. The finding matters because a test file can execute code and still check no expected behavior.
 
-#### Evidence
+#### Sources
 - [PracRepair: LLM-Empowered Automated Program Repair Inspired by Human-Like Debugging Practices](../Inbox/2026-06-16--pracrepair-llm-empowered-automated-program-repair-inspired-by-human-like-debugging-practices.md): PracRepair method and Defects4J repair counts.
 - [Unlocking LLM Code Correction with Iterative Feedback Loops](../Inbox/2026-06-16--unlocking-llm-code-correction-with-iterative-feedback-loops.md): Iterative code-correction setup, models, and pass@1 results.
 - [All Smoke, No Alarm: Oracle Signals in Agent-Authored Test Code](../Inbox/2026-06-16--all-smoke-no-alarm-oracle-signals-in-agent-authored-test-code.md): Large-scale evidence on weak oracle signals in agent-authored tests.
@@ -51,7 +51,7 @@ Benchmarking work is naming the measured object more carefully. One position pap
 
 The agent-skills evaluation paper turns that concern into a measurement procedure. It generates tasks and hidden rubrics from each skill, runs agents with and without the skill, and scores instruction following and goal completion. Across about 500 skills, 1,000 tasks, 19 agent-model configurations, and 38,000 valid trajectories, relevant skills add 5.5 to 22 points depending on the model.
 
-#### Evidence
+#### Sources
 - [Position: Coding Benchmarks Are Misaligned with Agentic Software Engineering](../Inbox/2026-06-16--position-coding-benchmarks-are-misaligned-with-agentic-software-engineering.md): Benchmark critique, harness components, and Terminal-Bench harness spread.
 - [A Framework for Evaluating Agentic Skills at Scale](../Inbox/2026-06-16--a-framework-for-evaluating-agentic-skills-at-scale.md): Skill evaluation method, scale, and reported score gains.
 
@@ -60,6 +60,6 @@ LoopCoder-v2 gives a concrete compute-scaling result for code models. The 7B Par
 
 Operational writing in the corpus applies a similar bounded-systems view to agent workstations. Long-running agents need isolated computers, separate ports, state, dependencies, and shell access. The practical claim is that quality depends on specs, tests, type checks, linting, observability, and final pull-request review, not on continuous human editing of generated code.
 
-#### Evidence
+#### Sources
 - [LoopCoder-v2: Only Loop Once for Efficient Test-Time Computation Scaling](../Inbox/2026-06-16--loopcoder-v2-only-loop-once-for-efficient-test-time-computation-scaling.md): LoopCoder-v2 architecture, training setup, and two-loop benchmark gains.
 - [What does software development look like when agents write 100% of the code?](../Inbox/2026-06-16--what-does-software-development-look-like-when-agents-write-100-of-the-code.md): Agent isolation, long-running execution, and verification workflow claims.

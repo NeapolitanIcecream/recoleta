@@ -35,7 +35,7 @@ Training-time state supervision for vision-language navigation looks ready to be
 
 The adoption blocker is annotation and evaluation discipline. This paper gets there with 3.6 million synthesized progress samples and 937,000 grounded landmark samples, so most labs will start with a smaller internal version. A cheap test is straightforward: take an existing VLN benchmark run, label a few thousand trajectories with sub-goal completion text and landmark recall targets, then compare failure modes on long instructions rather than headline success alone. If the same pattern holds, progress drift and memory drift should become regular tracked metrics in VLN training runs, because they point to the error before the agent starts wandering.
 
-### Evidence
+### Sources
 - [Dual-Anchoring: Addressing State Drift in Vision-Language Navigation](../Inbox/2026-04-19--dual-anchoring-addressing-state-drift-in-vision-language-navigation.md): Summary gives the method, training signals, data scale, and benchmark gains over StreamVLN.
 - [Dual-Anchoring: Addressing State Drift in Vision-Language Navigation](../Inbox/2026-04-19--dual-anchoring-addressing-state-drift-in-vision-language-navigation.md): Paper text states the explicit instruction-progress and memory-landmark anchoring mechanism and dataset sizes.
 
@@ -44,7 +44,7 @@ Remote-actuated dexterous hands now have enough measured detail to support a pra
 
 That changes what a build decision can look like for manipulation groups. A remote motor hub is no longer just a concept sketch for freeing palm volume. It is a trade that can be budgeted. Teams can choose remote routing when they need lower hand mass, easier repair, or more sensor volume in the palm, then check whether their task can tolerate the measured force loss and delay. The first cheap validation step is a routing bench test before full hand assembly: measure fingertip force and command delay across sheath lengths and bend angles that match the arm path, then lock the route only after the controller and task requirements still fit inside those limits. The paper's finding that friction mattered more than arm-motion disturbance in tracking tests gives a clear priority for that workflow.
 
-### Evidence
+### Sources
 - [MM-Hand: A 21-DOF Multi-modal Modular Dexterous Robotic Hand with Remote Actuation](../Inbox/2026-04-19--mm-hand-a-21-dof-multi-modal-modular-dexterous-robotic-hand-with-remote-actuation.md): Summary provides the design, sensing stack, force, delay, and tracking findings that support a concrete hardware workflow change.
 - [MM-Hand: A 21-DOF Multi-modal Modular Dexterous Robotic Hand with Remote Actuation](../Inbox/2026-04-19--mm-hand-a-21-dof-multi-modal-modular-dexterous-robotic-hand-with-remote-actuation.md): Paper text confirms the 25 N force under 1 m routing and frames the hand as an open-source research platform.
 
@@ -53,6 +53,6 @@ A missing support layer is becoming visible across both navigation and manipulat
 
 A buildable response is a small evaluation harness that sits beside the main policy or controller. For navigation, log sub-goal completion accuracy and landmark recall along the trajectory. For tendon-driven hands, log delay, force loss, and tracking error across routing configurations before integrated manipulation tests. Teams do not need a new grand architecture for this. They need a repeatable way to expose the internal variable that explains the miss. The cheap check is whether these side metrics predict downstream failure earlier than task success does. If they do, they belong in regular regression testing for embodied systems that combine long-horizon reasoning with mechanically lossy hardware.
 
-### Evidence
+### Sources
 - [Dual-Anchoring: Addressing State Drift in Vision-Language Navigation](../Inbox/2026-04-19--dual-anchoring-addressing-state-drift-in-vision-language-navigation.md): Summary identifies explicit progress and memory state as trainable and measurable sources of VLN failure.
 - [MM-Hand: A 21-DOF Multi-modal Modular Dexterous Robotic Hand with Remote Actuation](../Inbox/2026-04-19--mm-hand-a-21-dof-multi-modal-modular-dexterous-robotic-hand-with-remote-actuation.md): Summary identifies friction, delay, and routing effects as measured internal variables that explain hardware performance.

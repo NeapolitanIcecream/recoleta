@@ -32,7 +32,7 @@ pass_kind: trend_synthesis
 ## Overview
 The week’s usable signal is narrow and practical. Antigravity is shown as a coding partner for Flutter work, with Google Agent Development Kit (ADK) frontends as the clearest case. The evidence favors repeatable developer skills, review loops, and platform debugging over measured model gains.
 
-## Clusters
+## Findings
 
 ### Reusable agent skills for ADK frontends
 The strongest case study turns a one-off coding session into a reusable Antigravity skill. The author needed a Flutter client for a Python agent built with Google Agent Development Kit, despite little Python experience and no prior ADK work. The useful method was staged output: interface notes, usage notes, architecture notes, design notes, then code generation and testing.
@@ -41,7 +41,7 @@ The workflow used two agents. A coder agent ran the skill and produced artifacts
 
 The concrete result was 13 iterations before a shareable `flutter_frontend_for_adk` skill. The reported fixes were ordinary engineering problems: gitignore behavior, review pauses, macOS and iOS network permissions, markdown rendering, linting, sealed message types, chat scrolling, web crashes caused by `dart:io`, partial event aggregation, and tool invocation display.
 
-#### Evidence
+#### Sources
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): Item summary gives the full problem, staged workflow, 13 iterations, and concrete fixes.
 
 ### Flutter as a tractable target for coding agents
@@ -51,5 +51,5 @@ The claim is grounded in an end-to-end build, not a controlled evaluation. The a
 
 The clearest engineering lesson is about scope control. Challenge Mode used ghost replays of past high scores, which avoided real-time multiplayer infrastructure. A replay bug caused by millisecond-level scheduling drift was fixed by storing complete lander state at thruster events.
 
-#### Evidence
+#### Sources
 - [Vibe once, run anywhere with Antigravity and Flutter](../Inbox/2026-06-29--vibe-once-run-anywhere-with-antigravity-and-flutter.md): Item summary covers the DashLander build, Flutter rationale, tools, results, and lack of controlled benchmarks.

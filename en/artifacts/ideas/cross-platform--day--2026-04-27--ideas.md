@@ -37,7 +37,7 @@ Flutter teams using Firebase can now test a backend function in Dart before comm
 
 A practical pilot would move one low-risk workflow into Dart, such as a notification trigger, user profile update, order status change, or moderation callback. The test should include shared Dart models, local development setup, deployment steps, logs, permissions, error handling, and rollback. The announcement gives no latency, cost, reliability, or deployment metrics, so production use should depend on measurements from the pilot rather than the preview announcement alone.
 
-### Evidence
+### Sources
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): The recap says Google announced a preview of Dart support for Firebase Functions and introduced the Dart Admin SDK to reduce context switching and improve development velocity.
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): The summary states that the post reports no latency, cost, reliability, or deployment metrics for the Firebase Functions preview.
 
@@ -46,7 +46,7 @@ Flutter product teams can test GenUI on a constrained transaction where text cha
 
 The useful prototype is a narrow flow with fixed action boundaries. The agent can create a form, card, selector, or confirmation screen, while the app enforces allowed fields, validation, accessibility checks, and a fallback path. The public evidence is still demo-led, so the test should measure task completion, correction rate, UI validity, and how often the generated interface needs human-designed templates.
 
-### Evidence
+### Sources
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): The recap describes GenLatte as an AI-powered coffee shop built with Flutter GenUI where attendees ordered drinks through a GenUI Flutter app.
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): The recap mentions a Generative UI Deep Dive session about giving agents the power to create their own UI beyond text-based chatbots.
 
@@ -55,6 +55,6 @@ Architecture teams evaluating Flutter for automotive, commerce, or other large p
 
 A review checklist should request device startup time, frame performance, crash-free sessions, native integration points, release cadence, accessibility coverage, localization workflow, and staffing mix. The same checklist can be used with internal pilots, vendor references, and public case studies, giving enterprise teams a clearer basis for approving Flutter in product areas where UX performance and long maintenance windows matter.
 
-### Evidence
+### Sources
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): The recap cites Toyota infotainment systems and Talabat regional commerce work as enterprise Flutter examples.
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): The summary notes that no app performance, team-size, or release-speed numbers are given for the Toyota and Talabat examples.

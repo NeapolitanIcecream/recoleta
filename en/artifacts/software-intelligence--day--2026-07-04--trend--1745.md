@@ -32,14 +32,14 @@ pass_kind: trend_synthesis
 ## Overview
 Today’s strongest signal is operational: large language model (LLM) agents need hard gates for money, identity, and execution. Donobu, Kortex, and Aion show the spread across testing, local inference, and desktops. The evidence is mostly RFCs, packages, and product reporting; Kortex supplies the clearest numbers.
 
-## Clusters
+## Findings
 
 ### Run-scoped budgets for agent calls
 The agent budget RFC treats cost as a pre-call authorization decision. It proposes estimating worst-case spend before each provider request, reserving that amount atomically across run, user, key, and other scopes, then committing actual usage after the call. The design targets loops that resend growing context; the RFC says one run can pass 50K input tokens by step 20.
 
 The useful detail is the failure path. Agents receive budget state through headers and RFC 9457 problem-detail errors, so they can choose a cheaper model, shorten context, or stop cleanly. The RFC cites reported cost incidents, including a $4,200 weekend bill and an $87K monthly team bill, but it does not report latency, savings, false-block, or adoption results.
 
-#### Evidence
+#### Sources
 - [RFC: Stopping runaway AI agent spend with atomic budget reservations](../Inbox/2026-07-04--rfc-stopping-runaway-ai-agent-spend-with-atomic-budget-reservations.md): Summary of the run-scoped budget reservation design and its reported evidence limits.
 
 ### Deterministic identity for RAG, tools, and agents
@@ -47,7 +47,7 @@ The authentication article gives a practical rule for AI access: every action sh
 
 The agent section adds separate identities for sub-agents, short-lived credentials, signed JSON Web Tokens (JWTs), delegation claims, and audit logs. The banking example splits work among four agents and uses a 300-second JWT lifetime. The piece is guidance, not an evaluated security study, so its value is in the concrete access pattern.
 
-#### Evidence
+#### Sources
 - [AI Authentication and Authorization](../Inbox/2026-07-04--ai-authentication-and-authorization.md): Summary of identity inheritance, RAG filtering, tool access, agent identities, and evidence limits.
 
 ### AI-assisted browser testing with repair trails
@@ -55,7 +55,7 @@ Donobu packages AI browser actions inside Playwright tests. A test can call `pag
 
 The auto-heal path is the main operational claim. With `--auto-heal`, Donobu can rerun an autonomous repair flow and attach a regenerated `fixed-test.ts`. The corpus gives no pass rate, cost, latency, or baseline comparison, so the grounded read is narrower: the tool turns AI testing into a traceable workflow with cached actions and failure evidence.
 
-#### Evidence
+#### Sources
 - [Freedom from NPM. Happy 4th](../Inbox/2026-07-04--freedom-from-npm-happy-4th.md): Summary of Donobu’s Playwright fixture, Page.AI calls, caching, triage, and lack of benchmarks.
 
 ### Consumer-GPU inference through weight streaming
@@ -63,5 +63,5 @@ Kortex is the strongest measurement-heavy item in the period. It runs models lar
 
 The comparison target is llama.cpp b9860 Vulkan with 30 of 80 layers offloaded on the same hardware, reported at 0.21 tokens per second. Kortex attributes the gap to keeping all compute on the GPU while streaming weights over PCIe. Its limits are also clear: Windows-only streaming today, no HTTP server or multi-turn REPL, and no tested Linux path yet.
 
-#### Evidence
+#### Sources
 - [Out-of-core LLM inference engine written from scratch in Rust](../Inbox/2026-07-04--out-of-core-llm-inference-engine-written-from-scratch-in-rust.md): Summary of the streaming approach, hardware setup, benchmark numbers, and current limits.

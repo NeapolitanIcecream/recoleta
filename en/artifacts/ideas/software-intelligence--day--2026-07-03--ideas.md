@@ -35,7 +35,7 @@ Security teams can pilot a central OAuth broker for agents that need email, cale
 
 A useful first test is small: put the flow in front of one high-risk agent and instrument the container filesystem, tool outputs, logs, and repository writes. The pass condition is that the upstream OAuth token never appears in the agent runtime while the agent can still inspect scope-like claims and complete normal API calls. The same pilot should record latency and failure modes because the source proposal gives architecture, not deployment measurements.
 
-### Evidence
+### Sources
 - [Securing Agentic Identity](../Inbox/2026-07-03--securing-agentic-identity.md): Summarizes the broker and proxy design, target services, and lack of quantitative deployment data.
 - [Securing Agentic Identity](../Inbox/2026-07-03--securing-agentic-identity.md): Describes the broker-minted JWT with an encrypted copy of the real token and the proxy header swap.
 - [Securing Agentic Identity](../Inbox/2026-07-03--securing-agentic-identity.md): Names the operational risk: agent-held credentials can be written to disk, committed to repositories, or exfiltrated.
@@ -45,7 +45,7 @@ Teams that already give agent workloads client certificates can bind broker-issu
 
 The practical security test is to copy a broker-issued JWT out of one agent environment and try to use it through the proxy from another environment. The expected result is proxy rejection unless the caller also has the private key for the original environment. Hardware-backed or hypervisor-backed private keys make that check more meaningful. This can be adopted even when the upstream identity provider has no support for RFC 8705 token binding.
 
-### Evidence
+### Sources
 - [Securing Agentic Identity](../Inbox/2026-07-03--securing-agentic-identity.md): Explains presenting a client certificate to the broker, embedding it in the minted token, and enforcing mTLS at the proxy.
 - [Securing Agentic Identity](../Inbox/2026-07-03--securing-agentic-identity.md): Connects the design to SPIFFE-style workload identity and notes stateless broker and proxy operation.
 
@@ -54,6 +54,6 @@ Agent teams integrating with GitHub and other SaaS APIs should test broker adapt
 
 A practical adoption check is a provider matrix covering login flow, token type, claim visibility, refresh behavior, proxy header rewrite, and mTLS enforcement. GitHub is a good first case because the source calls out provider-specific login friction. Passing the matrix for two or three common SaaS services would show whether the broker can stay small or needs a larger adapter layer.
 
-### Evidence
+### Sources
 - [Securing Agentic Identity](../Inbox/2026-07-03--securing-agentic-identity.md): Notes that third-party services and GitHub-style login flows may require vendor-specific broker knowledge.
 - [Securing Agentic Identity](../Inbox/2026-07-03--securing-agentic-identity.md): States that opaque tokens can be carried as encrypted claims and released only after mTLS binding is verified.

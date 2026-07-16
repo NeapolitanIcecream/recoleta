@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Lynx developer tooling
 
-## Summary
+## 摘要
 路线图指向 Lynx 周边的三个实际切入点：面向月度节奏的发布管理工具、供代码代理使用的机器可读文档和示例、以及给评估 Lynx 和 Electron 的团队用的桌面试点栈。证据来自单篇路线图帖，属于产品方向证据，所以可用范围应限于和已命名组件及平台计划相关的工作流和工具，而不是性能主张。
 
 ## Lynx upgrade impact checker for monthly releases
@@ -31,7 +31,7 @@ Lynx 团队现在有足够的路线图细节，可以说明需要一层面向升
 
 这里的证据很具体：Lynx 说它在过去一年里从 v3.2 走到 v3.6，v3.7 会结束当前的双月发布周期，月度发布会在 2026 年年中开始。它还说发布说明、升级指南、核心 API 稳定性和跨版本的长期可维护性都是正在推进的工作。这种组合指向一个实际的支持缺口。一个简单的第一步是把这个流程放到一个现有的 Lynx 应用上，看看生成的清单能不能抓到开发者原本要手工整理的版本特定变更。
 
-### Evidence
+### 资料来源
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): The roadmap commits to monthly releases and explicitly names release notes, upgrade guides, API stability, and version maintainability.
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): The summary frames release discipline and upgrade hygiene as a core operational priority for teams already shipping on Lynx.
 
@@ -40,7 +40,7 @@ Lynx 团队现在有足够的路线图细节，可以说明需要一层面向升
 
 路线图把稳定且结构清晰的 API、lynx-website 上面向 LLM 的文档、Agent Skills、工具和示例列为计划工作，还提到把生成式 UI 作为探索方向。这已经足够支持一个窄范围的采用流程：挑出导航、UI 组件和设备 API 访问这类常见任务，把它们打包成可检索文档加可执行示例，再用构建成功率和 API 正确性来评估代理输出。一个便宜的验证方法是，用固定的提示集分别跑当前文档和修订后的文档，看构建成功率是否提升。
 
-### Evidence
+### 资料来源
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): The roadmap explicitly calls for stable APIs, LLM-friendly documentation, Agent Skills, tooling, examples, and generative UI exploration.
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): Sparkling, lynx-ui, and device APIs provide concrete task domains for testing whether generated code is correct and runnable.
 
@@ -49,6 +49,6 @@ Lynx 团队现在有足够的路线图细节，可以说明需要一层面向升
 
 路线图说 Lynx 现在正式支持 Android、iOS、Web 和 OpenHarmony，开源的 Clay 渲染引擎覆盖 macOS 和 Windows，并且计划通过 Lynxtron 把 Lynx 和 Electron 的桌面集成做得更深。它还提到 Sparkling 用于脚手架和原生导航，更多可用于生产的 UI 组件、更多设备 API，以及 Lynx DevTool 里更强的性能分析和诊断能力。一个便宜的测试方式是做一个范围受限的试点：把一个内部设置页或账户管理页面移到这个 starter kit 上，然后和现有 Electron 路径比较打包、调试和 UI 复用成本。
 
-### Evidence
+### 资料来源
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): The roadmap states official support for Android, iOS, Web, and OpenHarmony, plus Clay for macOS and Windows and Lynxtron for Electron-based desktop development.
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): Sparkling, lynx-ui, device APIs, profiling, diagnostics, and Lynx DevTool describe the missing pieces needed for a desktop starter workflow.

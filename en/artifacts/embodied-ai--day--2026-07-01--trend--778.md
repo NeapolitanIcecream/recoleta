@@ -38,14 +38,14 @@ pass_kind: trend_synthesis
 ## Overview
 Robotics dominates this period. The strongest papers test vision-language-action (VLA) policies against rollout cost, long-horizon drift, collision risk, tactile data gaps, and factory serving. RoboWorld, FurnitureVLA, and ROSA give the clearest measured claims.
 
-## Clusters
+## Findings
 
 ### World models for evaluation and control
 RoboWorld gives the cleanest world-model result. It evaluates eight open robot policies through 4,186 generated rollouts, then matches the RoboArena real-world ranking with Pearson r=0.989 and Spearman rho=0.970. The key design is closed-loop rollout generation plus a 0–5 task-progress vision-language model judge, which is more informative than binary success scoring in the reported ablation.
 
 Other papers make the control link explicit. ABot-M0.5 defines a world action model (WAM) for mobile manipulation that predicts future video, latent motion, and executable robot actions in sequence. The tutorial paper also tries to tighten terminology by defining robot world models as action-conditioned predictors and grouping WAM designs by how predicted futures connect to actions. The measured evidence is strongest for RoboWorld; ABot-M0.5 and the tutorial mainly clarify model design choices in the available excerpts.
 
-#### Evidence
+#### Sources
 - [RoboWorld: Fast and Reliable Neural Simulators for Generalist Robot Policy Evaluation](../Inbox/2026-07-01--roboworld-fast-and-reliable-neural-simulators-for-generalist-robot-policy-evaluation.md): RoboWorld summary reports closed-loop neural evaluation, Step Forcing, 4,186 generated rollouts, and ranking agreement with RoboArena.
 - [ABot-M0.5: Unified Mobility-and-Manipulation World Action Model](../Inbox/2026-07-01--abot-m0-5-unified-mobility-and-manipulation-world-action-model.md): ABot-M0.5 summary describes future-video, latent-action, and executable-action prediction for mobile manipulation.
 - [From World Models to World Action Models: A Concise Tutorial for Robotics](../Inbox/2026-07-01--from-world-models-to-world-action-models-a-concise-tutorial-for-robotics.md): Tutorial summary defines world models and world action models, including the taxonomy used for synthesis.
@@ -55,7 +55,7 @@ FurnitureVLA is the main long-horizon manipulation result. It decomposes IKEA-st
 
 Safety work adds another execution test. The constrained flow-matching paper edits predicted 10-step end-effector trajectories during denoising, using control barrier function constraints before the action chunk is finalized. On SafeLIBERO, it reports 82.81% collision avoidance and 81.62% task success, compared with 18.69% and 50.88% for unguided π0.5. The gain comes with slower execution, so the result is a safety-throughput tradeoff rather than a free improvement.
 
-#### Evidence
+#### Sources
 - [FurnitureVLA: Learning Long-Horizon Bimanual Furniture Assembly with Vision-Language-Action Model](../Inbox/2026-07-01--furniturevla-learning-long-horizon-bimanual-furniture-assembly-with-vision-language-action-model.md): FurnitureVLA summary gives the subtask-progress method and simulated success gains.
 - [Neuro-Symbolic Safety Guidance for Vision-Language-Action Models via Constrained Flow Matching](../Inbox/2026-07-01--neuro-symbolic-safety-guidance-for-vision-language-action-models-via-constrained-flow-matching.md): Safety guidance summary reports trajectory-level constrained flow matching and SafeLIBERO results.
 
@@ -66,7 +66,7 @@ Data access also gets practical attention. The Daft post shows per-frame search 
 
 Certified sensing clocks add a third sensor-facing thread. A frozen 3D VN-JEPA world model exposes a drift-aware deadline for when an agent should re-sense, with held-out interval certificate violation upper bounds below the stated 0.15 target in three tests.
 
-#### Evidence
+#### Sources
 - [Human-Centric Transferable Tactile Pre-Training for Dexterous Robotic Manipulation](../Inbox/2026-07-01--human-centric-transferable-tactile-pre-training-for-dexterous-robotic-manipulation.md): TTP summary provides H-Tac scale, tactile-action pretraining design, and limits of reported downstream metrics.
 - [Finding a Needle in the Haystack: Querying Physical AI Data with Daft](../Inbox/2026-07-01--querying-physical-ai-data-with-daft.md): Daft summary describes per-frame EgoDex retrieval with text embeddings and hand-pose geometry.
 - [Certified World Models as Sensing Clocks: Drift-Aware Deadlines for Active Perception](../Inbox/2026-07-01--certified-world-models-as-sensing-clocks-drift-aware-deadlines-for-active-perception.md): Certified world-model summary reports drift-aware sensing deadlines and held-out interval violation results.
@@ -78,7 +78,7 @@ BIFROST addresses sim-to-real transfer through a shared latent history encoder t
 
 ROSA treats robot foundation model inference as a fleet scheduling problem. On eight H200 GPUs and up to 64 virtual robots, it reports up to 12.06× higher SLO-qualified factory productivity than dedicated serving baselines, and up to 2.44× over shared-server baselines without its scheduler.
 
-#### Evidence
+#### Sources
 - [Domain Arithmetic: One-Shot VLA Adaptation under Environmental Shifts](../Inbox/2026-07-01--domain-arithmetic-one-shot-vla-adaptation-under-environmental-shifts.md): DART summary describes one-shot domain-vector adaptation and notes missing numerical margins in the excerpt.
 - [BIFROST: Bridging Invariant Feature Representation for Observation-space Sim2Real Transfer](../Inbox/2026-07-01--bifrost-bridging-invariant-feature-representation-for-observation-space-sim2real-transfer.md): BIFROST summary gives the paired latent encoder method and sim2sim success rates.
 - [ROSA: A Robotics Foundation Model Serving System for Robot Factories](../Inbox/2026-07-01--rosa-a-robotics-foundation-model-serving-system-for-robot-factories.md): ROSA summary reports shared GPU-pool scheduling and factory productivity gains.

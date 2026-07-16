@@ -43,7 +43,7 @@ Teams running diffusion or flow-matching robot policies can add a wrapper that s
 
 KeyStone is the concrete template. It batches K sampled action chunks, uses L2 distance over flattened action trajectories, and chooses an actual sampled chunk, which avoids averaging across different motion modes. Reported gains are large enough to justify a local A/B test: GR00T N1.6 on SimplerEnv-WidowX rose from 50.0% to 63.3% success at K=4, and SmolVLA on LIBERO rose from 50.4% to 57.2% at K=16. A robotics team can test this by logging single-sample failures, replaying the same tasks with K in {4, 8, 16}, and accepting the wrapper only if the added latency fits the control loop.
 
-### Evidence
+### Sources
 - [Geometry Guided Self-Consistency for Physical AI](../Inbox/2026-05-09--geometry-guided-self-consistency-for-physical-ai.md): KeyStone samples multiple diffusion or flow-matching action chunks, clusters them in action space, and reports success gains across VLA and WAM benchmarks.
 - [Geometry Guided Self-Consistency for Physical AI](../Inbox/2026-05-09--geometry-guided-self-consistency-for-physical-ai.md): The paper states that candidate chunks are drawn in parallel from a shared model context and selected without an additional model.
 
@@ -52,7 +52,7 @@ Robot teams adapting a VLA to a narrow demonstration set should treat prior-task
 
 ConSFT gives a low-friction mechanism for this check. It down-weights high-loss transitions with a stop-gradient confidence weight and anneals the temperature during training, so low-confidence samples produce smaller updates. On LIBERO with π0, it matched vanilla SFT target success at 0.90 and raised average prior-task retention to 0.34 versus 0.09. ECHO points to a related runtime check for long-horizon work: store successful subgoal segments, retrieve them during control, and compare long-task success against a current-observation baseline. On LIBERO-Long, ECHO reports 93.5% success versus 80.7% for vanilla π0.
 
-### Evidence
+### Sources
 - [Preserving Foundational Capabilities in Flow-Matching VLAs through Conservative SFT](../Inbox/2026-05-09--preserving-foundational-capabilities-in-flow-matching-vlas-through-conservative-sft.md): ConSFT reports a confidence-weighted supervised fine-tuning loss that improves prior-task retention while keeping target-task success close to vanilla SFT.
 - [ECHO: Continuous Hierarchical Memory for Vision-Language-Action Models](../Inbox/2026-05-09--echo-continuous-hierarchical-memory-for-vision-language-action-models.md): ECHO stores successful subgoal segments in a hierarchical memory and reports higher LIBERO-Long success than vanilla π0.
 
@@ -61,6 +61,6 @@ Organizations releasing, fine-tuning, or buying VLA robot policies need a releas
 
 ATAAT shows why normal task tests are insufficient. With a 5% poisoning rate on LIBERO-Spatial data poisoning with OpenVLA-7B, it reports 88.8% benign success and 83.5% targeted attack success. The trigger set includes visible objects and semantic scene conditions such as an open drawer or a person wearing a watch. GuardVLA gives a concrete ownership-side test: embed a fixed 6-bit secret message into visual observations during training, then swap in a trigger projector and classifier head at audit time. On LIBERO with OpenVLA-OFT, watermark identification confidence is near 100% across Spatial, Goal, Object, and LIBERO-10, while clean models stay near zero.
 
-### Evidence
+### Sources
 - [ATAAT: Adaptive Threat-Aware Adversarial Tuning Framework against Backdoor Attacks on Vision-Language-Action Models](../Inbox/2026-05-09--ataat-adaptive-threat-aware-adversarial-tuning-framework-against-backdoor-attacks-on-vision-language-action-models.md): ATAAT reports high targeted attack success under low-rate poisoning while preserving benign success, with visual and semantic triggers.
 - [Towards Backdoor-Based Ownership Verification for Vision-Language-Action Models](../Inbox/2026-05-09--towards-backdoor-based-ownership-verification-for-vision-language-action-models.md): GuardVLA describes a watermark audit with a fixed 6-bit secret message and near-100% watermark identification confidence on tested LIBERO settings.

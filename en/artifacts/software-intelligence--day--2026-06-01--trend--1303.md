@@ -32,14 +32,14 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s strongest evidence treats large language model (LLM) agents as systems that need managed authority, diagnostics, and review paths. Agent Operating Systems, Type-Error Ablation, and Monitoring Agentic Systems give the clearest signal: reliability is tied to execution control and feedback quality alongside model output.
 
-## Clusters
+## Findings
 
 ### Agent control planes
 The Agent Operating System (AOS) paper gives the period’s most explicit systems proposal. It defines a control layer for long-running agents where identity, goals, task graphs, capabilities, memory, policy checks, and audit records are managed objects. The key design rule is deterministic approval before side-effecting actions run, with policy outcomes written to append-only logs.
 
 DevArch shows the same pressure in a product form for Claude Code. It uses hooks, directives, architecture decision records, session summaries, domain boundaries, and test gates to keep agent work inside project rules. The evidence is descriptive, with no benchmark or defect-rate measurement, so the practical claim is about workflow shape rather than measured quality gains.
 
-#### Evidence
+#### Sources
 - [Agent Operating Systems (AOS): Integrating Agentic Control Planes into, and Beyond, Traditional Operating Systems](../Inbox/2026-06-01--agent-operating-systems-aos-integrating-agentic-control-planes-into-and-beyond-traditional-operating-systems.md): Defines AOS, its managed objects, policy/execution split, audit logs, and lack of quantitative results.
 - [Without Intelligent Guardrails, Claude Code Is Pure Chaos](../Inbox/2026-06-01--without-intelligent-guardrails-claude-code-is-pure-chaos.md): Describes Claude Code guardrails for session continuity, architectural decisions, domain boundaries, and test checks.
 
@@ -48,7 +48,7 @@ Monitoring work is becoming more operational. The audit-agent study argues that 
 
 The triage result is concrete. The method routed 10,210 L3 findings to automated monitoring and 243 L2 findings to human investigation, reported as a 43x reduction in analyst review volume. That makes monitoring scope and severity routing part of the reliability design, not just an alerting layer.
 
-#### Evidence
+#### Sources
 - [Monitoring Agentic Systems Before They're Reliable](../Inbox/2026-06-01--monitoring-agentic-systems-before-they-re-reliable.md): Reports the monitoring scopes, variance signals, synthetic audit testbed, CV values, and triage counts.
 
 ### Feedback-rich coding loops
@@ -56,7 +56,7 @@ The type-error study gives a measured example of tooling tuned for agents. The a
 
 Mark Brooker’s essay states the broader engineering rule in plainer terms: coding agents do better when they can run fast checks such as compiler errors, tests, benchmarks, formal specifications, and simulators. The stronger evidence here is the Shplait experiment; the essay is useful because it connects that result to everyday software workflows.
 
-#### Evidence
+#### Sources
 - [Type-Error Ablation and AI Coding Agents](../Inbox/2026-06-01--type-error-ablation-and-ai-coding-agents.md): Reports the Shplait setup, diagnostic modes, 2,400 trials, and 97.9% semantic pass rate after type-error repair.
 - [What's Easy Now? What's Hard Now? How AI Is Changing Software Development](../Inbox/2026-06-01--what-s-easy-now-what-s-hard-now-how-ai-is-changing-software-development.md): Summarizes the argument that agents improve on tasks with fast, machine-checkable feedback.
 
@@ -65,6 +65,6 @@ Two studies focus on what happens after agents produce artifacts. The code-revie
 
 The requirements-engineering study shows a similar constraint in product work. At XITASO, product owners used AI across 15 requirements use cases, with backlog refinement reported by 6 of 8 participants. The main practical limiter was tool connection: Jira, Confluence, source code, tender sources, and meeting data determined whether AI outputs fit the team’s process or created manual handoffs.
 
-#### Evidence
+#### Sources
 - [Trust-Calibrated Code Review: A Participatory Design Study of Review Workflows for LLM-Generated Multi-File Changes](../Inbox/2026-06-01--trust-calibrated-code-review-a-participatory-design-study-of-review-workflows-for-llm-generated-multi-file-changes.md): Details the participatory design study, three-level review workflow, risk constructs, and survey results.
 - [Faster than the Team, Faster than the Customer: Tool Integration, Collaboration, and Organisational Lag in AI-assisted RE](../Inbox/2026-06-01--faster-than-the-team-faster-than-the-customer-tool-integration-collaboration-and-organisational-lag-in-ai-assisted-re.md): Reports the XITASO requirements-engineering study, use-case counts, participant counts, and tool-integration findings.

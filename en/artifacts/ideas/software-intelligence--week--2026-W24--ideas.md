@@ -39,7 +39,7 @@ Trace gives a concrete pattern for this. It rewrites user corrections into atomi
 
 A practical pilot would start with 20 recent coding-agent transcripts, select the five corrections that users repeated most often, and implement them as blocking checks in the agent’s finish step. The measure is simple: count how often those five corrections are violated in held-out tasks and how many extra user turns the agent needs.
 
-### Evidence
+### Sources
 - [Getting Better at Working With You: Compiling User Corrections into Runtime Enforcement for Coding Agents](../Inbox/2026-06-11--getting-better-at-working-with-you-compiling-user-corrections-into-runtime-enforcement-for-coding-agents.md): Trace describes correction mining, rule compilation, runtime verifiers, and reported violation-rate reductions.
 - [Getting Better at Working With You: Compiling User Corrections into Runtime Enforcement for Coding Agents](../Inbox/2026-06-11--getting-better-at-working-with-you-compiling-user-corrections-into-runtime-enforcement-for-coding-agents.md): The source gives concrete examples of executable coding-agent corrections, including cleanup, command, and workspace conditions before termination.
 
@@ -50,7 +50,7 @@ Claw-SWE-Bench shows the size of the effect. On its 350-instance multilingual be
 
 A team evaluating two or three coding-agent products can borrow this structure without adopting the whole benchmark. Pick a small set of internal issue-resolution tasks, require every system to return a repository diff under the same timeout and tool permissions, and report pass rate next to total tokens, cache reads, wall time, and failed patch extraction cases.
 
-### Evidence
+### Sources
 - [Claw-SWE-Bench: A Benchmark for Evaluating OpenClaw-style Agent Harnesses on Coding Tasks](../Inbox/2026-06-10--claw-swe-bench-a-benchmark-for-evaluating-openclaw-style-agent-harnesses-on-coding-tasks.md): Claw-SWE-Bench fixes the evaluation contract and reports large differences from adapter and harness choices under fixed models.
 - [Claw-SWE-Bench: A Benchmark for Evaluating OpenClaw-style Agent Harnesses on Coding Tasks](../Inbox/2026-06-10--claw-swe-bench-a-benchmark-for-evaluating-openclaw-style-agent-harnesses-on-coding-tasks.md): The paper abstract reports the 19.1% versus 73.4% Pass@1 adapter result and notes cost differences among similarly accurate systems.
 
@@ -61,6 +61,6 @@ PROJECTMEM is a concrete implementation of this pattern. It stores plain-text ty
 
 A cheap adoption test is to add the log to one maintenance-heavy repository for two weeks. Track how often the agent repeats a failed fix, how many tokens are spent re-reading context at session start, and how often precheck warnings prevent edits to known high-risk files.
 
-### Evidence
+### Sources
 - [PROJECTMEM: A Local-First, Event-Sourced Memory and Judgment Layer for AI Coding Agents](../Inbox/2026-06-10--projectmem-a-local-first-event-sourced-memory-and-judgment-layer-for-ai-coding-agents.md): PROJECTMEM describes the local event log, MCP access, pre-action warning layer, and reported implementation details.
 - [PROJECTMEM: A Local-First, Event-Sourced Memory and Judgment Layer for AI Coding Agents](../Inbox/2026-06-10--projectmem-a-local-first-event-sourced-memory-and-judgment-layer-for-ai-coding-agents.md): The abstract gives the 5,000–20,000 token context-rebuilding estimate and the append-only event-log design.

@@ -37,7 +37,7 @@ Teams training UMI-style tabletop policies should add a repeatable physical eval
 
 This matters for labs that currently compare policies after ad hoc resets or camera changes. UMI-Bench reports that π0.5 leads its three-model comparison with a 55.84 mean Overall Score, but the more operational result is the drop in Progress Score: 59.62 in Seen/Seen episodes, 45.33 under position, layout, pose, or dynamics shifts, and 40.19 under combined shifts. A policy release checklist can copy this structure with 20 to 50 rollouts per task, saved reset images, factor labels, and per-rollout failure notes. The same evaluation table can reserve simulation for ranking checks only when it preserves real-world ordering; the sim-real study found REALM had the best policy-ranking correlation among the tested simulators, with Spearman 0.700 before simulator post-training and 0.875 after it.
 
-### Evidence
+### Sources
 - [UMI-Bench 1.0: An Open and Reproducible Real-World Benchmark for Tabletop Robotic Manipulation with UMI Data](../Inbox/2026-06-09--umi-bench-1-0-an-open-and-reproducible-real-world-benchmark-for-tabletop-robotic-manipulation-with-umi-data.md): UMI-Bench specifies the workstation, reset, logging, scoring, task-factor splits, and reported degradation under physical shifts.
 - [A Practical Recipe Towards Improving Sim-and-Real Correlation for VLA Evaluation](../Inbox/2026-06-09--a-practical-recipe-towards-improving-sim-and-real-correlation-for-vla-evaluation.md): The sim-real study reports policy-ranking correlation metrics and shows why simulation should be checked against real rollout decisions.
 
@@ -46,7 +46,7 @@ VLA manipulation deployments can add a pre-execution action verifier around an e
 
 VeriSpace is the clearest implementation reference. With OpenVLA on SimplerEnv-WidowX, average success rose from 37.0% to 55.0% across four tasks and 50 trials per task. The largest listed task gain was Stack Cubes, from 28.0% to 62.0%. A cheap adoption test is to log the top five candidate actions, the verifier score, depth-derived contact features, and the executed outcome on tasks where failure changes the scene enough to block recovery. If the verifier only helps on easy scenes, it should stay as a diagnostic tool; if it reduces first-action physical mistakes, it belongs in the control loop.
 
-### Evidence
+### Sources
 - [VeriSpace: Spatially Grounded Action Verification for Vision-Language-Action Models](../Inbox/2026-06-09--verispace-spatially-grounded-action-verification-for-vision-language-action-models.md): VeriSpace describes candidate action sampling, RGB-D spatial scoring, pairwise ranking, and the reported success gains.
 - [VeriSpace: Spatially Grounded Action Verification for Vision-Language-Action Models](../Inbox/2026-06-09--verispace-spatially-grounded-action-verification-for-vision-language-action-models.md): The paper frames the operational failure mode: one-shot action prediction can cause grasp failure, collision, or wrong task progression.
 
@@ -55,6 +55,6 @@ Dexterous-hand groups can test a human-video data pipeline before committing wee
 
 The reported gap is large enough to justify a small replication on one pick-and-place task and one tool-use task. Across eight real-robot dexterous tasks, DPP reports 75.0% average success, compared with 3.7% for Point Policy and 1.0% for VITRA. Its ablation assigns a 71.3 percentage point gain to contact prediction over the point-only baseline. The adoption blocker is annotation quality: the workflow needs reliable hand keypoints, object masks, depth or stereo estimates, and contact labels. A first internal test should measure whether the extracted fingertip trajectories and contact flags stay stable across camera angles and object categories before training a full policy.
 
-### Evidence
+### Sources
 - [Dexterous Point Policy: Learning Point-based Dexterous Hand Policies from Human Demonstrations](../Inbox/2026-06-09--dexterous-point-policy-learning-point-based-dexterous-hand-policies-from-human-demonstrations.md): Dexterous Point Policy reports the six-keypoint representation, human-video-only training setup, contact prediction, and real-robot results.
 - [Dexterous Point Policy: Learning Point-based Dexterous Hand Policies from Human Demonstrations](../Inbox/2026-06-09--dexterous-point-policy-learning-point-based-dexterous-hand-policies-from-human-demonstrations.md): The paper states the embodiment gap and the high cost of robot demonstrations for dexterous manipulation.

@@ -39,7 +39,7 @@ The workflow change is concrete: keep a fixed set of real vulnerability-fix task
 
 A cheap adoption check is a 20-task slice from the organization’s own past vulnerability fixes. If the same model produces different SecPass results across Cursor, Claude Code, and any internal harness, procurement and AppSec teams get a more useful buying signal than a model-only leaderboard score.
 
-### Evidence
+### Sources
 - [Claude Fable 5: The harness matters more than the model](../Inbox/2026-06-17--claude-fable-5-the-harness-matters-more-than-the-model.md): Reports the Cursor versus Claude Code comparison for the same Claude Fable 5 model, including FuncPass, SecPass, cheating, and the security gap among functionally passing patches.
 - [Claude Fable 5: The harness matters more than the model](../Inbox/2026-06-17--claude-fable-5-the-harness-matters-more-than-the-model.md): Describes the benchmark setup with real projects, one patch per task, Docker isolation, FuncPass, and SecPass.
 
@@ -50,7 +50,7 @@ This gives security engineers a direct artifact to inspect after an agent says a
 
 A first implementation can target parsers, image codecs, protocol handlers, and other input-heavy code. Ask the agent to emit assertions only for attacker-controlled input boundaries and state conversions, run existing fuzz targets or a short fuzzing budget, and triage assertion failures before filing bugs.
 
-### Evidence
+### Sources
 - [Code-Augur: Agentic Vulnerability Detection via Specification Inference](../Inbox/2026-06-17--code-augur-agentic-vulnerability-detection-via-specification-inference.md): Summarizes Code-Augur’s method: threat model, in-source assertions, guided grey-box fuzzing, triage, and reported open-source vulnerability results.
 - [Code-Augur: Agentic Vulnerability Detection via Specification Inference](../Inbox/2026-06-17--code-augur-agentic-vulnerability-detection-via-specification-inference.md): States that Code-Augur commits local invariants as assertions and uses a fuzzer to falsify those assumptions, with 22 new vulnerabilities and 16 fixed or confirmed.
 
@@ -61,6 +61,6 @@ The reported dataset shows enough detail for a small internal trial. In an 80-re
 
 An evaluation owner could pilot this on 10 active repositories: freeze a snapshot, generate bugfix and enhancement families from earlier issue and PR text, wait for a validation window, then synthesize executable tasks only from families that match later project work. The resulting benchmark carries a provenance trail and a time boundary that are easier to audit than copied public issue-and-PR pairs.
 
-### Evidence
+### Sources
 - [SWE-Future: Forecast-Conditioned Data Synthesis for Future-Oriented Software Engineering Agents](../Inbox/2026-06-17--swe-future-forecast-conditioned-data-synthesis-for-future-oriented-software-engineering-agents.md): Describes SWE-Future’s pre-snapshot evidence bundles, forecast validation, hidden tests, gold patches, provenance, execution logs, and the main retrospective results.
 - [SWE-Future: Forecast-Conditioned Data Synthesis for Future-Oriented Software Engineering Agents](../Inbox/2026-06-17--swe-future-forecast-conditioned-data-synthesis-for-future-oriented-software-engineering-agents.md): Explains the contamination problem with replayed public GitHub issues and pull requests, and introduces forecast-conditioned task synthesis.

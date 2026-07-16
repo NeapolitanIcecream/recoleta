@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # Physical Rollout Evaluation for Robot Policies
 
-## Summary
+## 摘要
 真实机器人回放指标正在成为 VLA 和世界模型工作的有效筛选器。最直接的做法，是给遥操作灵巧数据加质量评分，在部署前测试 VLA 策略对摄像头腐蚀的鲁棒性，并在桌面任务里把场景保留和接触效用与任务完成度一起评分。
 
 ## Clip-quality scoring for noisy dexterous teleoperation datasets
@@ -35,7 +35,7 @@ language_code: zh-CN
 
 一个低成本的起点，是给现有遥操作数据重新打分，用有质量权重和无质量权重分别训练同一策略，再在需要手指灵活性的任务上比较物理回放，比如旋盖、写字、取书或揉面。Dexora 在灵巧任务上的结果，平均成功率 66.7%，高于 GR00T N1 的 51.7% 和 Diffusion Policy 的 6.7%，这个差距足以先在更小的本地平台上试一轮。
 
-### Evidence
+### 资料来源
 - [Dexora: Open-source VLA for High-DoF Bimanual Dexterity](../Inbox/2026-05-18--dexora-open-source-vla-for-high-dof-bimanual-dexterity.md): Dexora combines a 36-DoF dual-arm dual-hand robot, matched MuJoCo twin, 100K simulated trajectories, 10K real teleoperated episodes, and quality-weighted diffusion policy training.
 - [Dexora: Open-source VLA for High-DoF Bimanual Dexterity](../Inbox/2026-05-18--dexora-open-source-vla-for-high-dof-bimanual-dexterity.md): The paper abstract describes the hybrid teleoperation interface, synthetic and real datasets, and the offline discriminator for down-weighting low-quality demonstrations.
 
@@ -46,7 +46,7 @@ VLA 部署团队应在实机试验前加入摄像头腐蚀回归测试套件。S
 
 验收测试应包含策略在正常干净输入下的分数、最差腐蚀场景，以及至少一次带有人为相机退化的真实机器人试验。StableVLA 报告的 LIBERO 5 级结果里，Object 是 70.2% 对 29.3%，Long 是 45.3% 对 26.2%；真实 Pack Doll 任务里，成功率是 50%，而 VLA-Adapter-0.5B 是 20%。
 
-### Evidence
+### 资料来源
 - [StableVLA: Towards Robust Vision-Language-Action Models without Extra Data](../Inbox/2026-05-18--stablevla-towards-robust-vision-language-action-models-without-extra-data.md): StableVLA identifies visual corruptions as a deployment failure mode and reports large LIBERO, CALVIN, and real-robot gains without extra robot data or corruption-specific augmentation.
 - [StableVLA: Towards Robust Vision-Language-Action Models without Extra Data](../Inbox/2026-05-18--stablevla-towards-robust-vision-language-action-models-without-extra-data.md): The abstract states that IB-Adapter filters noisy visual inputs, adds fewer than 10M parameters, and improves over the baseline without extra data or augmentation.
 
@@ -57,6 +57,6 @@ VLA 部署团队应在实机试验前加入摄像头腐蚀回归测试套件。S
 
 WorldArena 2.0 说明了为什么接触型模型需要这个额外分数。Wan2.2 在 UniVTAC 上的触觉预测质量最好，21.26 PSNR、0.746 SSIM，但在 Insert HDMI 和 Lift Bottle 两个任务上的平均成功率只有 50%。有用的评测框架应把触觉或视频质量和物理回放成功率放在一起看，因为重建干净，不代表控制证据够用。
 
-### Evidence
+### 资料来源
 - [DexHoldem: Playing Texas Hold'em with Dexterous Embodied System](../Inbox/2026-05-18--dexholdem-playing-texas-hold-em-with-dexterous-embodied-system.md): DexHoldem uses a physical rollout rubric that separates scene-preserving success from disruptive completion and reports large gaps between task completion and scene-preserving success.
 - [WorldArena 2.0: Extending Embodied World Model Benchmarking on Modality, Functionality and Platform](../Inbox/2026-05-18--worldarena-2-0-extending-embodied-world-model-benchmarking-on-modality-functionality-and-platform.md): WorldArena 2.0 adds visuotactile evaluation and shows that high tactile reconstruction scores do not reliably predict task success.

@@ -35,7 +35,7 @@ A practical next step for teams already using coding agents is an internal bench
 
 The useful build here is not a public leaderboard. It is a rolling private eval pipeline tied to your own repository and prompt distribution. Start with merged agent-assisted changes from one team, exclude requests that cannot be checked by execution, and add repeated pre-change and post-change test runs to filter unstable tests. Use it for release gating on agent updates and for regression checks after prompt, retrieval, or tool changes. A cheap validation step is to replay the last few dozen accepted sessions and see whether score changes line up with reviewer preference and CI outcomes better than your current benchmark mix.
 
-### Evidence
+### Sources
 - [ProdCodeBench: A Production-Derived Benchmark for Evaluating AI Coding Agents](../Inbox/2026-04-02--prodcodebench-a-production-derived-benchmark-for-evaluating-ai-coding-agents.md): ProdCodeBench describes a production-derived benchmark that preserves verbatim prompts, backs out landed diffs, and grades agents with stable F2P and P2P tests in a monorepo.
 - [ProdCodeBench: A Production-Derived Benchmark for Evaluating AI Coding Agents](../Inbox/2026-04-02--prodcodebench-a-production-derived-benchmark-for-evaluating-ai-coding-agents.md): The paper states that organizations need fast offline signals for model and harness changes because online A/B testing is slow and costly.
 
@@ -44,7 +44,7 @@ Teams deploying tool-using agents need a replay harness for schema drift, timeou
 
 That points to a concrete support layer: an internal fault-injection test bed for every agent tool contract. Record representative tasks, freeze tool schemas and success checks, then replay the same episodes with injected faults and strict limits on retries, calls, and steps. Score invalid calls, policy violations, recovery success, and completion under budget. The first users are platform teams responsible for agent runtime safety and API owners who are seeing plausible tool plans fall apart under normal production errors. A cheap check is to take your top ten agent actions and simulate expired auth, one schema rename, and a 429 policy. If success collapses, the blocker is operational recovery policy, not prompt quality.
 
-### Evidence
+### Sources
 - [ToolMisuseBench: An Offline Deterministic Benchmark for Tool Misuse and Recovery in Agentic Systems](../Inbox/2026-04-02--toolmisusebench-an-offline-deterministic-benchmark-for-tool-misuse-and-recovery-in-agentic-systems.md): ToolMisuseBench isolates tool misuse and recovery with deterministic fault injection and explicit step, call, and retry budgets.
 
 ## Requirement-to-Jest API acceptance test generation
@@ -52,5 +52,5 @@ Requirement-linked API test generation is ready for a pilot in teams that alread
 
 The workflow change is straightforward: let product, QA, or integration engineers submit requirement text at ticket or story level, retrieve the relevant OpenAPI sections, generate two or three candidate tests, run them in CI, and keep only scripts that execute and match the intended behavior. This is useful where test coverage breaks at the boundary between endpoint correctness and business flow correctness. A cheap pilot is one service with a decent OpenAPI spec and a backlog of manually written acceptance tests. Measure valid-script rate, reviewer edit time, and defect yield on multi-endpoint scenarios.
 
-### Evidence
+### Sources
 - [APITestGenie: Generating Web API Tests from Requirements and API Specifications with LLMs](../Inbox/2026-04-02--apitestgenie-generating-web-api-tests-from-requirements-and-api-specifications-with-llms.md): APITestGenie generates executable API tests from business requirements plus OpenAPI specs and reports high requirement-level success on real-world APIs.

@@ -37,7 +37,7 @@ Security teams that already run Semgrep can add an LLM review step after the sca
 
 QASecClaw gives this shape a useful test case. On OWASP Benchmark v1.2, it cut Semgrep false positives from 560 to 64 while recall dropped by 3.1%. That is enough evidence for a limited pilot on noisy rule families such as injection, XSS, and weak cryptography. The first local check should compare model-filtered alerts against recent human triage decisions and report both false-positive reduction and missed real findings.
 
-### Evidence
+### Sources
 - [QASecClaw: A Multi-Agent LLM Approach for False Positive Reduction in Static Application Security Testing](../Inbox/2026-05-03--qasecclaw-a-multi-agent-llm-approach-for-false-positive-reduction-in-static-application-security-testing.md): QASecClaw uses Semgrep findings plus code context for LLM judgment and reports false-positive, recall, precision, and F1 results.
 - [QASecClaw: A Multi-Agent LLM Approach for False Positive Reduction in Static Application Security Testing](../Inbox/2026-05-03--qasecclaw-a-multi-agent-llm-approach-for-false-positive-reduction-in-static-application-security-testing.md): The abstract states the OWASP Benchmark evaluation, false-positive reduction from 560 to 64, and 3.1% recall reduction.
 
@@ -46,7 +46,7 @@ Teams with many GitHub Actions workflows can turn documented CI practices into a
 
 The GitHub Actions audit study shows why the queue needs disagreement handling. Four open-weight models had only fair agreement on 95 Java workflows, with Fleiss’ kappa at 0.28. The study accepted unanimous or near-unanimous answers, sent split cases to GPT-5, and used targeted human review for unresolved items. That process reduced verification effort by 81% while keeping 87% agreement with expert judgment. A practical rollout can start as a weekly report on permission controls, since the study found only 4% compliance there.
 
-### Evidence
+### Sources
 - [How Compliant Are GitHub Actions Workflows? A Checklist-Based Study with LLM-Assisted Auditing](../Inbox/2026-05-03--how-compliant-are-github-actions-workflows-a-checklist-based-study-with-llm-assisted-auditing.md): The study defines a 30-item GitHub Actions compliance checklist, reports model agreement, and describes GPT-5 plus human review.
 - [How Compliant Are GitHub Actions Workflows? A Checklist-Based Study with LLM-Assisted Auditing](../Inbox/2026-05-03--how-compliant-are-github-actions-workflows-a-checklist-based-study-with-llm-assisted-auditing.md): The abstract describes workflow risks, the 30 criteria, fair model agreement, and compliance results.
 - [How Compliant Are GitHub Actions Workflows? A Checklist-Based Study with LLM-Assisted Auditing](../Inbox/2026-05-03--how-compliant-are-github-actions-workflows-a-checklist-based-study-with-llm-assisted-auditing.md): The paper explains why linters such as actionlint and yamllint miss documented best-practice violations.
@@ -56,6 +56,6 @@ IDE vendors and Java teams can test an LLM review pass for risky refactorings by
 
 The refactoring-oracle study built 226 real Java refactoring bug cases across 47 refactoring types, including compilation-error and behavior-change cases. GPT-5.4 reached 93.8% first-run accuracy, and GPT-OSS-20B reached 80.5%. A useful adoption test is a non-blocking warning on high-volume refactorings such as Move Method, Inline Method, Pull Up Method, Extract Local Variable, and Rename Method, compared against compiler results, existing tests, and developer accept-or-dismiss behavior.
 
-### Evidence
+### Sources
 - [Foundation Models as Oracles for Refactoring Correctness Detection](../Inbox/2026-05-03--foundation-models-as-oracles-for-refactoring-correctness-detection.md): The paper reports the 226-case Java refactoring dataset, 47 refactoring types, model accuracies, and validation approach.
 - [Foundation Models as Oracles for Refactoring Correctness Detection](../Inbox/2026-05-03--foundation-models-as-oracles-for-refactoring-correctness-detection.md): The abstract excerpt gives GPT-OSS-20B and GPT-5.4 accuracy and describes lightweight triage use in development workflows.

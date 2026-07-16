@@ -32,7 +32,7 @@ pass_kind: trend_synthesis
 ## Overview
 The day is dominated by robot-manipulation work that makes policy internals more explicit: future states, latent actions, camera pose, and subtask memory. InternVLA-A1.5, Cortex, and CamVLA show the current emphasis: keep language-conditioned control fast, then add the physical or temporal signal needed for longer, messier tasks.
 
-## Clusters
+## Findings
 
 ### Latent foresight and action codes
 Several papers train Vision-Language-Action models, or VLAs, to carry a compact action-related signal inside the policy. InternVLA-A1.5 uses 50 foresight tokens that condition a frozen video generator during training, then removes the video branch at inference and outputs 50-step continuous action chunks. CAC-VLA predicts latent actions from image and language tokens, using them to condition the continuous action expert through gated cross-attention. GeoMoLa takes a more geometric route: it learns discrete motion codes by predicting future point-cloud changes, then uses those codes for 6-DoF manipulation.

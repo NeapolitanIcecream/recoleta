@@ -35,7 +35,7 @@ The user is a team generating safety-critical or review-heavy code where unit te
 
 The evaluation detail here also points to a real product requirement. WybeCoder reports a large drop when it applies an imperativeness guard to remove functional-cheating solutions, with one GPT-5 setting falling from 75.1% to 51.9%. Any team building verified generation for imperative code needs this kind of benchmark hygiene in the product and in internal evals, or the system will reward solutions that satisfy the spec in the wrong programming model.
 
-### Evidence
+### Sources
 - [WybeCoder: Verified Imperative Code Generation](../Inbox/2026-03-31--wybecoder-verified-imperative-code-generation.md): Describes the prove-as-you-generate loop, benchmark results, and the imperativeness guard effect.
 - [WybeCoder: Verified Imperative Code Generation](../Inbox/2026-03-31--wybecoder-verified-imperative-code-generation.md): States the review burden and the limits of testing and fuzzing for full assurance.
 
@@ -46,7 +46,7 @@ The user is a developer working on bugs where coverage looks the same in passing
 
 A buildable first version does not need full auto-repair. It can live inside a test runner or CI failure view and show developers the few semantic checks that fail only on failing tests, plus the code locations they anchor to. The cheap validation is whether engineers inspect fewer lines and reach the offending statement faster on semantic bugs that coverage-based localization cannot separate.
 
-### Evidence
+### Sources
 - [SemLoc: Structured Grounding of Free-Form LLM Reasoning for Fault Localization](../Inbox/2026-03-31--semloc-structured-grounding-of-free-form-llm-reasoning-for-fault-localization.md): Gives the SemLoc pipeline, benchmark results, and reduction in code inspection.
 - [SemLoc: Structured Grounding of Free-Form LLM Reasoning for Fault Localization](../Inbox/2026-03-31--semloc-structured-grounding-of-free-form-llm-reasoning-for-fault-localization.md): Explains why semantic bugs evade structural signals even when coverage profiles match.
 
@@ -57,7 +57,7 @@ The user is a model team improving code generation on proprietary tasks where ex
 
 This is best treated as a training data triage layer, not a full new model stack. A practical first test is offline: run the entropy and consensus filters on an existing self-generated corpus, compare retained examples with an unfiltered baseline, and check whether the filtered set yields better pass@1 per unit of fine-tuning compute. The evidence is more limited here than for the verification and debugging workflows because the summary does not include full benchmark breakdowns, so the first deployment case should stay narrow and measurement-heavy.
 
-### Evidence
+### Sources
 - [Self-Improving Code Generation via Semantic Entropy and Behavioral Consensus](../Inbox/2026-03-31--self-improving-code-generation-via-semantic-entropy-and-behavioral-consensus.md): Describes code semantic entropy, behavioral consensus, and the reported relative improvement range.
 - [Self-Improving Code Generation via Semantic Entropy and Behavioral Consensus](../Inbox/2026-03-31--self-improving-code-generation-via-semantic-entropy-and-behavioral-consensus.md): States the target setting where problem descriptions and test inputs exist without reference solutions or reliable test oracles.
 - [Think Anywhere in Code Generation](../Inbox/2026-03-31--think-anywhere-in-code-generation.md): Provides adjacent evidence that execution-linked training signals can improve code generation performance when inserted into the generation process.

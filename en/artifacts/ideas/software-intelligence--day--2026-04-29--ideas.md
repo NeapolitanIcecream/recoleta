@@ -39,7 +39,7 @@ Teams using coding agents in production repositories should add a separate hot-f
 
 The operational risk is measurable. In Hot Fixing in the Wild, hot fixes were smaller and involved fewer reviewers than routine fixes, and Qwen-labeled hot fixes touched tests in 29.73% of PRs compared with 54.42% for routine fixes. The same study found higher merge rates for hot fixes, including similar merge rates for bot and human authors in the Qwen-labeled subset. That combination points to a review gap during the exact repairs where production pressure is highest.
 
-### Evidence
+### Sources
 - [Hot Fixing in the Wild](../Inbox/2026-04-29--hot-fixing-in-the-wild.md): Summarizes the timing filters, manual validation, smaller PRs, fewer reviewers, lower test-edit rate, and higher merge rate for hot fixes.
 - [Hot Fixing in the Wild](../Inbox/2026-04-29--hot-fixing-in-the-wild.md): The abstract reports hot fixes across more than 61,000 repositories and describes reduced collaboration, small targeted changes, limited review, and fewer test-file modifications.
 
@@ -48,7 +48,7 @@ Engineering teams evaluating coding assistants should add class-level tasks to t
 
 ClassEval-Pro gives a concrete target shape for this evaluation. Its 300 Python tasks use complete classes across 11 domains, and the generated classes are larger and more connected than older class-level tasks. Across five LLMs, holistic generation reached only 27.9% to 45.6% class-level Pass@1. In 500 manually labeled failures, logic errors were 56.2% and dependency errors were 38.0%, which makes cross-method coordination a practical measurement point for assistant rollouts.
 
-### Evidence
+### Sources
 - [ClassEval-Pro: A Cross-Domain Benchmark for Class-Level Code Generation](../Inbox/2026-04-29--classeval-pro-a-cross-domain-benchmark-for-class-level-code-generation.md): Describes ClassEval-Pro’s 300 class-level tasks, task construction, Pass@1 range, and failure categories.
 - [ClassEval-Pro: A Cross-Domain Benchmark for Class-Level Code Generation](../Inbox/2026-04-29--classeval-pro-a-cross-domain-benchmark-for-class-level-code-generation.md): Reports bottom-up gains, compositional generation collapse, and the dominance of logic and dependency errors in manually annotated failures.
 
@@ -57,7 +57,7 @@ Research-software groups using LLMs to co-write code and documentation should pu
 
 Comet-H shows why this support layer is useful for long LLM-assisted runs. The controller rereads the workspace, tracks theory, repositories, public claims, evidence, utility hypotheses, and open obligations, then forces grounding and audit when a paper or README changes. The paper reports 46 research-software repositories and an in-depth static-analysis repository reaching F1 = 0.768 on a 90-case benchmark, compared with 0.364 for the next-best baseline. The publishable part for most teams is the workflow: documentation changes should carry their evidence with them.
 
-### Evidence
+### Sources
 - [Theory Under Construction: Orchestrating Language Models for Research Software Where the Specification Evolves](../Inbox/2026-04-29--theory-under-construction-orchestrating-language-models-for-research-software-where-the-specification-evolves.md): Summarizes Comet-H’s tracked workspace parts, grounding and audit steps, open obligations, and reported repository and benchmark results.
 - [Theory Under Construction: Orchestrating Language Models for Research Software Where the Specification Evolves](../Inbox/2026-04-29--theory-under-construction-orchestrating-language-models-for-research-software-where-the-specification-evolves.md): The abstract names hallucination accumulation and desynchronization between thesis, executable system, benchmark surface, and public claims.
 - [Theory Under Construction: Orchestrating Language Models for Research Software Where the Specification Evolves](../Inbox/2026-04-29--theory-under-construction-orchestrating-language-models-for-research-software-where-the-specification-evolves.md): Describes re-checking papers and READMEs against code and benchmarks and reports the 46-repository portfolio and static-analysis benchmark result.

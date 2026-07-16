@@ -35,7 +35,7 @@ A repository agent can ship with a mandatory execution gate before any patch is 
 
 The first user is the team already trying code agents on test-bearing repositories and seeing plausible diffs fail in CI. A cheap check is narrow: take one repository with stable tests, insert a hard execution requirement before merge, and measure how many agent patches survive replay without human cleanup. If the pass rate rises while review burden falls, the gate is doing useful work. If the repository lacks reliable tests, this workflow stalls fast, so the build should begin where execution already has teeth.
 
-### Evidence
+### Sources
 - [AgentForge: Execution-Grounded Multi-Agent LLM Framework for Autonomous Software Engineering](../Inbox/2026-04-13--agentforge-execution-grounded-multi-agent-llm-framework-for-autonomous-software-engineering.md): Shows a coding agent workflow where every change must survive sandboxed execution before it advances, with benchmark results and concrete sandbox constraints.
 - [AgentForge: Execution-Grounded Multi-Agent LLM Framework for Autonomous Software Engineering](../Inbox/2026-04-13--agentforge-execution-grounded-multi-agent-llm-framework-for-autonomous-software-engineering.md): Confirms the closed-loop Tester–Debugger design, live repository index, and execution of every patch inside a constrained Docker sandbox.
 
@@ -44,7 +44,7 @@ Teams adopting analyzers, fuzzers, symbolic execution tools, and profilers can u
 
 The practical product is a setup runner for internal AppSec and performance teams who lose time wiring tools into unfamiliar repositories. The fast validation step is to pick one painful internal analyzer rollout, have the agent produce a reproducible environment plus one evidence artifact that a human would already trust, and compare elapsed setup time with the current manual path. Stopping criteria need to be strict. A successful build or a `--help` screen is not enough if the analyzer did not produce real project output.
 
-### Evidence
+### Sources
 - [Evaluating LLM Agents on Automated Software Analysis Tasks](../Inbox/2026-04-13--evaluating-llm-agents-on-automated-software-analysis-tasks.md): Provides the benchmark, verified success gap, false-positive rate for self-validation, and the explicit staged workflow for automated software analysis.
 - [Evaluating LLM Agents on Automated Software Analysis Tasks](../Inbox/2026-04-13--evaluating-llm-agents-on-automated-software-analysis-tasks.md): Details common failure modes such as premature stopping and poor error localization, which support a concrete evidence-based completion layer.
 
@@ -53,6 +53,6 @@ Enterprise coding and operations agents need an execution layer that exposes onl
 
 A concrete build is a contract registry for high-risk actions such as deployment, ticket changes, user administration, and data export. Each action definition needs an input schema, permission predicate, validation function, execution callback, and result format. The first buyer is the team blocked on letting agents touch production systems. The cheapest test is to wrap a small set of existing internal actions and replay known bad cases, especially wrong-entity edits and cross-workspace requests, to see whether the contract layer blocks them before execution.
 
-### Evidence
+### Sources
 - [Bounded Autonomy for Enterprise AI: Typed Action Contracts and Consumer-Side Execution](../Inbox/2026-04-16--bounded-autonomy-for-enterprise-ai-typed-action-contracts-and-consumer-side-execution.md): Shows typed action contracts, permission-aware capability exposure, consumer-side execution, and enterprise trial results with zero unsafe executions under the bounded layer.
 - [Dive into Claude Code: The Design Space of Today's and Future AI Agent Systems](../Inbox/2026-04-14--dive-into-claude-code-the-design-space-of-today-s-and-future-ai-agent-systems.md): Shows that production coding-agent complexity concentrates in permissions, context management, extensibility, and control systems around a simple agent loop.

@@ -37,7 +37,7 @@ DREAM-Chunk tests this pattern without fine-tuning the base policy. It targets a
 
 A practical adoption test is to wrap an existing π0.5 or SmolVLA action-chunking setup, run the same insertion or grasp tasks with forced pose offsets and light human perturbations, and compare success, latency, and how often the selected candidate changes mid-rollout.
 
-### Evidence
+### Sources
 - [DREAM-Chunk: Reactive Action Chunking with Latent World Model](../Inbox/2026-06-17--dream-chunk-reactive-action-chunking-with-latent-world-model.md): Summarizes DREAM-Chunk’s runtime sampling, latent world-model matching, hardware tests, perturbation result, and latency comparison.
 - [DREAM-Chunk: Reactive Action Chunking with Latent World Model](../Inbox/2026-06-17--dream-chunk-reactive-action-chunking-with-latent-world-model.md): Paper abstract describes test-time candidate action chunks and latent future selection for chunking-based VLA policies.
 
@@ -48,7 +48,7 @@ The evaluation rule is strict and useful for deployment review: a model passes a
 
 A first internal check can be small. Select hazardous variants of common station tasks, such as reaching near a human hand, moving a powered device near liquid, or pulling an object from an unstable stack. The gate should record the observation, instruction, model output, and whether the output is executable, then block live trials when the model attempts the action.
 
-### Evidence
+### Sources
 - [ROBOSHACKLES: A Safety Dataset for Human-Injury Prevention in Embodied Foundation Models](../Inbox/2026-06-17--roboshackles-a-safety-dataset-for-human-injury-prevention-in-embodied-foundation-models.md): Summarizes RoboShackles construction, six hazard categories, refusal-based criterion, and 100% unsafe action generation across six tested models.
 - [ROBOSHACKLES: A Safety Dataset for Human-Injury Prevention in Embodied Foundation Models](../Inbox/2026-06-17--roboshackles-a-safety-dataset-for-human-injury-prevention-in-embodied-foundation-models.md): Paper text states that all evaluated models produced unsafe actions under the refusal-based safety criterion.
 
@@ -59,6 +59,6 @@ EquiVLA shows one implementation path for policies that use a frozen vision-lang
 
 For a robot lab, the near test is to take a trained tabletop VLA, run fixed task scripts across object rotations, and inspect both success and action covariance. If failure clusters around rotated layouts, the action head is a clear place to add SO(2) structure before collecting many more demonstrations.
 
-### Evidence
+### Sources
 - [EquiVLA: A General Framework for Rotationally Equivariant Vision-Language-Action Models](../Inbox/2026-06-18--equivla-a-general-framework-for-rotationally-equivariant-vision-language-action-models.md): Summarizes EquiVLA’s SO(2)-equivariant action architecture and reported LIBERO, CALVIN, and Mobile ALOHA results.
 - [EquiVLA: A General Framework for Rotationally Equivariant Vision-Language-Action Models](../Inbox/2026-06-18--equivla-a-general-framework-for-rotationally-equivariant-vision-language-action-models.md): Paper text explains that current VLA architectures lack rotational structure and must learn related orientations separately.

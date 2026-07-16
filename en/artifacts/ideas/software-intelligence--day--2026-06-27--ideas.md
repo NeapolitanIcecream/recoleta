@@ -35,7 +35,7 @@ Frontend teams can give coding agents visual feedback without opening the whole 
 
 This fits work where the agent already edits code but cannot verify visual state, such as CSS changes, empty states, responsive layouts, and browser-only errors. The safety boundary is concrete: the tool exposes screenshot capture through a Chrome extension and local WebSocket daemon, while clicks, typing, script injection, and browser actions stay outside the interface. A useful team check is whether the agent can close more frontend issues with screenshot evidence attached to the PR, without adding new permission prompts beyond startup approval.
 
-### Evidence
+### Sources
 - [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-claude-code-see-the-browser.md): The summary identifies the target workflow, the read-only security model, the CLI commands, and the lack of benchmark data.
 - [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-claude-code-see-the-browser.md): The source text describes the Chrome extension, WebSocket daemon, `peeked` commands, startup connection step, and claim that the agent can only take screenshots.
 
@@ -44,7 +44,7 @@ Teams running AI features in production should treat token use as an operating c
 
 The cost concern is concrete because the cited forecast says current inference prices may sit below true compute cost, with estimates ranging from $0.60-$0.70 paid per $1 of compute to below $0.10 in a pessimistic subsidy case. The same source argues that production AI workflows need cost controls even when individual developer tool bills are tolerated. A cheap first test is to log tokens and model choice for one high-volume path, then route routine cases to cheaper models or simple code where regexes and deterministic checks already solve the task.
 
-### Evidence
+### Sources
 - [Predictions for the Future of AI](../Inbox/2026-06-27--predictions-for-the-future-of-ai.md): The source gives the estimated subsidy range for inference pricing and discusses possible repricing.
 - [Predictions for the Future of AI](../Inbox/2026-06-27--predictions-for-the-future-of-ai.md): The source distinguishes individual developer bills from token economics in deployed AI-dependent production workflows.
 - [Predictions for the Future of AI](../Inbox/2026-06-27--predictions-for-the-future-of-ai.md): The source says many LLM cycles go to tasks that simple code such as regexes can handle.
@@ -54,6 +54,6 @@ Engineering teams using coding assistants should add a review step for large AI-
 
 The trigger is patch shape, not author identity: unusually large new code, unfamiliar generated architecture, or a claimed autonomous build should get extra scrutiny. The cited essay estimates ordinary coding-assistant gains for good engineers at about 20-30% on average and warns that a 50,000-line generated project may contain 48,000 lines that duplicate open-source functionality with added bugs. A practical check is to sample generated files for known library behavior and ask whether deleting code in favor of a maintained dependency reduces risk.
 
-### Evidence
+### Sources
 - [Predictions for the Future of AI](../Inbox/2026-06-27--predictions-for-the-future-of-ai.md): The source gives the 20-30% productivity estimate and criticizes 10x and 100x claims.
 - [Predictions for the Future of AI](../Inbox/2026-06-27--predictions-for-the-future-of-ai.md): The source describes large generated code duplicating open-source packages with bugs and questions autonomous browser demos as practical software output.

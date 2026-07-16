@@ -35,7 +35,7 @@ A data-selection stage for VLA pretraining is now concrete enough to build as a 
 
 The first users are teams already fine-tuning open VLM backbones for manipulation and struggling with weak returns from more robot data alone. A useful product here is not another full VLA stack. It is a corpus scoring and curation layer that plugs into existing pretraining pipelines, exports ranked subsets, and logs which upstream sources contribute useful embodied examples. The cheap validation step is simple: take one open backbone, run one selected-subset mid-train and one random-subset control at the same token budget, then compare closed-loop success on one benchmark such as Libero-10 or SimplerEnv-Bridge. If the gap holds, this becomes a practical part of VLA training for smaller labs that cannot scale robot collection fast enough.
 
-### Evidence
+### Sources
 - [EmbodiedMidtrain: Bridging the Gap between Vision-Language Models and Vision-Language-Action Models via Mid-training](../Inbox/2026-04-21--embodiedmidtrain-bridging-the-gap-between-vision-language-models-and-vision-language-action-models-via-mid-training.md): Summarizes the classifier-based selection method and the benchmark gains across backbones.
 - [EmbodiedMidtrain: Bridging the Gap between Vision-Language Models and Vision-Language-Action Models via Mid-training](../Inbox/2026-04-21--embodiedmidtrain-bridging-the-gap-between-vision-language-models-and-vision-language-action-models-via-mid-training.md): Confirms that the data engine captures sample-level alignment signals and favors spatial, embodied content.
 
@@ -46,7 +46,7 @@ That creates room for a concrete internal tool: an evaluator that runs world-mod
 
 A low-cost check is to take existing generated rollouts from one world model, replay a small subset through action recovery, and compare leaderboard order under video metrics versus executable task metrics. If the ranking changes, the team has evidence that its current evaluation loop is hiding the real failure modes.
 
-### Evidence
+### Sources
 - [RoboWM-Bench: A Benchmark for Evaluating World Models in Robotic Manipulation](../Inbox/2026-04-21--robowm-bench-a-benchmark-for-evaluating-world-models-in-robotic-manipulation.md): Provides the executable-evaluation protocol and step-level failure patterns for generated robot manipulation videos.
 - [Mask World Model: Predicting What Matters for Robust Robot Policy Learning](../Inbox/2026-04-21--mask-world-model-predicting-what-matters-for-robust-robot-policy-learning.md): Shows that preserving semantic structure in prediction can raise downstream success rates on LIBERO and RLBench.
 
@@ -57,6 +57,6 @@ The near-term build is not a research model. It is reproducible infrastructure f
 
 The cheap validation step is operational: reproduce one baseline policy, swap only the VLM backbone, and verify that the training and evaluation traces stay comparable end to end. If that removes a week of pipeline glue per experiment, the support layer already earns its place before any new model result lands.
 
-### Evidence
+### Sources
 - [VLA Foundry: A Unified Framework for Training Vision-Language-Action Models](../Inbox/2026-04-21--vla-foundry-a-unified-framework-for-training-vision-language-action-models.md): Describes the unified training stack, multimodal data handling, scale support, and backbone-swap claim.
 - [VLA Foundry: A Unified Framework for Training Vision-Language-Action Models](../Inbox/2026-04-21--vla-foundry-a-unified-framework-for-training-vision-language-action-models.md): Confirms the released codebase and the claim that Qwen3-VL improves multi-task manipulation performance over baseline.

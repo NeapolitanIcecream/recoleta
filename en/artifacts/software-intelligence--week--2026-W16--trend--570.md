@@ -30,12 +30,12 @@ pass_kind: trend_synthesis
 ## Overview
 This week’s coding-agent research is strongest where claims end in a checkable artifact. The center of gravity is executable proof, repository-grounded reasoning, and explicit control layers around search, tools, and evaluation. Compared with the prior two weeks in the local history, the brief is more concrete about how those controls are implemented inside the workflow, not just why they matter.
 
-## Clusters
+## Findings
 
 ### Executable proof is the main bar
 A weekly pattern is clear: coding-agent papers now treat execution, replay, and verified outputs as the basic proof that work was done. The day-level trend on Apr 13 centers on sandbox execution, reproducible analysis, and proof-of-concept reruns. By Apr 19, that same standard shows up in finer checks on whether an edit was precise and whether a patch matched a verified requirement. The practical consequence is simple. A passing artifact matters more than a fluent trace.
 
-#### Evidence
+#### Sources
 - [AgentForge: Execution-Grounded Multi-Agent LLM Framework for Autonomous Software Engineering](../Inbox/2026-04-13--agentforge-execution-grounded-multi-agent-llm-framework-for-autonomous-software-engineering.md)
 - [Certified Program Synthesis with a Multi-Modal Verifier](../Inbox/2026-04-17--certified-program-synthesis-with-a-multi-modal-verifier.md)
 - [Evaluating LLM Agents on Automated Software Analysis Tasks](../Inbox/2026-04-13--evaluating-llm-agents-on-automated-software-analysis-tasks.md)
@@ -46,7 +46,7 @@ A weekly pattern is clear: coding-agent papers now treat execution, replay, and 
 ### Repository-grounded reasoning gets more explicit
 Repository reality remains a hard constraint. The Apr 14 trend says semantic understanding, repository context, and team coordination still limit agents in real codebases. Later in the week, papers add stricter intermediate checks before retrieval or autonomous action, such as structural queries over code facts, requirement alignment, and rule enforcement tied to plan steps. This work tightens the path between task intent and repository evidence.
 
-#### Evidence
+#### Sources
 - [Neurosymbolic Repo-level Code Localization](../Inbox/2026-04-17--neurosymbolic-repo-level-code-localization.md)
 - [Agentic Frameworks for Reasoning Tasks: An Empirical Study](../Inbox/2026-04-17--agentic-frameworks-for-reasoning-tasks-an-empirical-study.md)
 - [CodeSpecBench: Benchmarking LLMs for Executable Behavioral Specification Generation](../Inbox/2026-04-14--codespecbench-benchmarking-llms-for-executable-behavioral-specification-generation.md)
@@ -57,7 +57,7 @@ Repository reality remains a hard constraint. The Apr 14 trend says semantic und
 ### Agent control layers become engineering work
 Control layers around agents are getting more concrete. Across Apr 15 to Apr 18, the trend documents describe better results when systems filter context, prune weak trajectories early, compress reusable evidence, and specify operating rules around the model. The recurring gain is not just higher task success. Papers also report better cost, latency, auditability, and operational trust. This makes the agent stack look more like managed software infrastructure than a single model call.
 
-#### Evidence
+#### Sources
 - [Beyond Task Success: An Evidence-Synthesis Framework for Evaluating, Governing, and Orchestrating Agentic AI](../Inbox/2026-04-18--beyond-task-success-an-evidence-synthesis-framework-for-evaluating-governing-and-orchestrating-agentic-ai.md)
 - [AgentForge: Execution-Grounded Multi-Agent LLM Framework for Autonomous Software Engineering](../Inbox/2026-04-13--agentforge-execution-grounded-multi-agent-llm-framework-for-autonomous-software-engineering.md)
 - [SWE-AGILE: A Software Agent Framework for Efficiently Managing Dynamic Reasoning Context](../Inbox/2026-04-13--swe-agile-a-software-agent-framework-for-efficiently-managing-dynamic-reasoning-context.md)

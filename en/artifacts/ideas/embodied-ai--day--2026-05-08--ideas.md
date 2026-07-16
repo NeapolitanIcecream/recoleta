@@ -37,7 +37,7 @@ Teams adding a world model to a VLA should test whether latent rollouts are usab
 
 The missing check is plannability. RC-aux shows why: short-horizon latent prediction can still create latent shortcuts where a goal looks close but cannot be reached within the action budget. A cheap evaluation is to add finite-budget reachability labels and temporal hard negatives to the world-model test suite, then compare action success against terminal latent distance on obstacle or long-horizon tasks. On Wall, RC-aux raises success from 50.4 ± 6.5 for the LeWM control to 83.6 ± 3.6, with planner ablations showing that the reachability-aware planner adds value beyond training alone.
 
-### Evidence
+### Sources
 - [One Token Per Frame: Reconsidering Visual Bandwidth in World Models for VLA Policy](../Inbox/2026-05-08--one-token-per-frame-reconsidering-visual-bandwidth-in-world-models-for-vla-policy.md): OneWM-VLA compresses each view and frame into one semantic token, jointly generates latent tokens and action chunks, and reports LIBERO and real Piper-arm gains.
 - [Predictive but Not Plannable: RC-aux for Latent World Models](../Inbox/2026-05-08--predictive-but-not-plannable-rc-aux-for-latent-world-models.md): RC-aux identifies latent shortcuts as a planning failure mode and reports large gains from finite-budget reachability supervision.
 
@@ -46,7 +46,7 @@ Contact-heavy robot tasks need a fast correction path outside the normal VLA inf
 
 This is most relevant for teams working on unzipping, wiping, stamping, lid rotation, insertion, and other tasks where vision alone misses force state. A practical test is to collect 30 to 50 demonstrations for one contact-rich operation, label contact states for the gate, and compare success with tactile input disabled at inference. AT-VLA reports closed-loop tactile reaction within 0.04 s and improves real-robot Wipe Vase success to 0.67 versus 0.07 for GO-1 and 0.33 for π0.5; Unzip Bag rises to 0.33 versus 0.20 and 0.00.
 
-### Evidence
+### Sources
 - [AT-VLA: Adaptive Tactile Injection for Enhanced Feedback Reaction in Vision-Language-Action Models](../Inbox/2026-05-08--at-vla-adaptive-tactile-injection-for-enhanced-feedback-reaction-in-vision-language-action-models.md): AT-VLA adds gated tactile feedback, a dual-rate tactile correction stream, and reports real-robot gains on contact-rich tasks.
 
 ## Federated pseudo-instruction training for private robot logs
@@ -54,5 +54,5 @@ Operators with vision-action robot logs can turn private fleet data into VLA tra
 
 The first deployment check is narrow: pick a fixed instruction set for one robot family, run local pseudo-labeling on held-out logs, and inspect whether task embeddings remain separated across clients. The paper names feature collapse under non-i.i.d. robot data as a failure mode, so embedding separation should be part of the acceptance test before longer federated runs. On LIBERO-Goal, ForgeVLA reaches 55.2% success and 100% Pass@50, compared with 28.8% and 80% for FedAvg, using 10 clients, 20 communication rounds, and 5 local epochs per round.
 
-### Evidence
+### Sources
 - [ForgeVLA: Federated Vision-Language-Action Learning without Language Annotations](../Inbox/2026-05-08--forgevla-federated-vision-language-action-learning-without-language-annotations.md): ForgeVLA trains from distributed vision-action logs with on-device pseudo instructions, contrastive planning loss, and adaptive server aggregation, with measured gains over FedAvg.

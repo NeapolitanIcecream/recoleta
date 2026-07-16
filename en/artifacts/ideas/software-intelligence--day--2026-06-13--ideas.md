@@ -41,7 +41,7 @@ A practical setup is a project-level `.claude/agents/<name>.md` chain for one de
 
 The cheap test is one real incident replay. Measure tokens, wall time, number of spawned agents, and whether the parent session receives enough evidence to make a decision without raw log dumps.
 
-### Evidence
+### Sources
 - [Claude Code v2.1.172: Sub-Agents Can Now Spawn Sub-Agents](../Inbox/2026-06-13--claude-code-v2-1-172-sub-agents-can-now-spawn-sub-agents.md): Summarizes Claude Code nested sub-agents, five-level depth, separate contexts, model routing, token overhead, and reported cost incidents.
 - [Claude Code v2.1.172: Sub-Agents Can Now Spawn Sub-Agents](../Inbox/2026-06-13--claude-code-v2-1-172-sub-agents-can-now-spawn-sub-agents.md): Shows the need for spend limits and the `Agent()` allowlist in sub-agent definitions.
 - [Claude Code v2.1.172: Sub-Agents Can Now Spawn Sub-Agents](../Inbox/2026-06-13--claude-code-v2-1-172-sub-agents-can-now-spawn-sub-agents.md): Describes tiered routing and circular spawning risks.
@@ -53,7 +53,7 @@ The operational pressure is shared validation capacity. The software-factory wri
 
 Start with one service and one common request type. The pilot is successful if an agent can take a ticket, produce a pull request, run the agreed checks without a developer babysitting the environment, and leave enough evidence for a reviewer to approve or reject quickly.
 
-### Evidence
+### Sources
 - [Designing Software for Software Factories](../Inbox/2026-06-13--designing-software-for-software-factories.md): Lists project contracts, tiered validation, agent-run test loops, isolated environments, and feedback capture as requirements for agentic development loops.
 - [Designing Software for Software Factories](../Inbox/2026-06-13--designing-software-for-software-factories.md): Describes concurrent request handling and the bottleneck created by shared staging, branches, or deploy slots.
 - [Designing Software for Software Factories](../Inbox/2026-06-13--designing-software-for-software-factories.md): States that software-factory workflows need patterns, contracts, and scaffolding.
@@ -65,7 +65,7 @@ This catches a common failure mode in generated Rails code. `lock`, `lock!`, and
 
 A lightweight adoption step is a pull request checklist and two concurrency tests for each risky path: one test for simultaneous writes to the same row, and one test for the broader invariant. If the second test fails, the fix belongs in the database rule or transaction design, not in another application-level guard.
 
-### Evidence
+### Sources
 - [Rails: The Sharp Parts. Lock Is Not a Mutex](../Inbox/2026-06-13--rails-the-sharp-parts-lock-is-not-a-mutex.md): Summarizes why Rails locks are easy to misuse and recommends starting from the invariant and choosing the smallest database mechanism.
 - [Rails: The Sharp Parts. Lock Is Not a Mutex](../Inbox/2026-06-13--rails-the-sharp-parts-lock-is-not-a-mutex.md): Explains that Rails pessimistic locking depends on transaction boundaries, isolation levels, database behavior, and query shape, and that row locks do not cover multi-row invariants.
 - [Rails: The Sharp Parts. Lock Is Not a Mutex](../Inbox/2026-06-13--rails-the-sharp-parts-lock-is-not-a-mutex.md): Lists the invariant questions reviewers should ask before reaching for a lock.

@@ -35,7 +35,7 @@ Robot teams working on long-horizon manipulation now have a concrete case for ad
 
 The practical build here is a thin runtime layer for deployed manipulation policies: store checkpointed task states, retrieve a small structured history for the current subgoal, score candidate actions for likely failure before execution, and allow bounded rollback attempts. This is a support layer that many labs can test without retraining the base policy. A cheap first check is a replay study on existing failed long-horizon episodes: measure how many failures could have been caught by a verifier before contact or motion execution, then add rollback on a small set of multi-stage pick-place tasks and compare completed subgoals, not only final success.
 
-### Evidence
+### Sources
 - [HELM: Harness-Enhanced Long-horizon Memory for Vision-Language-Action Manipulation](../Inbox/2026-04-20--helm-harness-enhanced-long-horizon-memory-for-vision-language-action-manipulation.md): Summary gives the execution-loop diagnosis, component design, and main LIBERO-LONG gains.
 - [HELM: Harness-Enhanced Long-horizon Memory for Vision-Language-Action Manipulation](../Inbox/2026-04-20--helm-harness-enhanced-long-horizon-memory-for-vision-language-action-manipulation.md): Content states the 23.1 point gain over OpenVLA and the weak effect of longer context alone.
 
@@ -44,7 +44,7 @@ Benchmarking for VLA models needs a recomposition suite before teams trust headl
 
 The workflow change is straightforward: add controlled intervention tests to the evaluation gate for any model update that claims better reasoning or long-horizon performance. That gate should include at least unseen subgoal recomposition, layout shifts, and semantic distractors, with logging that separates reasoning errors from low-level execution noise. Teams already running benchmark regressions can add these as a small stress suite before new checkpoints move into robot trials. The low-cost validation step is to take one existing benchmark task, generate a few recomposed goal orders and attribute swaps, and compare success drop against the base version. If the model only holds on the original ordering, the evaluation stack is missing a failure mode that matters in deployment.
 
-### Evidence
+### Sources
 - [Unmasking the Illusion of Embodied Reasoning in Vision-Language-Action Models](../Inbox/2026-04-20--unmasking-the-illusion-of-embodied-reasoning-in-vision-language-action-models.md): Summary includes the BeTTER benchmark design and the subgoal recomposition and grounding failures.
 - [Unmasking the Illusion of Embodied Reasoning in Vision-Language-Action Models](../Inbox/2026-04-20--unmasking-the-illusion-of-embodied-reasoning-in-vision-language-action-models.md): Content describes targeted causal interventions that separate reasoning failures from execution limits.
 
@@ -53,6 +53,6 @@ Fine-tuning a VLA on teacher-written rationales looks credible as a narrow train
 
 The buildable step is a reasoning-annotation pass on a subset of trajectories, not a full data overhaul. A team with an existing VLA fine-tuning pipeline can add rationale generation to a few high-error task families, freeze most of the backbone, and train a joint action-plus-rationale loss. The first check should pair the new model with a hard evaluation slice such as unseen subgoal compositions or layout perturbations. BeTTER is relevant here because stronger benchmark scores alone do not show that the model learned causal task structure. If rationale tuning helps on standard suites but breaks on recomposition tests, the training recipe improved pattern matching more than embodied reasoning.
 
-### Evidence
+### Sources
 - [ReFineVLA: Multimodal Reasoning-Aware Generalist Robotic Policies via Teacher-Guided Fine-Tuning](../Inbox/2026-04-20--refinevla-multimodal-reasoning-aware-generalist-robotic-policies-via-teacher-guided-fine-tuning.md): Summary provides the rationale-supervision method and the main SimplerEnv gains.
 - [Unmasking the Illusion of Embodied Reasoning in Vision-Language-Action Models](../Inbox/2026-04-20--unmasking-the-illusion-of-embodied-reasoning-in-vision-language-action-models.md): BeTTER provides the caution that benchmark gains can hide failures in recomposition and grounding.

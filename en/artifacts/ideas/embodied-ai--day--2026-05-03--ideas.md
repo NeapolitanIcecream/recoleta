@@ -37,7 +37,7 @@ Small robotics labs can treat the teleoperation interface and data format as par
 
 A useful adoption check is to build one bridge node for the local arm, collect roughly 100 to 150 episodes on a single manipulation task, measure phone-to-actuation latency with high-speed video, and fine-tune an existing VLA checkpoint. Phone2Act reports 130 collected episodes, GR00T-N1.5-3B fine-tuning, and 9 successes in 10 Dobot CR5 ball-to-basket trials, with 350–440 ms end-to-end latency. VILAS points in the same operational direction for low-cost manipulation setups: it uses an $8,000 arm, gripper, dual RealSense cameras, teleoperation, and a soft gripper extension, then compares pi_0, pi_0.5, and GR00T N1.6 on real grape grasping with latency and sequential-grasp results.
 
-### Evidence
+### Sources
 - [Phone2Act: A Low-Cost, Hardware-Agnostic Teleoperation System for Scalable VLA Data Collection](../Inbox/2026-05-03--phone2act-a-low-cost-hardware-agnostic-teleoperation-system-for-scalable-vla-data-collection.md): Phone2Act details the phone teleoperation stack, ROS 2 bridge pattern, LeRobot-format recording, latency, data volume, and Dobot success result.
 - [VILAS: A VLA-Integrated Low-cost Architecture with Soft Grasping for Robotic Manipulation](../Inbox/2026-05-03--vilas-a-vla-integrated-low-cost-architecture-with-soft-grasping-for-robotic-manipulation.md): VILAS supports the low-cost hardware angle with an $8,000 VLA manipulation setup, teleoperation data, soft gripper hardware, and real grasping metrics.
 
@@ -46,7 +46,7 @@ Dexterous manipulation teams can add a scoring loop before training policies in 
 
 The concrete test is a small calibration run per task: capture real reference images, run 200–300 VLM queries, check whether the realism score rises, then train the same policy with the tuned randomization and a baseline randomization. DexSim2Real reports a rise in VLM realism score from 4.2/10 to 7.8/10, a friction mean error drop from 0.35 to 0.08, and about 2 GPU-hours of added overhead. On six Franka Panda and Allegro Hand tasks, it reports 78.2% average real-world success and an 8.3% average sim-to-real gap, compared with 28.5% for vanilla domain randomization and 19.2% for active domain randomization.
 
-### Evidence
+### Sources
 - [DexSim2Real: Foundation Model-Guided Sim-to-Real Transfer for Generalizable Dexterous Manipulation](../Inbox/2026-05-03--dexsim2real-foundation-model-guided-sim-to-real-transfer-for-generalizable-dexterous-manipulation.md): The summary gives the FM-DR method, optimized simulation parameters, query and overhead costs, real-world success rate, and sim-to-real gap comparisons.
 - [DexSim2Real: Foundation Model-Guided Sim-to-Real Transfer for Generalizable Dexterous Manipulation](../Inbox/2026-05-03--dexsim2real-foundation-model-guided-sim-to-real-transfer-for-generalizable-dexterous-manipulation.md): The paper text states the 78.2% real-world success rate and 8.3% sim-to-real gap claim for dexterous manipulation transfer.
 
@@ -55,6 +55,6 @@ Teams testing long-horizon VLA policies can wrap the policy with a supervisor th
 
 A cheap validation path is to run the same base policy with and without the supervisor on Libero-Long or a local multi-stage task, then log where stalls occur and whether recursive subgoal refinement recovers them. Anticipation-VLA reports 63.2 success on Libero-Long, above 54.6 for the underlying pi_0.5-style policy and 53.2 for a VLM-assisted version. In Arx-X5 real-world tests, the paper reports gains over baselines in both seen and unseen configurations, with the larger gain in unseen settings.
 
-### Evidence
+### Sources
 - [Anticipation-VLA: Solving Long-Horizon Embodied Tasks via Anticipation-based Subgoal Generation](../Inbox/2026-05-03--anticipation-vla-solving-long-horizon-embodied-tasks-via-anticipation-based-subgoal-generation.md): The summary specifies the goal stack, subgoal generation, inverse dynamics check, progress value model, Libero-Long score, and real-world gains.
 - [Anticipation-VLA: Solving Long-Horizon Embodied Tasks via Anticipation-based Subgoal Generation](../Inbox/2026-05-03--anticipation-vla-solving-long-horizon-embodied-tasks-via-anticipation-based-subgoal-generation.md): The paper abstract states the long-horizon compounding-error problem and adaptive recursive subgoal generation approach.

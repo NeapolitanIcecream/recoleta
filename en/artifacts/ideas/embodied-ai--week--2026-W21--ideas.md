@@ -37,7 +37,7 @@ A VLA lab can make a small physical benchmark part of every policy release: rebu
 
 The useful check is simple: train or fine-tune on the same 500 expert demonstrations, run the 90 defined test scenes, and compare against reported baselines such as π₀.₅ at 0.54 average success on the 10 in-distribution tasks. This gives robotics groups a cheap physical gate before claiming that a VLA policy works outside simulation.
 
-### Evidence
+### Sources
 - [VLA-REPLICA: A Low-Cost, Reproducible Benchmark for Real-World Evaluation of Vision-Language-Action Models](../Inbox/2026-05-20--vla-replica-a-low-cost-reproducible-benchmark-for-real-world-evaluation-of-vision-language-action-models.md): VLA-REPLICA describes the low-cost hardware setup, 500 demonstrations, 90 test scenes, reproducibility tools, setup time, and baseline success rates.
 - [VLA-REPLICA: A Low-Cost, Reproducible Benchmark for Real-World Evaluation of Vision-Language-Action Models](../Inbox/2026-05-20--vla-replica-a-low-cost-reproducible-benchmark-for-real-world-evaluation-of-vision-language-action-models.md): The paper states the motivation for locally executable real-world evaluation and lists accessible off-the-shelf components.
 
@@ -46,7 +46,7 @@ Manipulation teams working on dense boards, bins, or object layouts should requi
 
 This also gives developers a better failure log. When a run fails, they can inspect whether the model selected the wrong object, chose a bad placement region, or produced a poor motor sequence after a correct target. AVP reports 90.28% average success on Chinese chess manipulation versus 62.67% for π₀.₅, with 0.27 seconds per instruction. SOMA points to the same operational need for partially visible scenes: persistent object memory with semantic and 3D position data cut time-to-grasp across five out-of-vision tasks and raised average success to 28.3% in its real-world ablation.
 
-### Evidence
+### Sources
 - [Action with Visual Primitives](../Inbox/2026-05-21--action-with-visual-primitives.md): AVP reports visual primitive tokens before action prediction, calibration-derived supervision, no external online detector or VLM API at inference, and real-robot gains over π₀.₅.
 - [Spatial Memory for Out-of-Vision Manipulation in Vision-Language-Action](../Inbox/2026-05-21--spatial-memory-for-out-of-vision-manipulation-in-vision-language-action.md): SOMA shows persistent spatial memory for objects outside the current view, with real-world success, fixation, search path, grasp-attempt, and time-to-grasp results.
 
@@ -55,6 +55,6 @@ Teams with RGB-D cameras can test whether geometry belongs inside the action pat
 
 GaussianDream offers a training-time variant for teams that want geometry supervision without extra inference modules. It decodes learned prefix tokens into current 3D Gaussian scenes and short-horizon future Gaussian motion during training, using RGB rendering, depth, and pseudo 3D scene-flow losses. At inference, the Gaussian heads are removed and the policy keeps only the learned prefix tokens. The paper reports 98.4% average success on LIBERO, 52.6% on RoboCasa Human-50, and 50.0% in real-robot evaluation. A useful adoption test is to compare grasp-point and spatial-relation failures before and after adding either point-action attention or training-time 3D supervision.
 
-### Evidence
+### Sources
 - [PointACT: Vision-Language-Action Models with Multi-Scale Point-Action Interaction](../Inbox/2026-05-20--pointact-vision-language-action-models-with-multi-scale-point-action-interaction.md): PointACT describes direct multi-scale point-cloud interaction with action tokens and reports LIBERO gains over SpatialVLA and EO1.
 - [GaussianDream: A Feed-Forward 3D Gaussian World Model for Robotic Manipulation](../Inbox/2026-05-20--gaussiandream-a-feed-forward-3d-gaussian-world-model-for-robotic-manipulation.md): GaussianDream describes training-time 3D Gaussian reconstruction and future prediction, inference with prefix tokens only, and results on LIBERO, RoboCasa Human-50, and real robots.

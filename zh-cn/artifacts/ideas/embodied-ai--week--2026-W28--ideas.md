@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # 可靠的机器人操作系统
 
-## Summary
+## 摘要
 机器人团队可以在现有策略外加入任务进度状态和重试控制，从失败轨迹中恢复监督信号，并根据完成时间、接触力和控制器上限测试动作表示。这些改动可以先在小规模任务集上评估，再决定是否投入新的数据采集或更大规模的策略训练。
 
 ## 冻结 VLA 的任务进度记忆与重试控制
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 可以先选择一个在空抓取、遮挡或物体交换后经常失败的多阶段任务进行测试。记录一个紧凑状态，包括当前阶段、已用时间、最近一次接触结果和重试次数。在不同布局下，将加入外层规划器的策略与未修改的控制器进行比较，测量完整任务成功率、重复动作错误、重试次数和新增延迟。这项测试可以判断，加入执行状态是否比再收集一批任务专用微调数据更节省成本地提升可靠性。
 
-### Evidence
+### 资料来源
 - [Harness VLA: Steering Frozen VLAs into Reliable Manipulation Primitives via Memory-Guided Agents](../Inbox/2026-07-09--harness-vla-steering-frozen-vlas-into-reliable-manipulation-primitives-via-memory-guided-agents.md): 介绍固定原语库、任务记忆和全局记忆、可重试的 VLA 调用，以及 LIBERO-Pro 对比结果。
 - [TFP: Temporally Conditioned Memory-Fusion Policies for Visuomotor Learning](../Inbox/2026-07-09--tfp-temporally-conditioned-memory-fusion-policies-for-visuomotor-learning.md): 介绍回合内连续时间信念状态的设计，以及其在依赖任务阶段的真实机器人任务中的收益。
 
@@ -42,7 +42,7 @@ language_code: zh-CN
 
 成本最低的检查方式是离线审查最近一批失败轨迹。抽取 100 条失败轨迹，生成事后指令，再由操作人员检查每条描述是否正确、具体且适合用于强化。如果一致性较高，可以在相同轨迹预算下进行一次短期后训练对比，并跟踪可用轨迹组比例、原任务成功率和非预期行为是否增加。这种流程适用于实体数据采集时间长、稀疏奖励占训练成本较高的场景。
 
-### Evidence
+### 资料来源
 - [Learning More from Less: Reinforcement Learning from Hindsight](../Inbox/2026-07-10--learning-more-from-less-reinforcement-learning-from-hindsight.md): 报告重标注流程、可用轨迹比例、训练步数减少情况和 Franka 结果。
 - [Learning More from Less: Reinforcement Learning from Hindsight](../Inbox/2026-07-10--learning-more-from-less-reinforcement-learning-from-hindsight.md): 解释如何将失败轨迹中的连贯行为转化为另一个语言条件任务的监督信号。
 
@@ -51,7 +51,7 @@ language_code: zh-CN
 
 可以搭建一个测试台，通过离散动作块和连续曲线，以多个速度倍率重放相同演示数据，然后记录成功率、完成时间、峰值力、超过力上限的持续时间和关节跟踪误差。测试至少应包含一个精密接触任务和一个长时域任务。DexVerse 说明，不能只依赖简单的抓取放置检查：其 19 任务子集中的最高平均成功率为 0.34，所有测试策略在 PushT 上的成功率都是零。由此得到的速度-力边界可以为部署工程师提供每个控制器和任务的明确运行上限。
 
-### Evidence
+### 资料来源
 - [B-spline Policy: Accelerating Manipulation Policies via B-spline Action Representations](../Inbox/2026-07-10--b-spline-policy-accelerating-manipulation-policies-via-b-spline-action-representations.md): 报告完成时间收益、成功率、连续 B-spline 控制，以及速度过高时的失败。
 - [PAC-ACT: Post-training Actor-Critic for Action Chunking Transformers](../Inbox/2026-07-10--pac-act-post-training-actor-critic-for-action-chunking-transformers.md): 介绍分块级后训练方法，以及报告的超过 60 N 力读数减少结果。
 - [DexVerse: A Modular Benchmark for Multi-Task, Multi-Embodiment Dexterous Manipulation](../Inbox/2026-07-09--dexverse-a-modular-benchmark-for-multi-task-multi-embodiment-dexterous-manipulation.md): 显示所有评估策略在灵巧操作任务上的总体成功率较低，且在 PushT 上成功率为零。

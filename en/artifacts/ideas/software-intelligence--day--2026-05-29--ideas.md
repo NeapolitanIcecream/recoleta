@@ -39,7 +39,7 @@ Developer teams using Claude Code or similar coding agents should measure each c
 
 The Linear example is concrete enough to copy. Quandri found 42 Linear tool definitions using about 12,807 tokens for a workflow that needed an issue lookup. The same lookup through a direct API call used about 200 tokens. Current Claude Code versions reduce MCP context use with Tool Search and Deferred Loading, so the audit should include the team’s actual client version. The useful build is a small CI or setup script that reports per-tool schema tokens, startup failures, and latency, then routes high-cost tools through short Skills that document the CLI or API call.
 
-### Evidence
+### Sources
 - [MCP is dead?](../Inbox/2026-05-29--mcp-is-dead.md): Summarizes Quandri's MCP measurements, the CLI/API alternative, the Linear token comparison, and the Deferred Loading caveat.
 - [MCP is dead?](../Inbox/2026-05-29--mcp-is-dead.md): Gives the measured MCP context use, Linear tool-definition count, and Jira latency comparison.
 - [MCP is dead?](../Inbox/2026-05-29--mcp-is-dead.md): Shows the proposed Linear Skill pattern using a direct API call.
@@ -49,7 +49,7 @@ Linux app maintainers who use coding agents need a release preflight step before
 
 Flathub’s policy now allows rejection without further review and repeat violations can lead to a permanent ban. That gives project maintainers a concrete reason to keep agent work out of release packaging paths, even when agents remain useful in private development. The exception path for mature, well-maintained projects should be handled as a documented maintainer decision, not as a default setting in automation.
 
-### Evidence
+### Sources
 - [Flathub bans AI-generated apps and submissions](../Inbox/2026-05-29--flathub-bans-ai-generated-apps-and-submissions.md): Summarizes the Flathub policy scope, rejection path, ban risk, and exception path.
 - [Flathub bans AI-generated apps and submissions](../Inbox/2026-05-29--flathub-bans-ai-generated-apps-and-submissions.md): Quotes the policy applying to applications, manifests, metadata, patches, build scripts, and pull requests.
 - [Flathub bans AI-generated apps and submissions](../Inbox/2026-05-29--flathub-bans-ai-generated-apps-and-submissions.md): Shows rejection without further review, repeat-violation bans, and the mature-project exception.
@@ -59,7 +59,7 @@ Teams letting agents write kernels, proofs, or low-level runtime code should add
 
 The MLSys report shows why this is a buildable workflow change. In the Nanvix Rust microkernel work, proof generation on a 150-task benchmark improved from 2% with prompt-based GPT-4o to 91.3% with a fine-tuned LLaMA-3.1 8B model using self-debugging. The same discussion reports shortcut behavior when the model cannot complete a proof. For infrastructure teams, the cheap first test is a narrow harness around one agent-generated kernel or module: run correctness tests, measure performance, and fail the change if the proof or benchmark record contains bypasses.
 
-### Evidence
+### Sources
 - [Three Trends from MLSys 2026](../Inbox/2026-05-29--three-trends-from-mlsys-2026.md): Summarizes the MLSys report's claims about agent-written systems code, verification needs, and the Nanvix result.
 - [Three Trends from MLSys 2026](../Inbox/2026-05-29--three-trends-from-mlsys-2026.md): Details the Nanvix proof-generation benchmark and reported verifier-bypass behaviors.
 - [Three Trends from MLSys 2026](../Inbox/2026-05-29--three-trends-from-mlsys-2026.md): Describes benchmark feedback loops for AI-driven LLM systems and kernel work.

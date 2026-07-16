@@ -35,7 +35,7 @@ Teams shipping coding agents need a post-merge review lane that measures what su
 
 The evidence now supports this as a normal engineering metric. A GitHub-scale study built a dataset of 111,969 PRs across five coding agents and found that agent-authored code sees more later churn than human-authored code. A separate evaluation paper argues that software-agent results are hard to compare when work stops at final task scores and hidden runs. Joining those two lines of work yields a concrete workflow: store the run metadata for each agent PR, then compare survival and churn by model, scaffold, repository type, and review path. A cheap first check is one quarter of data from a single org with bot-authored PR detection and a simple line-survival calculation.
 
-### Evidence
+### Sources
 - [Investigating Autonomous Agent Contributions in the Wild: Activity Patterns and Code Change over Time](../Inbox/2026-04-01--investigating-autonomous-agent-contributions-in-the-wild-activity-patterns-and-code-change-over-time.md): Real-world PR dataset across five agents with higher later churn in agent-authored code.
 - [Reproducible, Explainable, and Effective Evaluations of Agentic AI for Software Engineering](../Inbox/2026-04-01--reproducible-explainable-and-effective-evaluations-of-agentic-ai-for-software-engineering.md): Argues for reproducible agent evaluation with exact versions, prompts, and trajectory logs beyond final scores.
 
@@ -44,7 +44,7 @@ Agent teams should add a mandatory trace package to every benchmark or internal 
 
 The current evidence points to a narrow, useful format. One review of 18 software-engineering agent papers found that only 1 compared against a relevant agentic baseline. The same paper recommends publishing TAR trajectories or summaries so later analysis can recover concrete failure modes and verification behavior. STITCH adds a second reason to keep richer traces: its gains come from filtering long runs down to decision-critical segments, with up to 63.16% relative improvement on SWE-bench Verified and 61.31% compilation pass rate on HarmonyOS ArkTS using less than 1K training trajectories. That combination makes a small internal tool credible: collect runs once, compress them into searchable decision segments, and use the same store for both evaluation review and later fine-tuning.
 
-### Evidence
+### Sources
 - [Reproducible, Explainable, and Effective Evaluations of Agentic AI for Software Engineering](../Inbox/2026-04-01--reproducible-explainable-and-effective-evaluations-of-agentic-ai-for-software-engineering.md): Calls for exact reporting details and TAR logs; finds weak baseline practice in recent papers.
 - [Yet Even Less Is Even Better For Agentic, Reasoning, and Coding LLMs](../Inbox/2026-04-01--yet-even-less-is-even-better-for-agentic-reasoning-and-coding-llms.md): Shows that filtering traces to decision-critical segments can materially improve coding-agent training.
 
@@ -53,6 +53,6 @@ Personal agents with file, email, browser, and shell access need an attachment a
 
 This is now an operational requirement for high-privilege agents. ClawSafety runs 2,520 trials across 120 attack scenarios and reports attack success rates from 40.0% to 75.0% depending on model, with skill-file injection averaging 69.4% and scaffold choice changing outcomes for the same model. The supporting case study on Claude Code adds a related exposure path: minified JavaScript bundles can leak prompts, endpoints, telemetry names, and environment variables in plain text, with 147,992 strings extracted from a 13MB bundle in 1.47 seconds. If agent builders assume hostile instructions and internal logic are both easy to recover, the safer default is to isolate untrusted content before the agent reads it and to move sensitive logic out of client-visible code.
 
-### Evidence
+### Sources
 - [ClawSafety: "Safe" LLMs, Unsafe Agents](../Inbox/2026-04-01--clawsafety-safe-llms-unsafe-agents.md): Benchmark quantifies prompt-injection success across vectors, models, and scaffolds in high-privilege agents.
 - [Obfuscation is not security – AI can deobfuscate any minified JavaScript code](../Inbox/2026-04-01--obfuscation-is-not-security-ai-can-deobfuscate-any-minified-javascript-code.md): Case study shows minified client-visible JavaScript exposes prompts and internal details to fast extraction.

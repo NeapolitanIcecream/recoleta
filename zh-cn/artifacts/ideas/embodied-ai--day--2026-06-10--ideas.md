@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # Contact-Aware VLA Manipulation
 
-## Summary
+## 摘要
 评估 VLA 策略的机器人实验室，在扩大量采集前，应先测试三个具体补充：用于快速接触信号的传感器速率缓冲、在与真实系统对齐的模拟器中训练的触觉纠正，以及用于分布外操作的冻结 world-action 先验。常见的采用阻碍是物理交互：仅靠相机或单一时钟的策略会漏掉力峰值、隐藏接触状态，以及在位姿、几何形状或光照变化下的场景动力学。
 
 ## Sensor-rate latent buffers for contact-rich VLA control
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 一个实际测试可以围绕单个困难接触任务做窄范围 A/B，比如插接或按按钮：把当前同步策略与一个缓冲版本对比，尽量保留现有 VLA 权重，只为快速模态加入门控交叉注意力。DAM-VLA 在 7 个真实 Franka 任务上的平均成功率是 95.2%，而最强同步基线是 40.95%，同时保持 100 Hz 控制。相同摘要还报告，朴素的高频同步 X-VLA_100 下降到 21.9%，所以检查应同时测成功率、动作延迟，以及相机上采样是否削弱行为。
 
-### Evidence
+### 资料来源
 - [DAM-VLA: Decoupled Asynchronous Multimodal Vision Language Action model](../Inbox/2026-06-10--dam-vla-decoupled-asynchronous-multimodal-vision-language-action-model.md): DAM-VLA describes per-modality latent buffers, 100 Hz control, the synchronous baseline gap, and the failure of naive high-frequency synchronous processing.
 - [DAM-VLA: Decoupled Asynchronous Multimodal Vision Language Action model](../Inbox/2026-06-10--dam-vla-decoupled-asynchronous-multimodal-vision-language-action-model.md): The abstract states the timing mismatch between language, vision, and high-frequency physical signals and the use of per-modality buffers.
 
@@ -42,7 +42,7 @@ language_code: zh-CN
 
 一个小规模采用测试可以从一个任务和两个策略开始：当前的视觉-only VLA，经 RL 后训练后得到的版本，以及加入触觉 token 和接触门控后的同一策略。TacCoRL 在 4 个真实双臂接触丰富任务上的平均成功率是 72.5%，而视觉-only 的 RL 后训练策略是 50.0%。模拟器这一步很关键：直接从基础 VLA 做稀疏奖励 RL，在 4 个模拟任务上成功率都是 0.0，说明在做 RL 微调前需要协同训练。
 
-### Evidence
+### 资料来源
 - [TacCoRL: Integrating Tactile Feedback into VLA via Simulation](../Inbox/2026-06-10--taccorl-integrating-tactile-feedback-into-vla-via-simulation.md): TacCoRL gives the task setting, tactile-token method, contact gate, sim-real co-training, real-data anchor, and real-world success comparison.
 - [TacCoRL: Integrating Tactile Feedback into VLA via Simulation](../Inbox/2026-06-10--taccorl-integrating-tactile-feedback-into-vla-via-simulation.md): The abstract explains why visual observations miss local contact state and why simulated contact interaction is used before real deployment.
 
@@ -51,6 +51,6 @@ language_code: zh-CN
 
 第一步检查可以是在训练时缓存 world-action 模型输出，然后在固定的 OOD 套件上在线运行该模型。World Pilot 在 LIBERO-Plus zero-shot OOD 上报告总成功率 84.7%，高于 ABot-M0 的 80.5% 和 Cosmos Policy 的 79.7%。在 4 个任务、12 个设置的真实机器人测试里，它在表格中列出的每个单元格都给出最高成功率，包括 Container-Lid Alignment 的 lid-pose OOD，达到 65%，而最佳基线是 15%。
 
-### Evidence
+### 资料来源
 - [World Pilot: Steering Vision-Language-Action Models with World-Action Priors](../Inbox/2026-06-10--world-pilot-steering-vision-language-action-models-with-world-action-priors.md): World Pilot describes the frozen world-action model, latent steering, action steering, OOD motivation, and benchmark results.
 - [World Pilot: Steering Vision-Language-Action Models with World-Action Priors](../Inbox/2026-06-10--world-pilot-steering-vision-language-action-models-with-world-action-priors.md): The paper text ties VLA fragility to static image-text pretraining and states the real-robot gains under viewpoint, geometry, deformable-state, and pose shifts.

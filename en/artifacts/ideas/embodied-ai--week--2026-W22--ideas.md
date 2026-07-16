@@ -39,7 +39,7 @@ EXPO-FT gives the practical template: keep the pretrained policy as the base, tr
 
 The regression side matters because sequential VLA fine-tuning can erase prior tasks. In a real-world continual-learning study, plain fine-tuning dropped Stack Bowl from 100.0 to 15.0 and Hang Cup from 97.5 to 25.0, while replay with a 0.2 buffer ratio, 0.2 replay frequency, and fixed action normalization reached a 93.5 final average score across four tasks. A useful adoption check is to run the new task and all previously accepted tasks after each fine-tuning stage, using the same action scaling across the deployment line.
 
-### Evidence
+### Sources
 - [EXPO-FT: Sample-Efficient Reinforcement Learning Finetuning for Vision-Language-Action Models](../Inbox/2026-05-25--expo-ft-sample-efficient-reinforcement-learning-finetuning-for-vision-language-action-models.md): EXPO-FT describes online off-policy RL fine-tuning for VLA action chunks, human corrections, sparse rewards, and 30/30 real-task success after 19.1 minutes of online data on average.
 - [Can VLA Models Learn from Real-World Data Continually without Forgetting?](../Inbox/2026-05-26--can-vla-models-learn-from-real-world-data-continually-without-forgetting.md): The continual-learning study shows severe forgetting under plain sequential fine-tuning and strong retention from replay with fixed action normalization.
 
@@ -50,7 +50,7 @@ OASIS shows why this trace is useful. It predicts an 8-step camera-frame SE(3) e
 
 Qwen-VLA points to the cross-embodiment version of the same logging need. It uses embodiment-aware prompts that specify the robot tag, arm setup, control frequency, and prediction horizon, then trains actions and trajectories in a shared padded tensor format with masks. A simple evaluation harness can compare pose-trace stability under changed camera viewpoint, background, object layout, and robot prompt before giving weight to benchmark-only success rates.
 
-### Evidence
+### Sources
 - [OASIS: Observation-Action Space Alignment via SE(3) Trajectory Prediction for Robotic Manipulation](../Inbox/2026-05-25--oasis-observation-action-space-alignment-via-se-3-trajectory-prediction-for-robotic-manipulation.md): OASIS uses an SE(3) trajectory predictor before action decoding and reports gains on LIBERO, real robots, and out-of-distribution perturbations.
 - [Qwen-VLA: Unifying Vision-Language-Action Modeling across Tasks, Environments, and Robot Embodiments](../Inbox/2026-05-28--qwen-vla-unifying-vision-language-action-modeling-across-tasks-environments-and-robot-embodiments.md): Qwen-VLA uses embodiment-aware prompts and a shared action-and-trajectory tensor format across manipulation, navigation, and robot embodiments.
 
@@ -61,6 +61,6 @@ Tabero gives a VLA-style version of this harness. It generates synchronized visi
 
 CoP gives the dexterous-hand version. It compresses tactile taxel readings into a 3D contact force and 3D contact position for each tactile sensing region, then trains policies in simulation with sensor delay and domain randomization. On real peg-in-hole insertion across six shapes, CoP reached 0.78 success, ahead of binary contact at 0.53 and raw taxels at 0.48. Teams working with tactile grippers or dexterous hands can start with one blind insertion or fragile-object pick task and publish success together with force and contact-location traces.
 
-### Evidence
+### Sources
 - [Tabero: Learning Gentle Manipulation with Closed-Loop Force Feedback from Vision, Touch, and Language](../Inbox/2026-05-27--tabero-learning-gentle-manipulation-with-closed-loop-force-feedback-from-vision-touch-and-language.md): Tabero adds tactile tokens and closed-loop force control, evaluates grip and applied force, and reports over 70% lower average grip force under gentle instructions.
 - [Beyond Binary: Sim-to-Real Dexterous Manipulation with Physics-Grounded Contact Representation](../Inbox/2026-05-27--beyond-binary-sim-to-real-dexterous-manipulation-with-physics-grounded-contact-representation.md): CoP maps dense tactile readings to contact force and contact location and reports stronger real peg-in-hole success than binary contact and raw-taxel baselines.

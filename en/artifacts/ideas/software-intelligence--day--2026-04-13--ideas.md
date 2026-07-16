@@ -35,7 +35,7 @@ A repository-level coding agent should return a patch plus the exact execution r
 
 This fits teams already experimenting with repo agents and struggling with review time. A reviewer does not need another summary of why a fix should work; they need a replayable record of what actually ran and whether it regressed anything. The first cheap test is narrow: require the agent to attach an execution receipt on one class of tasks such as flaky test repair or small bug fixes, then measure reviewer acceptance rate and time to merge against agent output that arrives as text and diffs alone. AnalysisBench supports the same workflow boundary from another angle. Its best agent only stops after tool-specific evidence is present, and self-validation still overstated success by 15%, which is a warning against letting the agent mark its own work complete without an external artifact check.
 
-### Evidence
+### Sources
 - [AgentForge: Execution-Grounded Multi-Agent LLM Framework for Autonomous Software Engineering](../Inbox/2026-04-13--agentforge-execution-grounded-multi-agent-llm-framework-for-autonomous-software-engineering.md): AgentForge requires sandbox execution for every patch and reports 40.0% resolution with a large gain over single-agent baselines.
 - [Evaluating LLM Agents on Automated Software Analysis Tasks](../Inbox/2026-04-13--evaluating-llm-agents-on-automated-software-analysis-tasks.md): AnalysisBench shows evidence-based completion checks matter and self-validation overstated success by 15%.
 
@@ -44,7 +44,7 @@ Security teams can add an executable PoC gate between LLM bug finding and human 
 
 The immediate build is a validator service that consumes agent-generated bug reports, spins up the target project in an isolated environment, attempts PoC generation and re-execution, and writes back one of two outputs: confirmed with runnable artifact, or rejected with failure evidence. This is useful for internal AppSec teams and maintainers who already receive too many text-only reports to trust them at face value. A simple first deployment would target one bug class in one codebase with stable CI, then compare analyst time per confirmed finding and the share of rejected reports that would otherwise have reached manual review.
 
-### Evidence
+### Sources
 - [AnyPoC: Universal Proof-of-Concept Test Generation for Scalable LLM-Based Bug Detection](../Inbox/2026-04-13--anypoc-universal-proof-of-concept-test-generation-for-scalable-llm-based-bug-detection.md): AnyPoC validates bug reports by generating and re-running executable PoCs, with large gains in valid confirmations and false-positive rejection.
 
 ## Analysis runbook agents for first-time tool setup
@@ -52,6 +52,6 @@ Teams adopting analyzers, fuzzers, symbolic execution tools, or profilers need a
 
 That points to a concrete support product for platform engineering and developer productivity teams: an analysis-runbook agent that installs the tool, prepares the project, captures the exact commands and environment, and refuses to finish until the expected analysis artifact exists. The first cheap check is to pick two hard internal tools with low adoption because setup is brittle, then measure whether the runbook agent increases first-success rate for engineers who have never configured those tools before. The value is less in model cleverness than in making each stage legible enough to debug when environment setup fails.
 
-### Evidence
+### Sources
 - [Evaluating LLM Agents on Automated Software Analysis Tasks](../Inbox/2026-04-13--evaluating-llm-agents-on-automated-software-analysis-tasks.md): AnalysisBench identifies end-to-end setup and evidence capture as the core bottleneck and reports higher verified success from staged workflows.
 - [AgentForge: Execution-Grounded Multi-Agent LLM Framework for Autonomous Software Engineering](../Inbox/2026-04-13--agentforge-execution-grounded-multi-agent-llm-framework-for-autonomous-software-engineering.md): AgentForge independently supports mandatory execution checks before the system can accept work as complete.

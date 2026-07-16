@@ -39,7 +39,7 @@ Teams choosing a coding agent should test it on replayed review sessions from th
 
 SWE-Together shows a workable pattern: it filtered 11,260 recorded sessions into 109 repository-level tasks, replayed feedback through a state-conditioned user simulator, and reported User Correction alongside pass rates. SWE-INTERACT adds pressure from delayed requirements: Opus 4.8 and GPT 5.5 fell from about 50% single-turn resolve rates to 26.7% and 24.7% in multi-turn sessions, while GPT 5.5 cost rose from $2.78 to $9.84 per trial. A practical internal version can start with 20 to 50 recent agent-assisted tickets where the team can restore the commit, replay the first request, and compare final tests with the number of reviewer interventions.
 
-### Evidence
+### Sources
 - [SWE-Together: Evaluating Coding Agents in Interactive User Sessions](../Inbox/2026-06-29--swe-together-evaluating-coding-agents-in-interactive-user-sessions.md): SWE-Together defines replayed multi-turn coding sessions and reports User Correction alongside final correctness.
 - [SWE-INTERACT: Reimagining SWE Benchmarks as User-Driven Long-Horizon Coding Sessions](../Inbox/2026-06-29--swe-interact-reimagining-swe-benchmarks-as-user-driven-long-horizon-coding-sessions.md): SWE-INTERACT shows large drops in resolve rate and higher cost when agents handle delayed requirements over multiple turns.
 
@@ -48,7 +48,7 @@ LLM platform teams should add a per-run budget check before every coding-agent p
 
 TraceLab gives the operational reason to measure at this level. In 4,265 real Claude Code and Codex sessions, prefix tokens were 52.56B of 54.90B input tokens and 59.5% of estimated API cost. Cache misses still caused 3.8 times more prefilling than truly new input tokens. The budget RFC supplies an implementation shape: a gateway hook, sidecar, or SDK middleware that reserves estimated spend before forwarding a request and releases unused reserve afterward. The first deployment check is simple: log prefix, append, and output tokens by run for two weeks, then set a soft run ceiling and inspect how often agents would have received a downshift signal.
 
-### Evidence
+### Sources
 - [TraceLab: Characterizing Coding Agent Workloads for LLM Serving](../Inbox/2026-06-29--tracelab-characterizing-coding-agent-workloads-for-llm-serving.md): TraceLab quantifies real coding-agent sessions and shows prefix reads dominate estimated cost.
 - [RFC: Stopping runaway AI agent spend with atomic budget reservations](../Inbox/2026-07-04--rfc-stopping-runaway-ai-agent-spend-with-atomic-budget-reservations.md): The budget RFC describes run-scoped atomic spend reservations and machine-readable budget state for agents.
 
@@ -57,7 +57,7 @@ Security and platform teams giving agents DevOps tools should split the durable 
 
 UnderSpecBench shows why DevOps agents need this boundary. Across 2,208 prompt variants, acted runs violated action boundaries 55.8% to 67.8% of the time, with wrong-target and overscope outcomes on cleanup, rollback, pruning, and access-change tasks. Fly.io’s Sprite pattern gives a concrete execution model: one shared agent runtime can dispatch commands to isolated per-session Sprites, inject a user token for a single `flyctl` command, and restore a damaged filesystem and toolchain from a checkpoint. Securing Agentic Identity gives the API access pattern, keeping reusable OAuth tokens out of the agent runtime while preserving stateless broker and proxy scaling.
 
-### Evidence
+### Sources
 - [Coding Agents Are Guessing: Measuring Action-Boundary Violations in Underspecified DevOps Instructions](../Inbox/2026-07-02--coding-agents-are-guessing-measuring-action-boundary-violations-in-underspecified-devops-instructions.md): UnderSpecBench measures wrong-target and overscope behavior in underspecified DevOps tasks.
 - [Building Agents That Don't Break Themselves](../Inbox/2026-07-05--building-agents-that-don-t-break-themselves.md): The Fly.io Sprite pattern separates the long-lived agent loop from disposable command sandboxes and single-command token injection.
 - [Securing Agentic Identity](../Inbox/2026-07-03--securing-agentic-identity.md): Securing Agentic Identity proposes a broker, proxy, and mTLS binding so real OAuth tokens stay out of the agent environment.

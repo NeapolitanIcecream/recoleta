@@ -37,7 +37,7 @@ The practical build is a small internal eval harness that scores each task by co
 
 LongBench also gives a concrete warning about where current policies break. On fully observable tasks, pi_0 averages 86.3 stage-wise score, while Diffusion Policy reaches 51.2 and OpenVLA-OFT 32.7. Dynamic grasping is the sharpest stress case: pi_0 reaches 73.3, while the other listed systems stay between 0.0 and 13.3. A cheap validation step is to rerun one existing in-house task with stage annotations and compare the ranking against the current pass/fail leaderboard. If the ordering or failure story changes, the old eval is hiding useful signal.
 
-### Evidence
+### Sources
 - [LongBench: Evaluating Robotic Manipulation Policies on Real-World Long-Horizon Tasks](../Inbox/2026-04-18--longbench-evaluating-robotic-manipulation-policies-on-real-world-long-horizon-tasks.md): LongBench summary states the benchmark separates execution and context difficulty, uses stage-wise scoring, and reports policy gaps on long-horizon tasks.
 - [LongBench: Evaluating Robotic Manipulation Policies on Real-World Long-Horizon Tasks](../Inbox/2026-04-18--longbench-evaluating-robotic-manipulation-policies-on-real-world-long-horizon-tasks.md): The abstract describes mechanism-aware evaluation for execution robustness, temporal consistency, and context-dependent reasoning in real-world manipulation.
 - [LongBench: Evaluating Robotic Manipulation Policies on Real-World Long-Horizon Tasks](../Inbox/2026-04-18--longbench-evaluating-robotic-manipulation-policies-on-real-world-long-horizon-tasks.md): The introduction explains that aggregate success fails to distinguish execution instability, dynamic response limits, and contextual ambiguity.
@@ -49,7 +49,7 @@ The useful product here is a post-run debugger that aligns video, action chunks,
 
 This fits the current deployment cycle described in the broader robot learning coverage. The field is already training on larger real-world datasets and improving models with deployed robot feedback. Google spent 17 months collecting data across 700 tasks for RT-1 and reported 97% success on seen tasks and 76% on unseen instructions. Once teams are running collection loops at that scale, the bottleneck moves to deciding which failures deserve new data, a controller change, or a task redesign. A lightweight failure labeling tool gives that triage layer.
 
-### Evidence
+### Sources
 - [LongBench: Evaluating Robotic Manipulation Policies on Real-World Long-Horizon Tasks](../Inbox/2026-04-18--longbench-evaluating-robotic-manipulation-policies-on-real-world-long-horizon-tasks.md): LongBench defines concrete mechanism categories for long-horizon failures and motivates evaluation beyond aggregate success.
 - [LongBench: Evaluating Robotic Manipulation Policies on Real-World Long-Horizon Tasks](../Inbox/2026-04-18--longbench-evaluating-robotic-manipulation-policies-on-real-world-long-horizon-tasks.md): The paper abstract frames the benchmark around execution robustness, temporal consistency, and context-dependent reasoning.
 - [Robots learn: A brief, contemporary history](../Inbox/2026-04-18--robots-learn-a-brief-contemporary-history.md): The article reports RT-1 data collection over 17 months and 700 tasks, supporting the claim that larger deployment and data loops raise pressure for better failure triage.
@@ -61,6 +61,6 @@ For teams evaluating warehouse pick, tote transfer, or moving-object handoff pol
 
 The broader market context supports a stricter gate. Commercial deployment pressure is rising, with the Technology Review piece citing $6.1 billion in humanoid robot investment in 2025 and growing use of deployed systems for data collection and improvement. A release process that includes temporal-window stress tests is a straightforward way to catch a known weak point before operators absorb the failure cost.
 
-### Evidence
+### Sources
 - [LongBench: Evaluating Robotic Manipulation Policies on Real-World Long-Horizon Tasks](../Inbox/2026-04-18--longbench-evaluating-robotic-manipulation-policies-on-real-world-long-horizon-tasks.md): LongBench reports dynamic grasping as the hardest fully observable task and gives the stage-wise scores across six policies.
 - [Robots learn: A brief, contemporary history](../Inbox/2026-04-18--robots-learn-a-brief-contemporary-history.md): The article notes rising commercial deployment and investment, which increases the need for concrete pre-deployment acceptance tests.

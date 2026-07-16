@@ -37,7 +37,7 @@ The operational pain is familiar to teams building natural-language access for s
 
 A cheap validation path is straightforward. Take a backlog of real English analysis requests from security or AppSec users, define a narrow JSON schema for the top query families, and compare result-match rate, execution success, and token cost against direct query generation. If the tool already logs failed or misleading CPGQL generations, those requests are the right starting set.
 
-### Evidence
+### Sources
 - [Less Is More: Measuring How LLM Involvement affects Chatbot Accuracy in Static Analysis](../Inbox/2026-04-23--less-is-more-measuring-how-llm-involvement-affects-chatbot-accuracy-in-static-analysis.md): Reports that a schema-bound JSON intermediate outperformed direct CPGQL generation and an agentic tool loop across all tested models, with concrete accuracy and token-cost differences.
 - [Less Is More: Measuring How LLM Involvement affects Chatbot Accuracy in Static Analysis](../Inbox/2026-04-23--less-is-more-measuring-how-llm-involvement-affects-chatbot-accuracy-in-static-analysis.md): Explains why CPGQL usability is a practical adoption blocker for developers who lack DSL and schema knowledge.
 
@@ -48,7 +48,7 @@ This fits a real gap in coding-agent workflows. Generated code may pass the loca
 
 The first users are teams running stateful Java services where silent failures are expensive: messaging, replication, session handling, inventory logic, or any code with invariants that matter after deployment. The cheap check is to pick one subsystem with high-value integration tests, generate checkers for a small batch of tests, and measure three things in staging: validation pass rate for the generated checker, extra mutant detection, and runtime overhead. The paper’s overhead range, 2.7% to 40.3%, makes that measurement necessary before broad rollout.
 
-### Evidence
+### Sources
 - [FlyCatcher: Neural Inference of Runtime Checkers from Tests](../Inbox/2026-04-23--flycatcher-neural-inference-of-runtime-checkers-from-tests.md): Provides the full method and headline results for inferring runtime checkers from tests, including checker counts, correctness, mutant detection, cost, and overhead.
 - [FlyCatcher: Neural Inference of Runtime Checkers from Tests](../Inbox/2026-04-23--flycatcher-neural-inference-of-runtime-checkers-from-tests.md): Gives concrete examples of silent semantic failures and explains why semantic runtime checkers are useful in production systems.
 
@@ -59,6 +59,6 @@ The user pressure is clear in mature repositories: the first test often captures
 
 This is a buildable workflow for CI or for pull-request review on changed methods that already have at least one trusted test. A low-cost trial is to run it only on files with new or modified tests, limit output to two or three candidate variants per seed test, and track merge acceptance, flaky-test rate, and distinct bug findings. That setup keeps reviewer load bounded while showing whether scenario expansion is adding useful coverage or only more test volume.
 
-### Evidence
+### Sources
 - [Generalizing Test Cases for Comprehensive Test Scenario Coverage](../Inbox/2026-04-23--generalizing-test-cases-for-comprehensive-test-scenario-coverage.md): Describes the three-stage scenario-generalization pipeline and reports benchmark gains plus merged-test results from the field study.
 - [Generalizing Test Cases for Comprehensive Test Scenario Coverage](../Inbox/2026-04-23--generalizing-test-cases-for-comprehensive-test-scenario-coverage.md): States the practical testing problem clearly: important tests often arrive late after bugs, because the initial test captures only part of the intended scenario space.

@@ -41,7 +41,7 @@ GeoAlign gives a concrete implementation pattern. It post-trains a Depth Anythin
 
 The cheap validation is a task slice with geometry-sensitive objects. GeoAlign reports 78.8% average success on eight real ALOHA tasks, compared with 65.0% for a matched RGB-only baseline, with transparent-bottle success rising from 35.0% to 75.0% and tape-roll insertion from 40.0% to 65.0%. GeoSem-WAM points in the same direction for world action models: future geometry and semantic supervision are used during training, dense heads are removed at deployment, and real Franka success rises from 88.9% for Fast-WAM to 95.4%.
 
-### Evidence
+### Sources
 - [GeoAlign: Beyond Semantics with State-Guided Spatial Alignment in VLA Models](../Inbox/2026-06-02--geoalign-beyond-semantics-with-state-guided-spatial-alignment-in-vla-models.md): GeoAlign describes RGB-derived geometry features, state-guided spatial querying, and real ALOHA gains on transparent and insertion tasks.
 - [GeoSem-WAM: Geometry- and Semantic-Aware World Action Models](../Inbox/2026-06-02--geosem-wam-geometry-and-semantic-aware-world-action-models.md): GeoSem-WAM reports training-time geometry and semantic supervision with deployment-time action prediction and real Franka gains.
 
@@ -52,7 +52,7 @@ TTT-VLA is the concrete case to copy first. It adds a latent prompt to the polic
 
 This is most useful for teams that already trust a base policy but see failures after camera, lighting, object layout, or embodiment changes. The reported compute is high, 15–30 minutes on 8 NVIDIA H100 GPUs for the listed experiments, so the practical first check is an offline replay or simulator trial that measures whether prompt-only updates correct a small number of repeated decision errors without changing the policy weights.
 
-### Evidence
+### Sources
 - [TTT-VLA: Test-Time Latent Prompt Optimization for Vision-Language-Action Models](../Inbox/2026-06-02--ttt-vla-test-time-latent-prompt-optimization-for-vision-language-action-models.md): TTT-VLA describes frozen-backbone latent prompt optimization with a self-supervised state-grounding loss and reports SimplerEnv gains.
 - [TTT-VLA: Test-Time Latent Prompt Optimization for Vision-Language-Action Models](../Inbox/2026-06-02--ttt-vla-test-time-latent-prompt-optimization-for-vision-language-action-models.md): The paper states that test-time optimization updates only the latent prompt using data from the current environment.
 
@@ -63,6 +63,6 @@ PHASER splits trajectories into phases such as approach, grasp, and transport, g
 
 The first implementation can be a buffer change around an existing fine-tuning pipeline: segment demonstrations into phases, reserve equal memory per phase, and compare against uniform experience replay on a sequential LIBERO-style suite. PHASER reports 85.8% average success on LIBERO-Long with OpenVLA-OFT-7B, compared with 54.6% for standard experience replay. The same paper reports large gains across QwenGR00T-3B and QwenOFT-3B, which makes the buffer design worth testing before changing the policy architecture.
 
-### Evidence
+### Sources
 - [PHASER: Phase-Aware and Semantic Experience Replay for Vision-Language-Action Models](../Inbox/2026-06-02--phaser-phase-aware-and-semantic-experience-replay-for-vision-language-action-models.md): PHASER describes phase-aware storage, replay routing, Auto-PC phase discovery, and gains over standard experience replay.
 - [PHASER: Phase-Aware and Semantic Experience Replay for Vision-Language-Action Models](../Inbox/2026-06-02--phaser-phase-aware-and-semantic-experience-replay-for-vision-language-action-models.md): The paper explains why uniform replay under-samples short but critical manipulation phases.

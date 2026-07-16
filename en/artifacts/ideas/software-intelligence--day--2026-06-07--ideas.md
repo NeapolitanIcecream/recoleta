@@ -35,7 +35,7 @@ Software teams using Claude Code should add AI-authorship fields to pull request
 
 The pressure comes from adoption speed. Anthropic says more than four-fifths of the code it published in May was written by Claude, after a low-single-digit share before Claude Code launched in February 2025. At that level, AI-authored code is ordinary production input. Review systems need provenance, ownership, and rollback context on the diff itself, because the reviewer may be checking code produced through a toolchain they did not directly operate.
 
-### Evidence
+### Sources
 - [Will artificial intelligence soon escape human control?](../Inbox/2026-06-07--will-artificial-intelligence-soon-escape-human-control.md): The excerpt reports Claude Code’s launch timing and Anthropic’s claim that Claude wrote more than four-fifths of its published code in May, up from low single digits before launch.
 - [Will artificial intelligence soon escape human control?](../Inbox/2026-06-07--will-artificial-intelligence-soon-escape-human-control.md): The summary frames Claude Code as part of software production and notes the absence of a described safety evaluation or control method.
 
@@ -44,6 +44,6 @@ AI labs and infrastructure teams should keep a separate change record when a cod
 
 This is a narrow governance layer for a concrete feedback loop: a coding agent can help build the software used by human developers, and some of that software may support future AI development or supervision. The cheap test is to run the record on one month of changes in repos that contain evals, CI, and internal developer tooling, then check whether reviewers can answer who or what generated each change and which downstream systems rely on it.
 
-### Evidence
+### Sources
 - [Will artificial intelligence soon escape human control?](../Inbox/2026-06-07--will-artificial-intelligence-soon-escape-human-control.md): The local summary identifies the risk pathway: AI coding agents can affect developer tools, infrastructure, and systems used to supervise later AI systems.
 - [Will artificial intelligence soon escape human control?](../Inbox/2026-06-07--will-artificial-intelligence-soon-escape-human-control.md): The source gives the concrete Claude Code case and the reported internal production use at Anthropic.

@@ -37,7 +37,7 @@ Robot teams deploying VLA policies on hands, arms, or humanoid platforms should 
 
 RLDX-1 gives a concrete template. The policy adds multi-frame motion processing, a memory module storing past cognition-feature chunks, and tactile or torque inputs in a separate physics stream. Its reported gains are largest on tasks where a current-image policy is likely to fail, including 91.7% success on ALLEX Object-in-Box Selection and over 87.5% on conveyor-belt fast-object catching. The report also treats inference speed as a deployment metric, cutting per-step latency on an RTX 5090 from 71.2 ms to 43.7 ms.
 
-### Evidence
+### Sources
 - [RLDX-1 Technical Report](../Inbox/2026-05-05--rldx-1-technical-report.md): Summarizes RLDX-1’s motion, memory, tactile/torque inputs, task results, and latency improvement.
 - [RLDX-1 Technical Report](../Inbox/2026-05-05--rldx-1-technical-report.md): Describes why dynamic manipulation, physical sensing, and memory create failures for existing VLAs.
 
@@ -46,7 +46,7 @@ Teams using robot video world models for planning should add a behavior-scored r
 
 RoboAlign-R1 shows the shape of the workflow. The authors fine-tune Qwen3-VL-8B-Thinking into a six-dimension judge, distill it into a 98M reward model, and use it for GRPO post-training. The same paper adds Sliding Window Re-encoding for long rollouts by decoding the last predicted frame, re-encoding it as fresh context, and continuing generation with a shorter active history. The reported result is higher RobotWorldBench score than iVideoGPT, better scores on all six behavior dimensions, and improved long-horizon pixel metrics with about 1% added latency.
 
-### Evidence
+### Sources
 - [RoboAlign-R1: Distilled Multimodal Reward Alignment for Robot Video World Models](../Inbox/2026-05-05--roboalign-r1-distilled-multimodal-reward-alignment-for-robot-video-world-models.md): Summarizes the six-dimension judge, 98M reward model, GRPO post-training, Sliding Window Re-encoding, and reported metrics.
 - [RoboAlign-R1: Distilled Multimodal Reward Alignment for Robot Video World Models](../Inbox/2026-05-05--roboalign-r1-distilled-multimodal-reward-alignment-for-robot-video-world-models.md): Explains why robot video world models need action-conditioned dynamics, contacts, scene evolution, and physical plausibility for control.
 
@@ -55,6 +55,6 @@ World-model teams comparing text-controlled, keyboard-like, and camera-parameter
 
 iWorld-Bench supplies a ready specification for that harness. It defines 27 translational and 27 rotational action IDs, focuses evaluation on 81 common combined actions, and builds 4,900 test tasks across action-control difficulty, memory, and camera following. The paper also reports broad coverage across four viewpoints, nine outdoor weather types, five indoor lighting types, and 18 simulator environments, which is useful for finding models that pass a narrow scene test but fail under changed viewpoint or conditions.
 
-### Evidence
+### Sources
 - [iWorld-Bench: A Benchmark for Interactive World Models with a Unified Action Generation Framework](../Inbox/2026-05-05--iworld-bench-a-benchmark-for-interactive-world-models-with-a-unified-action-generation-framework.md): Summarizes iWorld-Bench’s action mapping, task types, dataset size, and coverage.
 - [iWorld-Bench: A Benchmark for Interactive World Models with a Unified Action Generation Framework](../Inbox/2026-05-05--iworld-bench-a-benchmark-for-interactive-world-models-with-a-unified-action-generation-framework.md): Describes the lack of aligned action definitions across text, keyboard, and trajectory or camera-control inputs.

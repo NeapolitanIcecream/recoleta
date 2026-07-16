@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Grounded Control Diagnostics
 
-## Summary
+## 摘要
 有两项具体的流程变化很突出。会检索历史案例的具身控制器可以把决策路径暴露出来接受安全复核，因为动作本来就经过事件编码、最近邻检索和机动聚类。世界模型 RL 栈也可以直接开始测量和控制想象漂移，并且在 grounding prior 被蒸馏之后，用一个不会明显增加运行时的方式，把训练转到 grounded latent 上。
 
 ## Retrieval trace inspection for UAV and robotics control loops
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 实际产品可以是一个面向机器人团队的控制侧检查层，适用于已经在动态场景中使用检索、模仿或世界模型策略的团队。它应该记录当前事件编码、top-k 检索案例、相似度权重、簇分配，以及存储机动对应的可行性分数。一个低成本测试是回放险情或对抗性回合，检查碰撞或不稳定动作是否与低相似度检索、冲突的机动簇，或知识库中的缺口相关。这样团队就能决定何时切换到更慢的规划器，或请求人工确认。论文的证据只来自 UAV 场景，也没有外部基线，所以首个部署目标应是内部调试和飞行复盘，而不是完全自主性的主张。
 
-### Evidence
+### 资料来源
 - [Event-Centric World Modeling with Memory-Augmented Retrieval for Embodied Decision-Making](../Inbox/2026-04-08--event-centric-world-modeling-with-memory-augmented-retrieval-for-embodied-decision-making.md): Summary states the retrieval pipeline, maneuver clustering, interpretability goal, and real-time control figures.
 - [Event-Centric World Modeling with Memory-Augmented Retrieval for Embodied Decision-Making](../Inbox/2026-04-08--event-centric-world-modeling-with-memory-augmented-retrieval-for-embodied-decision-making.md): Abstract text confirms operation within real-time control constraints and interpretable behavior in UAV scenarios.
 
@@ -40,7 +40,7 @@ language_code: zh-CN
 
 有用的流程变化是把想象质量当作一项持续记录的训练指标，而不只是最终回报。运行 Dreamer 风格智能体的团队可以记录像 DFM 这样的漂移分数，把想象 latent 与冻结的视觉编码器或本体感觉编码器进行比较，并在稀疏奖励、长时域或干扰很多的任务上，当漂移上升时收紧 rollout 预算或 KL 限制。GIRL 在 DeepMind Control 上报告的 DFM(1000) 为 2.14，而 DreamerV3 为 4.81，同时 latent rollout 漂移降低了 38–61%，IQM 也更高。这足以支持一个范围很窄的首个版本：一个仪表盘和训练回调，在想象 rollout 不再匹配真实转移时发出标记，并自动缩短时域或提高正则化。首批用户会是训练用于操作和视觉杂乱控制任务的世界模型的研究团队，这类任务里失败代价很高。
 
-### Evidence
+### 资料来源
 - [GIRL: Generative Imagination Reinforcement Learning via Information-Theoretic Hallucination Control](../Inbox/2026-04-08--girl-generative-imagination-reinforcement-learning-via-information-theoretic-hallucination-control.md): Summary gives the core failure mode, adaptive trust-region mechanism, and benchmark gains on IQM and DFM.
 - [GIRL: Generative Imagination Reinforcement Learning via Information-Theoretic Hallucination Control](../Inbox/2026-04-08--girl-generative-imagination-reinforcement-learning-via-information-theoretic-hallucination-control.md): Introduction text states that accumulated model error pushes imagined states off-manifold and can fail catastrophically in the real environment.
 
@@ -49,6 +49,6 @@ language_code: zh-CN
 
 短期内可以做成 DreamerV3 或相关 latent world model 的插件模块，提供两种模式：方法开发时直接使用冻结编码器 grounding，常规训练时使用蒸馏 prior。首批目标用户是处理长时域、接触或视觉干扰的实验室和应用机器人团队，这些场景里更好的想象质量可以减少环境步数。一个低成本检查方法是在现有的一个基准上跑三种条件：基线、grounded prior 和蒸馏 prior，然后在固定交互预算下比较 wall-clock 时间、DFM 和回报。GIRL 在长时域任务上报告了 40–55% 更少的环境步数，并且在稀疏奖励和高接触设置上优于 TD-MPC2，这已经足够支持这项工程工作。
 
-### Evidence
+### 资料来源
 - [GIRL: Generative Imagination Reinforcement Learning via Information-Theoretic Hallucination Control](../Inbox/2026-04-08--girl-generative-imagination-reinforcement-learning-via-information-theoretic-hallucination-control.md): Summary describes the DINOv2 grounding signal, adaptive bottleneck, lower drift, and reduced overhead in the distilled-prior variant.
 - [GIRL: Generative Imagination Reinforcement Learning via Information-Theoretic Hallucination Control](../Inbox/2026-04-08--girl-generative-imagination-reinforcement-learning-via-information-theoretic-hallucination-control.md): Abstract text reports 40–55% fewer environment steps on longer-horizon tasks and overhead reduction from 22% to under 4%.

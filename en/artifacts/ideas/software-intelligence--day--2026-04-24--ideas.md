@@ -39,7 +39,7 @@ A practical build is a repo-aware budget controller that watches action traces i
 
 A cheap test is to replay past agent traces and measure how often an early stop after repeated file churn would have reduced token spend without hurting pass rate. If the controller mostly catches failures and late-stage wandering, it is worth shipping as a default guard in coding-agent products.
 
-### Evidence
+### Sources
 - [How Do AI Agents Spend Your Money? Analyzing and Predicting Token Consumption in Agentic Coding Tasks](../Inbox/2026-04-24--how-do-ai-agents-spend-your-money-analyzing-and-predicting-token-consumption-in-agentic-coding-tasks.md): Token-cost study reports 3500× and 1200× cost gaps, up to 30× run variance, and poor self-prediction.
 - [How Do AI Agents Spend Your Money? Analyzing and Predicting Token Consumption in Agentic Coding Tasks](../Inbox/2026-04-24--how-do-ai-agents-spend-your-money-analyzing-and-predicting-token-consumption-in-agentic-coding-tasks.md): Paper excerpt ties higher cost to repeated actions and shows input-heavy cost growth.
 
@@ -50,7 +50,7 @@ The concrete workflow change is to stop asking a model for whole-repo output on 
 
 A cheap check is to take an internal backlog item that already has architecture notes or diagrams and run it both ways: one-shot full-repo generation versus dependency-ordered file generation. Measure test pass rate, number of broken imports, and manual repair time. Teams building internal scaffolds, SDKs, or CRUD-heavy services can try this without changing their whole toolchain.
 
-### Evidence
+### Sources
 - [RealBench: A Repo-Level Code Generation Benchmark Aligned with Real-World Software Development Practices](../Inbox/2026-04-24--realbench-a-repo-level-code-generation-benchmark-aligned-with-real-world-software-development-practices.md): RealBench summary provides Pass@1 by repository scale and dependency statistics.
 - [RealBench: A Repo-Level Code Generation Benchmark Aligned with Real-World Software Development Practices](../Inbox/2026-04-24--realbench-a-repo-level-code-generation-benchmark-aligned-with-real-world-software-development-practices.md): Paper excerpt states smaller repos favor whole-repo generation while complex repos favor incremental generation.
 
@@ -61,6 +61,6 @@ That supports a concrete build for teams with stale tickets, weak documentation,
 
 A cheap check is to sample resolved tickets from one service, hide the known touched files, and compare the tool’s top-k link suggestions against the actual implementation diff. If the links are accurate enough to cut search time for maintainers, the traceability layer earns its place before any broader agent workflow.
 
-### Evidence
+### Sources
 - [R2Code: A Self-Reflective LLM Framework for Requirements-to-Code Traceability](../Inbox/2026-04-24--r2code-a-self-reflective-llm-framework-for-requirements-to-code-traceability.md): R2Code summary reports F1 gains, adaptive retrieval, and lower token use.
 - [R2Code: A Self-Reflective LLM Framework for Requirements-to-Code Traceability](../Inbox/2026-04-24--r2code-a-self-reflective-llm-framework-for-requirements-to-code-traceability.md): Paper excerpt states 7.4% average F1 gain and up to 41.7% token reduction.

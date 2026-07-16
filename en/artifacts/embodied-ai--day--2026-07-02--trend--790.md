@@ -30,14 +30,14 @@ pass_kind: trend_synthesis
 ## Overview
 Robot learning is being judged inside the control loop. The strongest papers add future-change priors, drift monitors, critics, world-model rollouts, and cheaper motion data to make vision-language-action (VLA) policies survive contact, camera changes, and limited demonstrations. Bridge-WA, VLA-Corrector, and TAP give the clearest measured claims.
 
-## Clusters
+## Findings
 
 ### Future-change and motion forecasts
 Several papers make prediction more action-specific. Bridge-WA distills a 5B future-change teacher into future tokens, change maps, and motion-flow maps, then removes the teacher at deployment. It reports 52.8% average success on VLABench, compared with 43.1% for the strongest listed success-rate baseline, and stronger Dobot hard-track results under distractors, lighting changes, and tablecloth changes.
 
 PhysMani applies the same pressure to dynamic 3D manipulation. It models scenes with 30,000 3D Gaussians and predicts local velocity fields for moving targets. On PhysMani-Bench, it reports 45.9% mean simulation success, ahead of the listed 3D policy and Gaussian baselines, while still losing on some tasks such as Insert Peg.
 
-#### Evidence
+#### Sources
 - [Bridge-WA: Predicting Where and How the World Changes for Robotic Action](../Inbox/2026-07-02--bridge-wa-predicting-where-and-how-the-world-changes-for-robotic-action.md): Bridge-WA summary, method, and VLABench/Dobot results.
 - [PhysMani: Physics-principled 3D World Model for Dynamic Object Manipulation](../Inbox/2026-07-02--physmani-physics-principled-3d-world-model-for-dynamic-object-manipulation.md): PhysMani summary, 3D Gaussian method, benchmark results, and task caveats.
 
@@ -46,7 +46,7 @@ Inference-time control is a major theme. VLA-Corrector keeps the VLA backbone fr
 
 Guided Action Flow uses a learned action-chunk critic to steer a frozen SmolVLA sampler. The gains are strongest in local settings: one LIBERO spatial task improves by 14 points, while the locked held-out gain is 2.5 points. ACID adds a separate check for world-model planning by asking whether predicted latent transitions are consistent with the conditioned actions; it improves success across Le-WM and PLDM manipulation tasks without retraining the world model.
 
-#### Evidence
+#### Sources
 - [VLA-Corrector: Lightweight Detect-and-Correct Inference for Adaptive Action Horizon](../Inbox/2026-07-02--vla-corrector-lightweight-detect-and-correct-inference-for-adaptive-action-horizon.md): VLA-Corrector detect-and-correct method and MetaWorld/LIBERO results.
 - [Guided Action Flow: Q-Guided Inference for Flow-Matching Vision-Language-Action Policies](../Inbox/2026-07-02--guided-action-flow-q-guided-inference-for-flow-matching-vision-language-action-policies.md): Guided Action Flow critic-guided inference and LIBERO validation/held-out results.
 - [ACID: Action Consistency via Inverse Dynamics for Planning with World Models](../Inbox/2026-07-02--acid-action-consistency-via-inverse-dynamics-for-planning-with-world-models.md): ACID inverse-dynamics consistency cost and planning results across world models.
@@ -56,7 +56,7 @@ Data cost is being attacked with unlabeled motion and generated rollouts. TAP pr
 
 WorldSample uses real rollouts to seed local action perturbations, generates future observations with an adapted Cosmos-Predict2.5 world model, labels them with a reward model, and feeds selected synthetic transitions into real-robot reinforcement learning. Across five manipulation tasks, it reports 82% average success, compared with 56% for HIL-SERL, while reducing average training steps from 56K to 23K.
 
-#### Evidence
+#### Sources
 - [Learning to Move Before Learning to Do: Task-Agnostic pretraining for VLAs](../Inbox/2026-07-02--learning-to-move-before-learning-to-do-task-agnostic-pretraining-for-vlas.md): TAP task-agnostic pretraining method and SIMPLER/real-world results.
 - [WorldSample: Closed-loop Real-robot RL with World Modelling](../Inbox/2026-07-02--worldsample-closed-loop-real-robot-rl-with-world-modelling.md): WorldSample real-synthetic training loop, success rates, and training-step reduction.
 
@@ -65,5 +65,5 @@ The Moving Eye isolates camera and object-position shortcuts in VLA training dat
 
 The object-position test shows the same pattern. A multi-fixed baseline drops from 95.0% to 71.9% after shifting the holder, while the mixed 1:3 setting reports 91.9% and 90.6%. The best Gr00t pen-task ratio in the excerpt is Moving:Multi-Fixed = 1:3.
 
-#### Evidence
+#### Sources
 - [The Moving Eye: Enhancing VLA Spatial Generalization via Hybrid Dynamic Data Collection](../Inbox/2026-07-02--the-moving-eye-enhancing-vla-spatial-generalization-via-hybrid-dynamic-data-collection.md): The Moving Eye data setup, shortcut analysis, moving-camera results, and object-position results.

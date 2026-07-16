@@ -39,7 +39,7 @@ ReCoVLA shows one heavier version of this pattern: Qwen3-VL-8B-Instruct classifi
 
 A robotics group could start by replaying its own failed manipulation logs into a small taxonomy of grasp, transport, placement, and articulation failures. The first test should compare the frozen policy against a wrapper on injected failures and on a small physical rerun set, measuring task success, recovery success, and extra steps per recovery.
 
-### Evidence
+### Sources
 - [ReCoVLA: VLM-Guided Reward Compilation for Failure Recovery in Vision-Language-Action Policies](../Inbox/2026-06-08--recovla-vlm-guided-reward-compilation-for-failure-recovery-in-vision-language-action-policies.md): ReCoVLA keeps the base VLA frozen, classifies failure state, compiles stage-gated rewards, and reports simulation and physical recovery gains.
 - [Back to the Familiar Future: Failure Recovery for VLA Policies via Pre-Imagined Milestone Selection](../Inbox/2026-06-08--back-to-the-familiar-future-failure-recovery-for-vla-policies-via-pre-imagined-milestone-selection.md): B2FF selects pre-generated future-image milestones for recovery and reports a 56.3% to 74.0% gain on failure-injected LIBERO.
 - [ProbeAct: Probe-Guided Training-Free Failure Recovery in Vision-Language-Action Models](../Inbox/2026-06-08--probeact-probe-guided-training-free-failure-recovery-in-vision-language-action-models.md): ProbeAct uses hidden-state probes, kinematic failure detection, and CBF zones to improve LIBERO-plus success for a frozen VLA.
@@ -51,7 +51,7 @@ Flow Control applies the human input side to flow-matching VLAs. A keyboard comm
 
 The adoption test is direct: run ambiguous two-object tasks and moving-obstacle tasks with the same frozen policy, then compare no wrapper, steering only, safety filtering only, and both together. The key measurements are correction latency, collision rate, safe-success, and how often the wrapper changes a successful baseline action.
 
-### Evidence
+### Sources
 - [Flow Control: Steering Vision-Language-Action Models with Simple Real-Time Inputs](../Inbox/2026-06-08--flow-control-steering-vision-language-action-models-with-simple-real-time-inputs.md): Flow Control describes keyboard-direction steering by modifying the initial condition of a flow-matching VLA action sampler and reports Two-Block steering results.
 - [Your Model Already Knows: Attention-Guided Safety Filter for Vision-Language-Action Models](../Inbox/2026-06-08--your-model-already-knows-attention-guided-safety-filter-for-vision-language-action-models.md): The attention-guided safety filter reads VLA attention online, applies a CBF-QP filter, and reports large collision-rate and safe-success gains on dynamic SafeLIBERO.
 
@@ -62,5 +62,5 @@ YUBI replaces the pistol grip with a pinch-aligned design where the thumb drives
 
 A cheap validation is a side-by-side operator study before a full collection run: ten novice operators, repeated small-object pickup trials, an hour-long fatigue check, and throughput measured as usable episodes per operator-hour. If the lighter gripper improves small-object control and session length, the next build is a fixed-desk collection rig with synchronized wrist cameras, top-view RGB-D, 6-DoF gripper poses, jaw angles, task text, and sub-action labels.
 
-### Evidence
+### Sources
 - [YUBI: Yielding Universal Bidigital Interface for Bimanual Dexterous Manipulation at Scale](../Inbox/2026-06-08--yubi-yielding-universal-bidigital-interface-for-bimanual-dexterous-manipulation-at-scale.md): YUBI reports the finger-aligned gripper design, weight and cost comparisons, dataset scale, LeRobot conversion, and cross-arm policy transfer results.

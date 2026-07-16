@@ -30,14 +30,14 @@ pass_kind: trend_synthesis
 ## Overview
 This day has one strong signal: enterprise LLM agents need delegated access without reusable OAuth tokens sitting in their runtimes. `Securing Agentic Identity` proposes a broker, proxy, and mutual TLS (mTLS) binding pattern for email, calendar, GitHub, and API access. The evidence is architectural, with no benchmark or deployment data yet.
 
-## Clusters
+## Findings
 
 ### Brokered tokens for agent API access
 The proposal puts a broker between user login and the agent runtime. The broker receives the real OAuth token after browser authentication, then gives the agent a signed JSON Web Token (JWT). That JWT contains the real token only as an encrypted claim. The agent can inspect copied nonsecret claims, but the credential that remote services accept never lands in the agent environment.
 
 The agent sends API calls through a proxy. The proxy verifies the broker signature, decrypts the embedded token, swaps it into the `Authorization` header, and forwards the request. This design targets a practical failure mode: agents with access to email, calendar, or source-control APIs can write tokens to disk, leak them through tools, or commit them to repositories.
 
-#### Evidence
+#### Sources
 - [Securing Agentic Identity](../Inbox/2026-07-03--securing-agentic-identity.md): Summary describes the broker, proxy, encrypted JWT claim, and target services.
 
 ### mTLS binding limits stolen-token reuse
@@ -45,7 +45,7 @@ The stronger version binds the broker-issued JWT to the agent environment’s cl
 
 This makes token theft less useful unless the attacker also controls the environment’s private key. The post recommends hardware-backed or hypervisor-backed private keys where possible. It also notes that the pattern can work even when the upstream identity provider does not support RFC 8705 token binding.
 
-#### Evidence
+#### Sources
 - [Securing Agentic Identity](../Inbox/2026-07-03--securing-agentic-identity.md): Content describes certificate embedding, proxy mTLS checks, and hardware or hypervisor-backed keys.
 
 ### Stateless operation, vendor friction, and missing measurements
@@ -53,5 +53,5 @@ The operational appeal is that the broker and proxy do not need a persistent tok
 
 The limits are also clear. Third-party services may use different login flows or opaque tokens, so the broker may need vendor-specific handling. The post gives no latency, reliability, incident, or deployment-scale measurements. Its contribution is a concrete security design for agentic identity, not a measured system result.
 
-#### Evidence
+#### Sources
 - [Securing Agentic Identity](../Inbox/2026-07-03--securing-agentic-identity.md): Content states the stateless scaling claim and cites similar prior work by Fly.io.

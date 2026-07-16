@@ -37,7 +37,7 @@ A practical deployment step for VLA teams is an online adaptation head that only
 
 This points to a buildable workflow for integrators who already have a VLA policy that is broadly competent but slow or unreliable at contact-rich endpoints. The product is not a new foundation model. It is a thin adaptation layer with task-local rewards, action regularization against the base policy, and a fast practice loop on the target cell. A cheap validation check is to pick one precision bottleneck where operators currently add retries or teleoperation, freeze the base VLA, and measure whether a small online head can cut cycle time or failure rate within a single shift.
 
-### Evidence
+### Sources
 - [RL Token: Bootstrapping Online RL with Vision-Language-Action Models](../Inbox/2026-04-24--rl-token-bootstrapping-online-rl-with-vision-language-action-models.md): Reports real-robot online adaptation with a frozen VLA, up to 3× faster execution, and screw insertion improvement from 20% to 65% after minutes to a few hours.
 - [RL Token: Bootstrapping Online RL with Vision-Language-Action Models](../Inbox/2026-04-24--rl-token-bootstrapping-online-rl-with-vision-language-action-models.md): Abstract confirms the method is a lightweight online RL fine-tuning path for pretrained VLAs using only a few hours of real-world practice.
 
@@ -46,7 +46,7 @@ Robot teams need a pre-deployment safety test that perturbs the scene, not just 
 
 That supports a concrete evaluation service for labs and product teams shipping manipulation policies into homes, warehouses, or industrial cells. The workflow is straightforward: record benign trajectories for a task, generate scene-level hazard placements near transit, grasp, and vibration zones, then use the resulting failures to both score the policy and train a runtime detector. A cheap first check is to take one existing benchmark task or internal demo, add a single hazardous object with controlled placement, and see whether the policy preserves task success while avoiding the new hazard.
 
-### Evidence
+### Sources
 - [RedVLA: Physical Red Teaming for Vision-Language-Action Models](../Inbox/2026-04-24--redvla-physical-red-teaming-for-vision-language-action-models.md): Provides scene-level physical red teaming results across six VLA models, including attack success rates up to 95.5% and 100% attack success for dangerous item misuse scenarios.
 - [RedVLA: Physical Red Teaming for Vision-Language-Action Models](../Inbox/2026-04-24--redvla-physical-red-teaming-for-vision-language-action-models.md): Abstract states RedVLA is designed to detect physical safety risks before deployment and introduces a lightweight guard built from generated data.
 
@@ -55,6 +55,6 @@ Policy evaluation is close to a tool teams can use to rank robot policies before
 
 This creates room for an offline evaluation harness for model selection and regression testing. The near-term user is a robotics team that already trains several policy variants and cannot afford to run each one across every environment or hardware setup. A useful first product would ingest task descriptions, observation traces, and action chunks from candidate policies, then produce a ranked shortlist plus disagreement cases that still need real execution. The first check is simple: compare the harness ranking against a small real-world bakeoff on a handful of tasks and see whether the ordering stays stable enough to cut rollout volume.
 
-### Evidence
+### Sources
 - [dWorldEval: Scalable Robotic Policy Evaluation via Discrete Diffusion World Model](../Inbox/2026-04-24--dworldeval-scalable-robotic-policy-evaluation-via-discrete-diffusion-world-model.md): Reports action-grounded world-model evaluation with strong correlation to real execution across LIBERO, RoboTwin, and real-world tasks, plus lower long-horizon drift.
 - [Vision-Language-Action in Robotics: A Survey of Datasets, Benchmarks, and Data Engines](../Inbox/2026-04-24--vision-language-action-in-robotics-a-survey-of-datasets-benchmarks-and-data-engines.md): Survey documents benchmark gaps in compositional generalization and long-horizon reasoning, which supports demand for a more reliable evaluation workflow.

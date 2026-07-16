@@ -37,7 +37,7 @@ Teams letting coding agents edit production code can add a ratchet check for sup
 
 This is a cheap guardrail because it avoids long style prompts and does not require an LLM judge. It fits places where a quick suppression may be valid in rare cases, yet harmful when used as the default path. A small trial can start with one rule in CI, report the current count, and block only new instances on agent-written branches.
 
-### Evidence
+### Sources
 - [Speeding Up Ratchets with Resharp](../Inbox/2026-06-26--speeding-up-ratchets-with-resharp.md): The summary describes ratchets as counters for forbidden patterns, notes coding-agent style violations, and names `# pyrefly: ignore` as a target case.
 - [Speeding Up Ratchets with Resharp](../Inbox/2026-06-26--speeding-up-ratchets-with-resharp.md): The source text explains the type-checker suppression example and the workflow where only a planning agent can raise the ratchet.
 
@@ -46,7 +46,7 @@ Developers running several coding-agent CLIs can test a full-screen terminal wor
 
 Workbench is a concrete example of this pattern. It uses a private tmux server for persistent agent and terminal panes, supports Claude Code, Gemini, Goose, OpenCode, and Cursor, and adds read-only file viewers plus a live git diff per workspace. The available evidence gives product details, not task-success benchmarks, so the first check should measure operator-visible failures: lost sessions, wrong workspace edits, missed diffs, and time spent switching between tools.
 
-### Evidence
+### Sources
 - [Workbench: A TUI for parallel coding agents](../Inbox/2026-06-26--workbench-a-tui-for-parallel-coding-agents.md): The summary states that Workbench is a full-screen TUI for multiple coding-agent CLIs with tmux persistence, file viewers, shell panes, and git diff tracking.
 - [Workbench: A TUI for parallel coding agents](../Inbox/2026-06-26--workbench-a-tui-for-parallel-coding-agents.md): The source text describes persistent sessions on a private tmux server and the live git changes tab.
 - [Workbench: A TUI for parallel coding agents](../Inbox/2026-06-26--workbench-a-tui-for-parallel-coding-agents.md): The source text gives the saved state path and private tmux socket, supporting the persistence claim.
@@ -56,7 +56,7 @@ Maintainers of Rust-based rule scanners can run a contained Resharp evaluation w
 
 The Ratchets report gives one useful starting point: after replacing Rust’s `regex` crate with Resharp, the author saw about a 15% speed gain on the Sculptor codebase with no other code changes. The more reliable reason to test is functional coverage, since the motivating gap was proper lookaround support for regex-based rules.
 
-### Evidence
+### Sources
 - [Speeding Up Ratchets with Resharp](../Inbox/2026-06-26--speeding-up-ratchets-with-resharp.md): The source text reports the Ratchets v0.4.0 engine change, the 15% speed gain on Sculptor, and the original need for lookaround assertions.
 - [Speeding Up Ratchets with Resharp](../Inbox/2026-06-26--speeding-up-ratchets-with-resharp.md): The source text explains why some rules remained regex-based, especially comment-style rules, and says Rust's `regex` crate lacked proper lookaround.
 - [Speeding Up Ratchets with Resharp](../Inbox/2026-06-26--speeding-up-ratchets-with-resharp.md): The summary records the limits of the reported result: one codebase, no absolute runtime, no variance, and no hardware details.

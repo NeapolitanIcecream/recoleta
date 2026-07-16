@@ -37,7 +37,7 @@ Maintainers using repair agents should add a reproduction stage before patch gen
 
 A practical pilot can use 50 closed issues with known fixes. Accept a generated test only when it fails on the pre-fix commit and passes after the recorded fix, then compare patch success, maintainer review time, and false reproductions with the existing repair-agent workflow. Teams that clear this check can require an executable reproduction artifact in the issue before an autonomous repair run begins.
 
-### Evidence
+### Sources
 - [ReProAgent: Tool-Augmented Multi-Stage Agentic Generation of Bug Reproduction Tests from Issue Reports](../Inbox/2026-07-10--reproagent-tool-augmented-multi-stage-agentic-generation-of-bug-reproduction-tests-from-issue-reports.md): Reports ReProAgent's reproduction rates, runtime validation, average cost, and downstream repair benefit.
 - [ReProAgent: Tool-Augmented Multi-Stage Agentic Generation of Bug Reproduction Tests from Issue Reports](../Inbox/2026-07-10--reproagent-tool-augmented-multi-stage-agentic-generation-of-bug-reproduction-tests-from-issue-reports.md): Defines fail-to-pass tests as executable specifications that fail on buggy code and pass after the reference fix.
 
@@ -46,7 +46,7 @@ Teams operating coding agents should version the executable harness separately f
 
 TTHE showed the size of this opportunity with frozen model weights: on DeepSeek-V4-Flash, SWE-bench Verified rose from 20.0% to 35.0%. Its documented selection regret and judge errors also show why deployment needs held-out checks. Long-Horizon-Terminal-Bench adds a useful evaluation design: grade executable subtasks throughout the run and record timeouts, since 79% of unresolved runs timed out. A low-cost trial would compare two harness versions on the same model, task set, token budget, and wall-clock limit, tracking final completion, checkpoint progress, regressions, and cost.
 
-### Evidence
+### Sources
 - [TTHE: Test-Time Harness Evolution](../Inbox/2026-07-09--tthe-test-time-harness-evolution.md): Describes executable harness adaptation, fixed-model gains, and failures caused by imperfect proxy-based selection.
 - [Long-Horizon-Terminal-Bench: Testing the Limits of Agents on Long-Horizon Terminal Tasks with Dense Reward-Based Grading](../Inbox/2026-07-09--long-horizon-terminal-bench-testing-the-limits-of-agents-on-long-horizon-terminal-tasks-with-dense-reward-based-grading.md): Reports dense subtask grading, low long-horizon completion, resource use, and timeout prevalence.
 
@@ -55,6 +55,6 @@ Java teams using coding agents for unit-test generation can add a supervisor tha
 
 Scate used this pattern with a contextual bandit and an MCP program-analysis tool. Against unsupervised agent baselines, it reported 32.3% higher line coverage and 30.9% higher branch coverage with Gemini CLI, plus gains of 6.0% and 5.9% with Claude Code. A repository pilot should hold the model and token budget constant, then compare branch coverage, mutation score, generated-test maintenance failures, and cost per accepted test. The paper does not report absolute final coverage or statistical significance, so those checks should precede wider adoption.
 
-### Evidence
+### Sources
 - [SCATE: Learning to Supervise Coding Agents for Cost-Effective Test Generation](../Inbox/2026-07-09--scate-learning-to-supervise-coding-agents-for-cost-effective-test-generation.md): Details the coverage-aware supervisor, its action choices, and relative coverage improvements across two coding agents.
 - [SCATE: Learning to Supervise Coding Agents for Cost-Effective Test Generation](../Inbox/2026-07-09--scate-learning-to-supervise-coding-agents-for-cost-effective-test-generation.md): Documents premature agent termination on complex branches and the human monitoring burden the supervisor addresses.

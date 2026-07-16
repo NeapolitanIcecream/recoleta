@@ -37,7 +37,7 @@ Repository repair agents can start treating tests as editable evidence, not fixe
 
 A practical product shape is a CI-side repair worker for maintainers of large Python or Java repositories. It would open a draft PR with two linked diffs: the implementation patch and the test changes that justify it. The cheap check is narrow and clear: sample issues where maintainers had to edit tests during the fix, then compare a code-only agent against a coevolution loop on merged rate and reviewer rejection rate. The paper reports 41.33% resolved on SWE-bench Lite and 46.4% on SWT-bench Lite, with higher test quality than the listed baselines, which is enough to justify testing this workflow on repos with steady bug backlog and existing CI coverage.
 
-### Evidence
+### Sources
 - [Beyond Fixed Tests: Repository-Level Issue Resolution as Coevolution of Code and Behavioral Constraints](../Inbox/2026-04-06--beyond-fixed-tests-repository-level-issue-resolution-as-coevolution-of-code-and-behavioral-constraints.md): Reports joint search over code and test patches, plus benchmark gains on SWE-bench Lite and SWT-bench Lite.
 - [Beyond Fixed Tests: Repository-Level Issue Resolution as Coevolution of Code and Behavioral Constraints](../Inbox/2026-04-06--beyond-fixed-tests-repository-level-issue-resolution-as-coevolution-of-code-and-behavioral-constraints.md): Explains the coevolution mechanism and why fixed tests under-constrain repository repair.
 
@@ -46,7 +46,7 @@ High-volume document and transaction workflows can move model use to build time 
 
 This is buildable now as an internal tool for workflow engineers who already maintain prompt-based automations. Start with one narrow process that has a stable schema and enough traffic to matter, such as invoice field extraction or rules-based intake routing. The first validation is cost and variance: compile the current prompt workflow into code, replay a week of production inputs, and compare per-transaction latency, output drift, and manual exception rate. The reported break-even point is about 17 transactions on BFCL, with 4.5 ms median latency, 100% reproducibility, and large cost differences at scale. The DocILE result also suggests a bounded hybrid mode is workable when messy documents still require a constrained model call.
 
-### Evidence
+### Sources
 - [Compiled AI: Deterministic Code Generation for LLM-Based Workflow Automation](../Inbox/2026-04-06--compiled-ai-deterministic-code-generation-for-llm-based-workflow-automation.md): Summarizes the compiled workflow pattern, validation gates, and enterprise workflow fit.
 - [Compiled AI: Deterministic Code Generation for LLM-Based Workflow Automation](../Inbox/2026-04-06--compiled-ai-deterministic-code-generation-for-llm-based-workflow-automation.md): Provides break-even, token, and latency results for function-calling workloads.
 
@@ -55,6 +55,6 @@ Teams testing microservices can replace brittle recorded mocks with an online de
 
 The concrete build is a test harness that stands up a FastAPI-compatible mock endpoint backed by an LLM, seeded with dependency source code when available and traces when it is not. Early users are platform and backend teams with service meshes, many internal APIs, and frequent contract drift. The first check is direct: pick one dependency that currently relies on record-replay fixtures, run the same integration suite against the real dependency, the current mock, and an online simulator, then compare pass-fail agreement and payload-shape fidelity. Mirage reports 99% status-code fidelity and 99% response-shape fidelity in white-box mode across 110 scenarios, while record-replay reached 62% and 16% on the same benchmarks. That gap is large enough to justify a focused pilot around the most failure-prone dependencies.
 
-### Evidence
+### Sources
 - [MIRAGE: Online LLM Simulation for Microservice Dependency Testing](../Inbox/2026-04-06--mirage-online-llm-simulation-for-microservice-dependency-testing.md): Summarizes the online simulation approach and fidelity gains over static substitutes.
 - [MIRAGE: Online LLM Simulation for Microservice Dependency Testing](../Inbox/2026-04-06--mirage-online-llm-simulation-for-microservice-dependency-testing.md): Details why held-out scenarios break record-replay and other pre-generated mocks.

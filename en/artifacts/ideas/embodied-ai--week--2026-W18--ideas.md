@@ -39,7 +39,7 @@ VLA-ATTC gives one build pattern: sample two action chunks, use Dynamic Time War
 
 A useful first test is a replay of recent failed rollouts with injected grasp, pose, and semantic errors. The acceptance criteria should include success gain, false recovery triggers, and added latency per action, because a recovery layer that misses the control budget will fail on the robot even if it improves offline traces.
 
-### Evidence
+### Sources
 - [VLA-ATTC: Adaptive Test-Time Compute for VLA Models with Relative Action Critic Model](../Inbox/2026-05-02--vla-attc-adaptive-test-time-compute-for-vla-models-with-relative-action-critic-model.md): VLA-ATTC reports adaptive test-time compute, uncertainty detection from sampled action chunks, real Agilex Piper success gains, and 20.8 Hz control.
 - [Sentinel-VLA: A Metacognitive VLA Model with Active Status Monitoring for Dynamic Reasoning and Error Recovery](../Inbox/2026-05-02--sentinel-vla-a-metacognitive-vla-model-with-active-status-monitoring-for-dynamic-reasoning-and-error-recovery.md): Sentinel-VLA reports status monitoring, error recovery, real-world Agilex Piper results, and 13 ms/action timing.
 
@@ -50,7 +50,7 @@ The XPU characterization paper shows why this matters. For pi0, RTX 4090 inferen
 
 MotuBrain points to the same gating rule for world-action models. Its claimed value depends on cutting end-to-end latency from 4.90 seconds to 0.09 seconds, raising frequency to 11.11 Hz while keeping RoboTwin 2.0 success changes below one percentage point after the optimization stack. A practical release checklist should require the same paired report: action rate and success on the deployment hardware.
 
-### Evidence
+### Sources
 - [Characterizing Vision-Language-Action Models across XPUs: Constraints and Acceleration for On-Robot Deployment](../Inbox/2026-04-27--characterizing-vision-language-action-models-across-xpus-constraints-and-acceleration-for-on-robot-deployment.md): The XPU characterization paper reports model-hardware latency, energy, control-frequency filters, speedups, and a success regression after an OpenVLA optimization.
 - [MotuBrain: An Advanced World Action Model for Robot Control](../Inbox/2026-04-30--motubrain-an-advanced-world-action-model-for-robot-control.md): MotuBrain reports a world-action model optimization stack that cuts latency from 4.90 s to 0.09 s and raises control frequency to 11.11 Hz.
 
@@ -61,6 +61,6 @@ LWD reports this loop at fleet scale: current checkpoints are deployed to 16 dua
 
 Smaller labs can test the logging layer with cheaper teleoperation hardware. Phone2Act records synchronized demonstrations in LeRobot format using an Android phone, ROS 2, RGB frames, joint states, end-effector poses, and gripper state. Fine-tuning GR00T-N1.5-3B on 130 collected episodes produced 9 successes in 10 real Dobot CR5 trials. Its measured 350–440 ms phone-to-robot latency also gives a caution: the recorder may be useful for demonstrations before the teleoperation path is fast enough for all correction workflows.
 
-### Evidence
+### Sources
 - [Learning while Deploying: Fleet-Scale Reinforcement Learning for Generalist Robot Policies](../Inbox/2026-05-01--learning-while-deploying-fleet-scale-reinforcement-learning-for-generalist-robot-policies.md): LWD reports a fleet learning loop using autonomous rollouts and human interventions, 16 dual-arm robots, long-horizon tasks, and 95% average success.
 - [Phone2Act: A Low-Cost, Hardware-Agnostic Teleoperation System for Scalable VLA Data Collection](../Inbox/2026-05-03--phone2act-a-low-cost-hardware-agnostic-teleoperation-system-for-scalable-vla-data-collection.md): Phone2Act reports a low-cost teleoperation and recording path in LeRobot format, 130 demonstration episodes, 9/10 real successes, and measured teleoperation latency.

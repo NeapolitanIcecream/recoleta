@@ -39,7 +39,7 @@ Teams adapting a pretrained VLA to a new robot station should test a small train
 
 The adoption blocker is familiar in lab deployments: full fine-tuning can fit a small demonstration set and lose behavior that came from large-scale pretraining. PriorVLA reports 57% OOD success across eight real-world tasks and two embodiments with standard data, plus 32% OOD success with only 10 demonstrations per task. UniSteer reports real-world average success rising from 20% to 90% after 66 minutes of adaptation across four tasks, using fewer pure human trajectories than DAgger. A cheap validation is to run the same OOD placement and background suite against full fine-tuning, a frozen-prior adapter, and a human-correction noise actor, with success split by ID and OOD cases.
 
-### Evidence
+### Sources
 - [PriorVLA: Prior-Preserving Adaptation for Vision-Language-Action Models](../Inbox/2026-05-11--priorvla-prior-preserving-adaptation-for-vision-language-action-models.md): PriorVLA keeps a frozen prior expert, trains a separate adaptation expert, updates fewer parameters, and reports OOD and few-shot real-world results.
 - [Unified Noise Steering for Efficient Human-Guided VLA Adaptation](../Inbox/2026-05-11--unified-noise-steering-for-efficient-human-guided-vla-adaptation.md): UniSteer freezes the flow-matching VLA decoder, trains a small noise actor from RL and human corrections, and reports 90% real-world success after 66 minutes.
 
@@ -48,7 +48,7 @@ Manipulation benchmarks for VLA and World Action Model policies should score tra
 
 This matters for tasks such as stacking, pouring, writing, grasping, and dual-arm coordination, where a policy can reach the right object and still fail at contact. HarmoWAM’s motivation study found that Imagine-then-Execute reached targets in all OOD transit cases but had interaction success as low as 2/10, while Joint Modeling kept high interaction success near the object and failed more often during OOD transit. The practical test is to label episodes by phase using object proximity, contact state, or manual segment boundaries, then report success for approach, first contact, and completed manipulation. If one phase dominates failures, a gated two-expert policy becomes a targeted build rather than a broad architecture change.
 
-### Evidence
+### Sources
 - [HarmoWAM: Harmonizing Generalizable and Precise Manipulation via Adaptive World Action Models](../Inbox/2026-05-11--harmowam-harmonizing-generalizable-and-precise-manipulation-via-adaptive-world-action-models.md): HarmoWAM separates reactive transit control from predictive interaction control and reports phase-specific failure patterns.
 - [HarmoWAM: Harmonizing Generalizable and Precise Manipulation via Adaptive World Action Models](../Inbox/2026-05-11--harmowam-harmonizing-generalizable-and-precise-manipulation-via-adaptive-world-action-models.md): The paper describes a Process-Adaptive Gating Mechanism and reports OOD gains across unseen background, position, and object variations.
 - [HarmoWAM: Harmonizing Generalizable and Precise Manipulation via Adaptive World Action Models](../Inbox/2026-05-11--harmowam-harmonizing-generalizable-and-precise-manipulation-via-adaptive-world-action-models.md): The motivation study compares Imagine-then-Execute and Joint Modeling on transit and manipulation success under ID and OOD settings.
@@ -58,7 +58,7 @@ Robot data pipelines with large stores of unlabeled video should test latent-tra
 
 The useful check is small and mechanical: pretrain the latent encoder on action-free third-person and wrist-camera clips, measure additivity and reversibility errors, then fine-tune the same VLA backbone with and without the auxiliary latent targets. ALAM reports 25-85x lower additivity and reversibility errors than unstructured latent-action baselines. On MetaWorld MT50, π0 + ALAM reaches 85.0% average success compared with 47.9% for π0; on LIBERO it reaches 98.1% compared with 94.1%. The case is strongest for teams already storing video of successful or near-successful manipulation without synchronized action labels.
 
-### Evidence
+### Sources
 - [ALAM: Algebraically Consistent Latent Action Model for Vision-Language-Action Models](../Inbox/2026-05-11--alam-algebraically-consistent-latent-action-model-for-vision-language-action-models.md): ALAM learns structured latent transitions from action-free videos and uses them as auxiliary targets during VLA policy training.
 - [ALAM: Algebraically Consistent Latent Action Model for Vision-Language-Action Models](../Inbox/2026-05-11--alam-algebraically-consistent-latent-action-model-for-vision-language-action-models.md): The paper reports lower latent consistency errors and large success gains on MetaWorld MT50 and LIBERO.
 - [ALAM: Algebraically Consistent Latent Action Model for Vision-Language-Action Models](../Inbox/2026-05-11--alam-algebraically-consistent-latent-action-model-for-vision-language-action-models.md): The source explains why action-free videos can supply behavior-relevant priors when action-labeled robot data is scarce.

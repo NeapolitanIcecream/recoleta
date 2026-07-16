@@ -37,7 +37,7 @@ Add a decoder that predicts future robot-centric pointmaps or their deltas, cent
 
 Run a low-data test with fixed-camera training and unseen-camera evaluation. Compare depth-delta, camera-frame pointmap-delta, and robot-frame pointmap-delta targets. Use a pilot decision threshold: stop if the robot-frame target improves unseen-camera success by under 5 percentage points or lowers fixed-camera success by more than 3 points.
 
-### Evidence
+### Sources
 - [WALA Learning Executable Latent Actions from Action-Labeled Demonstrations and Action-Free Videos](../Inbox/2026-07-13--wala-learning-executable-latent-actions-from-action-labeled-demonstrations-and-action-free-videos.md): WALA learns executable latent actions from semantic and geometric future changes and reports large policy gains.
 - [See like a Robot: Robot-Centric Pointmaps for Vision-Language-Action Models](../Inbox/2026-07-13--see-like-a-robot-robot-centric-pointmaps-for-vision-language-action-models.md): Robot-centric pointmaps align dense scene geometry with the robot action frame and improve viewpoint generalization.
 
@@ -48,7 +48,7 @@ Attach projected gripper keypoints to each generated view, triangulate them fram
 
 Generate matched batches with and without this check, then train equal-size policies and evaluate unseen scenes and camera poses. Use a pilot decision threshold: drop the check if it rejects fewer than 10% of clips while improving OOD success by under 3 percentage points, or if accepted clips still exceed the calibration error of real demonstrations by more than 25%.
 
-### Evidence
+### Sources
 - [Xiaomi-Robotics-U0: Unified Embodied Synthesis with World Foundation Model](../Inbox/2026-07-13--xiaomi-robotics-u0-unified-embodied-synthesis-with-world-foundation-model.md): Xiaomi-Robotics-U0 uses generated embodied data to raise downstream out-of-distribution manipulation success.
 - [Pix2Act: Image-Space Manipulation Policies with Equivariant Augmentation](../Inbox/2026-07-13--pix2act-image-space-manipulation-policies-with-equivariant-augmentation.md): Pix2Act represents gripper motion as continuous multi-view keypoint paths and recovers 3D actions through triangulation.
 
@@ -59,6 +59,6 @@ Pretrain a future-delta encoder on ordinary videos of the same tool interaction.
 
 Test one scissors or screwdriver skill with identical retargeting and simulation budgets. Measure success under perturbed object pose, tracking error, and hardware completion. Use a pilot decision threshold: stop if video-derived rewards add under 5 percentage points of perturbed-pose success, increase object-tracking error by over 2 mm, or reduce hardware completion relative to keypoint rewards alone.
 
-### Evidence
+### Sources
 - [A Minimalist Retargeting-Guided Reinforcement Learning Recipe for Dexterous Manipulation](../Inbox/2026-07-13--a-minimalist-retargeting-guided-reinforcement-learning-recipe-for-dexterous-manipulation.md): Regrind combines interaction-preserving retargeting from one human demonstration with residual RL for dexterous tool use.
 - [WALA Learning Executable Latent Actions from Action-Labeled Demonstrations and Action-Free Videos](../Inbox/2026-07-13--wala-learning-executable-latent-actions-from-action-labeled-demonstrations-and-action-free-videos.md): WALA extracts semantic and geometric future changes from action-free videos for executable policy learning.

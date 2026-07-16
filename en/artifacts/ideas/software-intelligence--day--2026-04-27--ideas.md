@@ -39,7 +39,7 @@ The reason to test this now is practical: codebase access alone can miss decisio
 
 A local pilot could use 10 recent tickets with known cross-document requirements. Run the same agent once with repository access only and once with retrieved decisions plus acceptance criteria. Compare blocking violations, deprecated pattern use, tests added, and reviewer rework. The published result is small and clean-room, so the local test should focus on whether the team’s own hidden rules are being followed.
 
-### Evidence
+### Sources
 - [Context-Augmented Code Generation: How Product Context Improves AI Coding Agent Decision Compliance by 49%](../Inbox/2026-04-27--context-augmented-code-generation-how-product-context-improves-ai-coding-agent-decision-compliance-by-49.md): Defines decision compliance, reports 46% to 95% improvement with Brief, and lists the workflow and benchmark limits.
 - [Context-Augmented Code Generation: How Product Context Improves AI Coding Agent Decision Compliance by 49%](../Inbox/2026-04-27--context-augmented-code-generation-how-product-context-improves-ai-coding-agent-decision-compliance-by-49.md): Explains why team decisions in product tools and wikis are invisible to codebase-only agents.
 
@@ -50,7 +50,7 @@ BenchGuard gives a concrete template for this workflow. It checks the full task 
 
 The adoption path is small: run the audit on a 50-task slice of any execution benchmark used in procurement, regression testing, or leaderboard reporting. Fix fatal task errors and evaluator mismatches first, then rerun the affected model comparisons. This protects teams from selecting tools based on broken tests.
 
-### Evidence
+### Sources
 - [BenchGuard: Who Guards the Benchmarks? Automated Auditing of LLM Agent Benchmarks](../Inbox/2026-04-27--benchguard-who-guards-the-benchmarks-automated-auditing-of-llm-agent-benchmarks.md): Summarizes BenchGuard’s inputs, audit process, defect taxonomy, confirmed defects, recall, and reported costs.
 - [BenchGuard: Who Guards the Benchmarks? Automated Auditing of LLM Agent Benchmarks](../Inbox/2026-04-27--benchguard-who-guards-the-benchmarks-automated-auditing-of-llm-agent-benchmarks.md): Describes why execution-based benchmark errors arise across interacting instructions, reference programs, evaluators, and environments.
 
@@ -61,6 +61,6 @@ Mono2Sls shows this pattern in a narrow but useful setting: Flask and Express ap
 
 A team can test the approach on one low-risk internal service by asking the agent to produce these artifacts and by failing the run when routes, handlers, IAM resources, DynamoDB tables, or SAM declarations disagree. The first success criterion should be deployability and API coverage, followed by business-behavior tests.
 
-### Evidence
+### Sources
 - [Mono2Sls: Automated Monolith-to-Serverless Migration via Multi-Stage Pipeline with Static Analysis](../Inbox/2026-04-27--mono2sls-automated-monolith-to-serverless-migration-via-multi-stage-pipeline-with-static-analysis.md): Lists Mono2Sls stages, extracted facts, cross-artifact checks, benchmark size, deployment success, correctness, and API coverage.
 - [Mono2Sls: Automated Monolith-to-Serverless Migration via Multi-Stage Pipeline with Static Analysis](../Inbox/2026-04-27--mono2sls-automated-monolith-to-serverless-migration-via-multi-stage-pipeline-with-static-analysis.md): Explains the need to align function boundaries, API definitions, handler implementations, and infrastructure declarations across generated artifacts.

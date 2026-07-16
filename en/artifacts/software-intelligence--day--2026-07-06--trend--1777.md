@@ -30,7 +30,7 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s strongest evidence treats coding agents as repository actors that train, act, and fail inside real workflows. KAT-Coder-V2.5, EvoAgentBench, and EdgeBench put weight on executable environments, long runs, and reusable procedures; GitHub studies add maintainer-facing costs.
 
-## Clusters
+## Findings
 
 ### Executable repository training and long-run evaluation
 Repository-level coding agents need rebuildable projects, real tests, and long trajectories. KAT-Coder-V2.5 reports that AutoBuilder raised executable environment construction success from 16.5% to 57.2% and produced more than 100,000 verifiable environments across 12 languages. Its training pipeline also filters trajectories by exploration, localization, patch quality, verification, recovery, and honesty.

@@ -34,14 +34,14 @@ pass_kind: trend_synthesis
 ## Overview
 This period’s clearest signal is operational control for agents already doing real work. Context Sculpting tests editable context, clawdcursor exposes guarded desktop actions, and Cursor adds spend controls. The evidence is practical and uneven: many items describe mechanisms, while few report benchmarks.
 
-## Clusters
+## Findings
 
 ### Editable agent context
 Context Sculpting tests a two-model harness where a stronger outer model can rewrite the working context of a weaker task agent. The setup is useful because long agent runs often carry stale files, failed paths, tool noise, and distractor evidence.
 
 The results support feasibility, with clear cost limits. In the first demo, all 8 runs passed verification and the harness made no rewrites. In the noisier second demo, the outer agent made 14 context rewrites across 2 harnessed runs. The coding repair example passed in both forms: the control run used 7 turns, 42.7 seconds, and about $0.015; the harnessed run used 12 turns, 566.9 seconds, about $1.06, and hit a max-turn guardrail. The result is a concrete warning: context editing can work, and policy choice can make it expensive fast.
 
-#### Evidence
+#### Sources
 - [Context Sculpting](../Inbox/2026-06-06--context-sculpting.md): Summarizes the two-model context rewriting harness, run counts, rewrite counts, verification results, cost, latency, and guardrail outcome.
 
 ### Desktop and tool-runtime control
@@ -49,7 +49,7 @@ The Model Context Protocol (MCP) is showing up as a practical boundary for agent
 
 Aquifer addresses a different operating problem: bursty tool traffic. Agents submit jobs through MCP or HTTP, Aquifer stores them in SQLite, and per-upstream workers dispatch requests at configured rates. Example limits include OpenAI at 10 requests per second with 3 concurrent requests and Stripe at 20 requests per second with 5 concurrent requests. These are engineering controls, with no reported throughput or task-completion benchmark in the excerpts.
 
-#### Evidence
+#### Sources
 - [AI Can now control your desktop](../Inbox/2026-06-06--ai-can-now-control-your-desktop.md): Describes clawdcursor's MCP desktop-control design, compact tool groups, platform support, and safety gate.
 - [Show HN: Aquifer – an MCP runtime for spiky agent tool traffic](../Inbox/2026-06-06--show-hn-aquifer-an-mcp-runtime-for-spiky-agent-tool-traffic.md): Describes Aquifer's durable queue, rate controls, SQLite persistence, webhooks, SSE status, and example rate limits.
 
@@ -58,7 +58,7 @@ Cost control is now part of coding-agent product design. Cursor cut Teams annual
 
 The maintenance concern appears in Code Is Cheap(er). The essay argues that generated code can arrive faster than reviewers can understand it, so teams should keep LLM changes small and treat simplification as an engineering duty. It offers no measurement, but it matches the operational theme: cheap generation still creates review, ownership, and budget work.
 
-#### Evidence
+#### Sources
 - [Cursor cuts prices, adds enterprise spend controls amid "tokenomics" reckoning](../Inbox/2026-06-06--cursor-cuts-prices-adds-enterprise-spend-controls-amid-tokenomics-reckoning.md): Provides Cursor pricing changes, enterprise spend controls, and model cost comparisons.
 - [Code Is Cheap(er)](../Inbox/2026-06-06--code-is-cheap-er.md): Summarizes the argument that AI lowers code creation cost while increasing the burden of reading, judging, and simplifying generated code.
 
@@ -67,5 +67,5 @@ The safety item argues for hard boundaries around actions where recovery would c
 
 The reported evidence includes measurements across 4 institutions and audits of 4 global LLMs. CPI reportedly ranged from about 22 to 55, near or below the critical threshold. The paper also reports a recorded stress test with Claude Opus 4.8, but the strongest cited result is architectural: detection is used for recoverable errors, while containment is reserved for ruin-risk actions.
 
-#### Evidence
+#### Sources
 - [You can't detect your way out of catastrophic LLM failure](../Inbox/2026-06-06--you-can-t-detect-your-way-out-of-catastrophic-llm-failure.md): Summarizes IGO's four-layer safety design, CPI formula and bands, production measurements, and Claude Opus 4.8 stress-test claims.

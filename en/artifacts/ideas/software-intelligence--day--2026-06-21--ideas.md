@@ -37,7 +37,7 @@ Teams using cheaper coding agents can make module boundaries executable. ANMA’
 
 The useful adoption test is a small repo with known dependency rules. Run the same boundary-sensitive task with a cheaper model on a plain checkout and on a checkout with generated guidance plus `anma check` in CI. ANMA reports that Claude Haiku 4.5 violated a Python boundary in 13 of 19 plain-repo runs and 0 of 20 ANMA runs. A TypeScript follow-up reports 18 violations in 20 control runs and 0 of 20 with ANMA. The authors also say Claude Opus 4.8 respected the Python boundary without ANMA, so the practical target is cost-sensitive agent use and CI governance for human or agent-written diffs.
 
-### Evidence
+### Sources
 - [Show HN: ANMA, boundary contracts for cheaper AI coding agents](../Inbox/2026-06-21--show-hn-anma-boundary-contracts-for-cheaper-ai-coding-agents.md): Summarizes ANMA’s YAML contracts, generated Claude Code guidance, hooks, CI checks, benchmark results, and the narrower claim for cheaper agents.
 - [Show HN: ANMA, boundary contracts for cheaper AI coding agents](../Inbox/2026-06-21--show-hn-anma-boundary-contracts-for-cheaper-ai-coding-agents.md): Gives the Python benchmark result and states the value as insurance for cheaper agents plus CI governance.
 - [Show HN: ANMA, boundary contracts for cheaper AI coding agents](../Inbox/2026-06-21--show-hn-anma-boundary-contracts-for-cheaper-ai-coding-agents.md): Lists the generated files, `anma sync --check`, `anma check`, warning mode, JSON output, and exit codes for CI use.
@@ -47,7 +47,7 @@ Coding-agent spend can be checked at the session and turn level before it become
 
 A practical workflow is to run a local report at the end of each agent-heavy day and add `lupen budget --over 20 --last 7d` or `lupen verify` to scripts used by power users. Both checks can exit with code 4, which gives teams a simple way to catch cost drift or runaway sessions without uploading prompts, file paths, images, or URLs to a hosted service. The evidence is feature-level rather than a benchmark, so teams should validate it against their own provider invoices and raw logs during a short pilot.
 
-### Evidence
+### Sources
 - [Show HN: Lupen – an itemized, verified receipt for Claude Code and Codex spend](../Inbox/2026-06-21--show-hn-lupen-an-itemized-verified-receipt-for-claude-code-and-codex-spend.md): Describes Lupen’s local JSONL ingestion, grouping model, recomputed costs, verification, budget checks, and exit code 4.
 - [Show HN: Lupen – an itemized, verified receipt for Claude Code and Codex spend](../Inbox/2026-06-21--show-hn-lupen-an-itemized-verified-receipt-for-claude-code-and-codex-spend.md): Shows the local spend breakdown by provider, session, turn, step, skill group, and sub-agent.
 - [Show HN: Lupen – an itemized, verified receipt for Claude Code and Codex spend](../Inbox/2026-06-21--show-hn-lupen-an-itemized-verified-receipt-for-claude-code-and-codex-spend.md): Documents CLI reports, verification and budget gates, local-only operation, and attachment tracking.
@@ -57,7 +57,7 @@ Teams can test whether an agent has learned an unfamiliar corpus before giving i
 
 The practical version is a small internal exam for a private repo, product manual, or research library. Give the agent time to study the corpus using its normal tools, keep the exam hidden, then score answers under fixed token budgets. The early result warns against assuming that search access solves the problem: Qwen3.5-9B on DSPy improved from 9.6 to 29.4 lenient score only when forced to use 20 search iterations, and the reported fine-tuning baselines did not reliably raise agent expertise.
 
-### Evidence
+### Sources
 - [Machine Studying](../Inbox/2026-06-21--machine-studying.md): Defines StudyBench, the corpus-study setup, the expertise metric, domains, tool setup, and early results.
 - [Machine Studying](../Inbox/2026-06-21--machine-studying.md): Explains that studying can change weights, prompts, tools, indexes, notes, or harness state before downstream evaluation is known.
 - [Machine Studying](../Inbox/2026-06-21--machine-studying.md): Reports gaps in expertise on post-cutoff domains and difficulty improving agent expertise with early supervised or self-supervised methods.

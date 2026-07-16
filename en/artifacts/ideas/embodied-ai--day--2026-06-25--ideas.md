@@ -37,7 +37,7 @@ Robot teams that already run smoke tests before deployment can keep those rollou
 
 A practical version would store each candidate checkpoint’s probe outcomes, rollout length, duration, termination behavior, and missing-statistic flags, then choose a policy for the target condition with a trial-disjoint validation rule. The cheap check is to replay the lab’s existing commissioning logs through this rule and compare against the single-checkpoint choice on held-out rollouts.
 
-### Evidence
+### Sources
 - [RouterVLA: Turning Smoke Tests into Supervision for Heterogeneous VLA Selection](../Inbox/2026-06-25--routervla-turning-smoke-tests-into-supervision-for-heterogeneous-vla-selection.md): RouterVLA reports trial-disjoint smoke-test routing, the 0.6149 versus 0.4686 success comparison, learned-scorer results, and same-trial inflation.
 - [RouterVLA: Turning Smoke Tests into Supervision for Heterogeneous VLA Selection](../Inbox/2026-06-25--routervla-turning-smoke-tests-into-supervision-for-heterogeneous-vla-selection.md): The paper abstract states that recorded probes build profiles for frozen experts and separate trials score the selected expert.
 
@@ -46,7 +46,7 @@ Latency-tolerant manipulation tasks can add an execution wrapper that samples se
 
 This is a concrete adoption path for teams with a trained VLA policy that fails through bad contact, geometry violations, or accumulated action error. A first test can run the wrapper only on slow object rearrangement or insertion subtasks, then compare success, rejection rate, added latency, and recovery after mismatch against the base policy.
 
-### Evidence
+### Sources
 - [E-TTS: A New Embodied Test-Time Scaling Framework for Robotic Manipulation](../Inbox/2026-06-25--e-tts-a-new-embodied-test-time-scaling-framework-for-robotic-manipulation.md): E-TTS describes reasoning-action candidate sampling, verifier scoring, history-aware feedback, and average reported simulated gains.
 - [PhysReflect-VLA: Physical Feasibility and Self-Reflective Regulation for Reliable Vision-Language-Action Policies](../Inbox/2026-06-25--physreflect-vla-physical-feasibility-and-self-reflective-regulation-for-reliable-vision-language-action-policies.md): PhysReflect-VLA describes physical-feasibility scoring, predicted-versus-observed state checks, corrective guidance, and real-robot success gains.
 
@@ -55,6 +55,6 @@ Robot evaluation should separate a clean completion from a completion that inclu
 
 A deployment review can add this as a gate on top of task success. Annotators or automated monitors would tag hazards during the whole trajectory, then report unsafe success as its own line item. The first useful check is small: rescore recent successful rollouts for contact, clearance, hot-zone, spill, and temporal-precondition violations, then see how many “successful” runs would fail a safety-adjusted review.
 
-### Evidence
+### Sources
 - [ForesightSafety-VLA: A Unified Diagnostic Safety Benchmark for Vision-Language-Action Models](../Inbox/2026-06-25--foresightsafety-vla-a-unified-diagnostic-safety-benchmark-for-vision-language-action-models.md): ForesightSafety-VLA defines the four rollout outcomes, 13 safety categories, process metrics, scenario design, and unsafe-success baseline results.
 - [ForesightSafety-VLA: A Unified Diagnostic Safety Benchmark for Vision-Language-Action Models](../Inbox/2026-06-25--foresightsafety-vla-a-unified-diagnostic-safety-benchmark-for-vision-language-action-models.md): The abstract states that safety is the primary evaluation target and that controlled variations diagnose failure sources.

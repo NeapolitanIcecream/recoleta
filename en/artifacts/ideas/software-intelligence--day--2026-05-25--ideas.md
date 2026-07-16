@@ -39,7 +39,7 @@ SETUPX gives this workflow a concrete shape. Its eXPerience Units store setup si
 
 A cheap trial would run this only on repository bootstrapping in CI or developer onboarding. The pass condition is concrete: documented commands and tests run in a clean container, the repair history is reusable, and harmful dependency changes can be rolled back.
 
-### Evidence
+### Sources
 - [SetupX: Can LLM Agents Learn from Past Failures in Functionality-Correct Code Repository Setup?](../Inbox/2026-05-25--setupx-can-llm-agents-learn-from-past-failures-in-functionality-correct-code-repository-setup.md): SETUPX describes XPUs, Docker rollback, Prosecutor-Judge verification, and the 92% pass rate with a 10-point memory gain.
 - [SetupX: Can LLM Agents Learn from Past Failures in Functionality-Correct Code Repository Setup?](../Inbox/2026-05-25--setupx-can-llm-agents-learn-from-past-failures-in-functionality-correct-code-repository-setup.md): The paper abstract defines the XPU representation, LIFO Docker snapshot stack, and Prosecutor-Judge Verification Protocol.
 - [CODESKILL: Learning Self-Evolving Skills for Coding Agents](../Inbox/2026-05-25--codeskill-learning-self-evolving-skills-for-coding-agents.md): CODESKILL reports compact skill-bank management and pass-rate gains for frozen coding agents.
@@ -51,7 +51,7 @@ RepoMirage shows why this is worth testing. It keeps SWE-Bench Verified issue be
 
 The first adoption point is an internal benchmark gate. Take a set of real tickets, add behavior-preserving perturbations that move constants, mask runtime targets, or insert proxy chains, and compare agent outcomes with and without the structure pre-pass. The useful metric is whether the agent identifies the same task-relevant files under both layouts.
 
-### Evidence
+### Sources
 - [RepoMirage: Probing Repository Context Reasoning in Code Agents with Perturbations](../Inbox/2026-05-25--repomirage-probing-repository-context-reasoning-in-code-agents-with-perturbations.md): RepoMirage reports the perturbation method, file-access findings, score drops, and low results on explicit multi-file tasks.
 - [RepoMirage: Probing Repository Context Reasoning in Code Agents with Perturbations](../Inbox/2026-05-25--repomirage-probing-repository-context-reasoning-in-code-agents-with-perturbations.md): The abstract defines repository context reasoning and describes the large drop on RepoMirage-Extend.
 - [RepoMirage: Probing Repository Context Reasoning in Code Agents with Perturbations](../Inbox/2026-05-25--repomirage-probing-repository-context-reasoning-in-code-agents-with-perturbations.md): The paper explains why issue resolution often requires tracing calling relationships and execution constraints across files.
@@ -63,7 +63,7 @@ AIShellJack provides a starting test design. The study added poisoned coding-rul
 
 A useful internal control is a regression suite that fails when an assistant executes commands unrelated to the user task, reads credential files, changes authentication files, installs persistence, or sends data to unapproved endpoints. The suite should run against tool upgrades and model-backend changes, because the risk sits in the full assistant workflow, not only in the model response.
 
-### Evidence
+### Sources
 - [How Agentic AI Coding Assistants Become the Attacker's Shell](../Inbox/2026-05-25--how-agentic-ai-coding-assistants-become-the-attacker-s-shell.md): The AIShellJack summary reports the payload set, tested tools, attack success rates, MITRE coverage, injection sources, and CVE evidence.
 - [How Agentic AI Coding Assistants Become the Attacker's Shell](../Inbox/2026-05-25--how-agentic-ai-coding-assistants-become-the-attacker-s-shell.md): The paper gives concrete CVE examples and explains that hidden markdown in an imported skill file can trigger credential exfiltration.
 - [How Agentic AI Coding Assistants Become the Attacker's Shell](../Inbox/2026-05-25--how-agentic-ai-coding-assistants-become-the-attacker-s-shell.md): The paper explains why autonomous command execution, file editing, and network access increase the impact of prompt injection.

@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # 机器人控制回路的部署信号
 
-## Summary
+## 摘要
 机器人团队可以用最近的 VLA 论文里的具体流程，测试紧凑潜在规划、门控触觉纠正和私有日志训练。现在真正的落地阻碍不只是模型大小或基准分数，而是控制环在失效点有没有合适的部署信号：可达的未来状态、接触反馈，或无法集中保存的日志所对应的任务标签。
 
 ## Reachability checks for latent world-model planning
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 缺的检查是可规划性。RC-aux 说明了原因：短视野的潜在预测仍然会产生潜在捷径，目标在潜在空间里看起来很近，动作预算内却到不了。一个低成本评估方法，是在世界模型测试集中加入有限预算可达性标签和时间硬负样本，然后在有障碍或长时程任务上，把动作成功率和终端潜在距离对比起来。对于 Wall 任务，RC-aux 把成功率从 LeWM 控制器的 50.4 ± 6.5 提高到 83.6 ± 3.6，规划器消融也显示，可达性感知规划器在训练之外还能带来额外收益。
 
-### Evidence
+### 资料来源
 - [One Token Per Frame: Reconsidering Visual Bandwidth in World Models for VLA Policy](../Inbox/2026-05-08--one-token-per-frame-reconsidering-visual-bandwidth-in-world-models-for-vla-policy.md): OneWM-VLA compresses each view and frame into one semantic token, jointly generates latent tokens and action chunks, and reports LIBERO and real Piper-arm gains.
 - [Predictive but Not Plannable: RC-aux for Latent World Models](../Inbox/2026-05-08--predictive-but-not-plannable-rc-aux-for-latent-world-models.md): RC-aux identifies latent shortcuts as a planning failure mode and reports large gains from finite-budget reachability supervision.
 
@@ -42,7 +42,7 @@ language_code: zh-CN
 
 这对做解袋子、擦拭、盖章、拧盖、插入等任务的团队最相关，因为这些任务里光靠视觉看不到受力状态。一个实用测试是，针对某个接触密集操作收集 30 到 50 个演示，给门控标注接触状态，然后在推理时关闭触觉输入，比较成功率。AT-VLA 报告闭环触觉反应时间在 0.04 秒以内，并把真实机器人上的擦花瓶成功率提高到 0.67，而 GO-1 和 π0.5 分别是 0.07 和 0.33；解袋子成功率提高到 0.33，而另外两者分别是 0.20 和 0.00。
 
-### Evidence
+### 资料来源
 - [AT-VLA: Adaptive Tactile Injection for Enhanced Feedback Reaction in Vision-Language-Action Models](../Inbox/2026-05-08--at-vla-adaptive-tactile-injection-for-enhanced-feedback-reaction-in-vision-language-action-models.md): AT-VLA adds gated tactile feedback, a dual-rate tactile correction stream, and reports real-robot gains on contact-rich tasks.
 
 ## Federated pseudo-instruction training for private robot logs
@@ -50,5 +50,5 @@ language_code: zh-CN
 
 第一次部署检查应当很窄：为某一类机器人选定固定指令集，在留出的日志上做本地伪标注，检查不同客户端的任务嵌入是否仍然分开。论文把非 i.i.d. 机器人数据下的特征坍塌列为一种失败模式，所以在更长的联邦训练前，嵌入分离应该进入验收测试。ForgeVLA 在 LIBERO-Goal 上达到 55.2% 的成功率和 100% 的 Pass@50，而 FedAvg 是 28.8% 和 80%；实验使用 10 个客户端、20 轮通信和每轮 5 个本地 epoch。
 
-### Evidence
+### 资料来源
 - [ForgeVLA: Federated Vision-Language-Action Learning without Language Annotations](../Inbox/2026-05-08--forgevla-federated-vision-language-action-learning-without-language-annotations.md): ForgeVLA trains from distributed vision-action logs with on-device pseudo instructions, contrastive planning loss, and adaptive server aggregation, with measured gains over FedAvg.

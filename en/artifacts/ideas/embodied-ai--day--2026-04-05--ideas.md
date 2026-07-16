@@ -37,7 +37,7 @@ The paper matters because it treats unlearning as a robot-control problem, not o
 
 A cheap validation step is straightforward: pick one recurring forbidden action or one known spurious visual trigger in an existing policy, apply a module-level edit, and measure three things side by side on the same eval set: forgetting success, retained task success, and safety-violation recovery after quantization. If those numbers move together, unlearning becomes a practical support layer for robotics deployment reviews.
 
-### Evidence
+### Sources
 - [VLA-Forget: Vision-Language-Action Unlearning for Embodied Foundation Models](../Inbox/2026-04-05--vla-forget-vision-language-action-unlearning-for-embodied-foundation-models.md): Summary of the staged unlearning method and benchmark results on OpenVLA-7B and pi0fast-base.
 - [VLA-Forget: Vision-Language-Action Unlearning for Embodied Foundation Models](../Inbox/2026-04-05--vla-forget-vision-language-action-unlearning-for-embodied-foundation-models.md): Abstract claims on forgetting efficacy, retention, and post-quantization recovery reduction.
 - [VLA-Forget: Vision-Language-Action Unlearning for Embodied Foundation Models](../Inbox/2026-04-05--vla-forget-vision-language-action-unlearning-for-embodied-foundation-models.md): Introduction frames the operational problem as unsafe or sensitive behaviors turning into physical actions.
@@ -49,7 +49,7 @@ This is useful because fixed chunk size is still a tuning burden in VLA deployme
 
 The first build should be a replanning middleware layer for one existing policy, with logs that show chosen chunk length, entropy trend, and task outcome. A low-cost check is to replay a benchmark or lab task suite with fixed chunk sizes and AAC under the same compute budget, then compare success rate, replan count, and visible motion discontinuities. That would tell a robotics team whether adaptive chunking is worth adopting before touching training data or model weights.
 
-### Evidence
+### Sources
 - [Adaptive Action Chunking at Inference-time for Vision-Language-Action Models](../Inbox/2026-04-05--adaptive-action-chunking-at-inference-time-for-vision-language-action-models.md): Summary of AAC, the fixed-chunk deployment problem, and benchmark gains across RoboCasa and LIBERO.
 - [Adaptive Action Chunking at Inference-time for Vision-Language-Action Models](../Inbox/2026-04-05--adaptive-action-chunking-at-inference-time-for-vision-language-action-models.md): Abstract describes the responsiveness versus consistency trade-off in chunked execution.
 - [Adaptive Action Chunking at Inference-time for Vision-Language-Action Models](../Inbox/2026-04-05--adaptive-action-chunking-at-inference-time-for-vision-language-action-models.md): Introduction states that chunk size varies by policy and task, which supports a middleware-style deployment tool.
@@ -61,7 +61,7 @@ The paper is useful because it ties planning quality to a measurable design choi
 
 A practical next step is a paired ablation in one existing driving stack: train an action-only planner and a joint video-action planner on the same source dataset, then compare closed-loop score, collision rate, and transfer to one held-out domain. If the joint model keeps its edge with low sampling steps, the result supports a new default for planner training and simulator evaluation.
 
-### Evidence
+### Sources
 - [DriveVA: Video Action Models are Zero-Shot Drivers](../Inbox/2026-04-05--driveva-video-action-models-are-zero-shot-drivers.md): Summary of DriveVA, joint generation design, dense video supervision effect, and benchmark results.
 - [DriveVA: Video Action Models are Zero-Shot Drivers](../Inbox/2026-04-05--driveva-video-action-models-are-zero-shot-drivers.md): Abstract explains the video-trajectory consistency problem in prior loosely coupled planners.
 - [DriveVA: Video Action Models are Zero-Shot Drivers](../Inbox/2026-04-05--driveva-video-action-models-are-zero-shot-drivers.md): Reported closed-loop and zero-shot transfer metrics on NAVSIM, nuScenes, and Bench2Drive/CARLA v2.

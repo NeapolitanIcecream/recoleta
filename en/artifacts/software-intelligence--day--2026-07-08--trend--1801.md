@@ -34,7 +34,7 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s evidence is practical: coding agents need safer execution boundaries, better task inputs, and lower-cost repeatability. Claude Code, Codex, and SpellSmith anchor the security story; production and benchmark papers add concrete metrics.
 
-## Clusters
+## Findings
 
 ### Agent security and tool invocation
 A defensive agent can become the execution path for malicious code when it reads an untrusted repository in an auto-approved mode. The reported proof of concept placed ordinary-looking project guidance and a security script inside a modified `geopy` repository. Claude Code and Codex inspected the files, accepted the script as safe, and ran a malicious binary. The authors report remote code execution across several Claude Code CLI versions and Codex CLI 0.142.4.

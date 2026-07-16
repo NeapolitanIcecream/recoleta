@@ -39,7 +39,7 @@ The operational pain is clear: semantic search can return another tenant’s con
 
 A cheap adoption test is possible before any broad rollout. Seed a test corpus with three tenants, run authorized queries, cross-tenant probes, and prompt-injection probes, then measure leakage, authorization violations, and latency. The system should fail closed when metadata is missing or ambiguous.
 
-### Evidence
+### Sources
 - [Securing the Agent: Vendor-Neutral, Multitenant Enterprise Retrieval and Tool Use](../Inbox/2026-05-06--securing-the-agent-vendor-neutral-multitenant-enterprise-retrieval-and-tool-use.md): Describes OGX, tenant and access metadata at ingestion, ABAC retrieval gating, server-side tool execution, and the reported leakage reduction.
 - [Securing the Agent: Vendor-Neutral, Multitenant Enterprise Retrieval and Tool Use](../Inbox/2026-05-06--securing-the-agent-vendor-neutral-multitenant-enterprise-retrieval-and-tool-use.md): States the enterprise problem: retrieval ranks by relevance, so one tenant’s query can surface another tenant’s confidential data.
 - [Securing the Agent: Vendor-Neutral, Multitenant Enterprise Retrieval and Tool Use](../Inbox/2026-05-06--securing-the-agent-vendor-neutral-multitenant-enterprise-retrieval-and-tool-use.md): Confirms the server-side orchestration design and the claim that ABAC gating eliminates cross-tenant leakage in the evaluation.
@@ -51,7 +51,7 @@ The value is in deployment fit. The service-scaffolding paper reports that open-
 
 The first internal test should use existing platform quality gates, not developer sentiment alone. Run the selector on recent service requests, compare the chosen templates with the platform team’s expected choices, and check whether generated projects pass CI/CD, security, deployment, and pod-log checks without manual repair.
 
-### Evidence
+### Sources
 - [Architectural Constraints Alignment in AI-assisted, Platform-based Service Development](../Inbox/2026-05-06--architectural-constraints-alignment-in-ai-assisted-platform-based-service-development.md): Summarizes the RAG approach over approved Backstage templates, the clarification loop, and the reported template-selection and quality-gate results.
 - [Architectural Constraints Alignment in AI-assisted, Platform-based Service Development](../Inbox/2026-05-06--architectural-constraints-alignment-in-ai-assisted-platform-based-service-development.md): Shows that the evaluation was tied to deployment workflows used inside a large German software company.
 - [Architectural Constraints Alignment in AI-assisted, Platform-based Service Development](../Inbox/2026-05-06--architectural-constraints-alignment-in-ai-assisted-platform-based-service-development.md): Details the production constraints: CI/CD, security policies, infrastructure services, and established architectural patterns.
@@ -64,7 +64,7 @@ ReaComp is the concrete case. It builds symbolic program synthesizers from about
 
 The workflow fits domains where correctness can be checked by execution or a verifier, such as programming-by-example transformations, data-wrangling rules, and constrained code transformations. A practical pilot would pick one repeated task family, build the solver once, and track solved cases, verifier failures, fallback rate, and token spend against the current LLM-only path.
 
-### Evidence
+### Sources
 - [ReaComp: Compiling LLM Reasoning into Symbolic Solvers for Efficient Program Synthesis](../Inbox/2026-05-06--reacomp-compiling-llm-reasoning-into-symbolic-solvers-for-efficient-program-synthesis.md): Summarizes ReaComp’s trace-to-solver method and the PBEBench-Hard accuracy and token-reduction results.
 - [ReaComp: Compiling LLM Reasoning into Symbolic Solvers for Efficient Program Synthesis](../Inbox/2026-05-06--reacomp-compiling-llm-reasoning-into-symbolic-solvers-for-efficient-program-synthesis.md): States that ReaComp compiles reasoning traces into reusable symbolic program synthesizers over constrained DSLs.
 - [ReaComp: Compiling LLM Reasoning into Symbolic Solvers for Efficient Program Synthesis](../Inbox/2026-05-06--reacomp-compiling-llm-reasoning-into-symbolic-solvers-for-efficient-program-synthesis.md): Explains the cost and reliability problem in LLM-based search on harder compositional synthesis tasks.

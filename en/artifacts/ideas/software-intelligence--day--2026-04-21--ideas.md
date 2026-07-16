@@ -35,7 +35,7 @@ Bug-fixing agents can add a debugging pass before patch generation. The useful c
 
 This is a concrete build for teams already running automated patch suggestions in CI or issue triage. A cheap first check is to take bugs that your current repair flow marks as unresolved after one or two attempts, then compare plain retrying against a trace-collection step that captures key variable values and branch states before asking for the next patch. The practical payoff is fewer patches that only suppress the visible failure and more patches that address the actual runtime condition behind it.
 
-### Evidence
+### Sources
 - [DebugRepair: Enhancing LLM-Based Automated Program Repair via Self-Directed Debugging](../Inbox/2026-04-21--debugrepair-enhancing-llm-based-automated-program-repair-via-self-directed-debugging.md): Reports runtime-trace-guided repair approach, safety checks for instrumentation, and benchmark gains including 295 correct fixes on Defects4J and 51.3% average improvement.
 
 ## Interaction playtesting for generated GUI code
@@ -43,7 +43,7 @@ GUI code generation needs an interaction test gate before merge. Compile success
 
 The immediate workflow change is for teams generating small internal tools, dashboard front ends, or simple games with code models. Add a replayable interaction script and a playability check alongside compile and unit-test checks. Start with one user-critical path such as create, edit, save, or complete-level flow, and fail the run when the interface reaches a wrong state even if tests pass. This is a narrower build than full browser automation infrastructure, but it matches the failure mode the paper surfaces: executable GUI code that still breaks during use.
 
-### Evidence
+### Sources
 - [PlayCoder: Making LLM-Generated GUI Code Playable](../Inbox/2026-04-21--playcoder-making-llm-generated-gui-code-playable.md): Defines Play@k, describes automated GUI playtesting, and quantifies the drop from executable code to playable behavior for GPT-5 and Claude-Sonnet-4.
 
 ## Executable documentation checks for changed API methods
@@ -51,5 +51,5 @@ API documentation review can move from text diffing to executable checks. Cascad
 
 A practical use case is release review for SDKs and internal libraries where method comments and examples drift as behavior changes. The build is concrete: generate tests from API docs for touched methods, require fail-on-current and pass-on-regenerated behavior before flagging a mismatch, and send only those cases to maintainers. A cheap validation pass is to run it on a recent set of doc-related commits and measure how many alerts correspond to changes that developers already corrected later. This gives documentation owners a narrower queue built around executable disagreement, not wording differences.
 
-### Evidence
+### Sources
 - [CASCADE: Detecting Inconsistencies between Code and Documentation with Automatic Test Generation](../Inbox/2026-04-21--cascade-detecting-inconsistencies-between-code-and-documentation-with-automatic-test-generation.md): Explains the fail-on-original, pass-on-regenerated execution check and reports 13 new inconsistencies found across repositories, with 10 later fixed.

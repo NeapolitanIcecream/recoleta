@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # 实用的 VLA 部署控制
 
-## Summary
+## 摘要
 机器人团队可以围绕冻结的 VLA 策略做出具体改动：加失败专用恢复层、在执行时提供低延迟 steering 和安全滤波、并用更轻的手持夹爪采集双臂数据。共同的落地压力来自实际部署摩擦：策略可以知道任务，但仍可能抓空、撞到附近物体，或者缺少足够多的接触丰富任务示范。
 
 ## 针对冻结 VLA 操作策略的失败专用恢复包装层
@@ -35,7 +35,7 @@ ReCoVLA 展示了这种模式的一个更重版本：Qwen3-VL-8B-Instruct 先分
 
 机器人团队可以先把自己的失败操作日志回放到一个小的失败分类里，按抓取、搬运、放置和关节动作失败来分。第一轮测试应当把冻结策略和包装层在注入失败样本、以及一小组真实复测样本上做对比，测任务成功率、恢复成功率和每次恢复多走了多少步。
 
-### Evidence
+### 资料来源
 - [ReCoVLA: VLM-Guided Reward Compilation for Failure Recovery in Vision-Language-Action Policies](../Inbox/2026-06-08--recovla-vlm-guided-reward-compilation-for-failure-recovery-in-vision-language-action-policies.md): ReCoVLA keeps the base VLA frozen, classifies failure state, compiles stage-gated rewards, and reports simulation and physical recovery gains.
 - [Back to the Familiar Future: Failure Recovery for VLA Policies via Pre-Imagined Milestone Selection](../Inbox/2026-06-08--back-to-the-familiar-future-failure-recovery-for-vla-policies-via-pre-imagined-milestone-selection.md): B2FF selects pre-generated future-image milestones for recovery and reports a 56.3% to 74.0% gain on failure-injected LIBERO.
 - [ProbeAct: Probe-Guided Training-Free Failure Recovery in Vision-Language-Action Models](../Inbox/2026-06-08--probeact-probe-guided-training-free-failure-recovery-in-vision-language-action-models.md): ProbeAct uses hidden-state probes, kinematic failure detection, and CBF zones to improve LIBERO-plus success for a frozen VLA.
@@ -47,7 +47,7 @@ Flow Control 把人类输入这部分用在 flow-matching VLA 上。键盘命令
 
 采用测试很直接：用同一个冻结策略跑含糊的双物体任务和带移动障碍物的任务，然后对比不加包装、只做 steering、只做安全滤波、以及两者一起用。关键指标是纠正延迟、碰撞率、安全成功率，以及包装层把原本已经成功的基线动作改掉了多少。
 
-### Evidence
+### 资料来源
 - [Flow Control: Steering Vision-Language-Action Models with Simple Real-Time Inputs](../Inbox/2026-06-08--flow-control-steering-vision-language-action-models-with-simple-real-time-inputs.md): Flow Control describes keyboard-direction steering by modifying the initial condition of a flow-matching VLA action sampler and reports Two-Block steering results.
 - [Your Model Already Knows: Attention-Guided Safety Filter for Vision-Language-Action Models](../Inbox/2026-06-08--your-model-already-knows-attention-guided-safety-filter-for-vision-language-action-models.md): The attention-guided safety filter reads VLA attention online, applies a CBF-QP filter, and reports large collision-rate and safe-success gains on dynamic SafeLIBERO.
 
@@ -58,5 +58,5 @@ YUBI 用捏合对齐的设计替代了手枪式握把：拇指驱动一个夹爪
 
 一个低成本验证方式是在正式采集前做并排操作者研究：10 名新手、重复的小物体抓取试验、1 小时疲劳检查，以及按每个操作者小时的可用 episode 数来算吞吐量。如果更轻的夹爪能改善小物体控制和单次会话时长，下一步就可以搭一个固定桌面采集架，配同步手腕相机、俯视 RGB-D、6 自由度夹爪位姿、夹爪角度、任务文本和子动作标签。
 
-### Evidence
+### 资料来源
 - [YUBI: Yielding Universal Bidigital Interface for Bimanual Dexterous Manipulation at Scale](../Inbox/2026-06-08--yubi-yielding-universal-bidigital-interface-for-bimanual-dexterous-manipulation-at-scale.md): YUBI reports the finger-aligned gripper design, weight and cost comparisons, dataset scale, LeRobot conversion, and cross-arm policy transfer results.

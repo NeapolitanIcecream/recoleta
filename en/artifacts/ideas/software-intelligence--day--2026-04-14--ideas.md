@@ -35,7 +35,7 @@ Teams evaluating coding agents can add executable specification checks to their 
 
 A practical build is a CI step that asks the model for preconditions and postconditions on the functions touched by a pull request, runs them against existing and generated tests, and flags mismatches for reviewer inspection. This fits teams already using agent-written patches in Python services or libraries, because the output is executable and can be checked with the same test harnesses they trust today. A cheap pilot is a one-week trial on bug-fix PRs in one repository: track how often generated specs fail while the patch still looks acceptable in review, and whether those failures surface hidden semantic regressions earlier than existing tests.
 
-### Evidence
+### Sources
 - [CodeSpecBench: Benchmarking LLMs for Executable Behavioral Specification Generation](../Inbox/2026-04-14--codespecbench-benchmarking-llms-for-executable-behavioral-specification-generation.md): CodeSpecBench provides the repository-level spec-generation results, execution-based evaluation design, and the 20.2% repo pass-rate ceiling that supports adding spec checks to PR review.
 
 ## Repository-context input and output prediction suites for coding-agent evaluation
@@ -43,7 +43,7 @@ Repository benchmarks can stop relying on final patch success alone and add inpu
 
 That supports a concrete workflow change for model vendors, internal eval teams, and enterprises buying coding agents: add a small repository-context reasoning suite before expanding deployment. The suite does not need to be large. A few dozen traced methods from one production service, with serialized inputs and expected outputs, will show whether the model can follow project state, dependencies, and object-heavy APIs. The cheap check is to sample methods from recent incidents or flaky fixes and compare scores on those traces against current snippet-heavy evals. If the same model still looks strong only on the simple set, the deployment risk is already visible.
 
-### Evidence
+### Sources
 - [Evaluating LLMs Code Reasoning Under Real-World Context](../Inbox/2026-04-14--evaluating-llms-code-reasoning-under-real-world-context.md): R²Eval provides the real-repository input/output prediction setup, object serialization method, and the measured collapse from snippet benchmarks to repository-context reasoning.
 
 ## Tool-routed follow-up edits for cross-file changes
@@ -51,5 +51,5 @@ Cross-file editing assistants can improve acceptance by routing obvious structur
 
 This is a build target for IDE teams and code-review automation vendors working on follow-up edits after an initial patch lands. The immediate product surface is narrow: a "propagate change" action after a developer edits one file, with tool-backed candidate locations shown before the model writes patches. A cheap validation run is to replay recent refactors and bug-fix commits from one repository and measure accepted suggestions on the second and third files touched in each change.
 
-### Evidence
+### Sources
 - [Learning Project-wise Subsequent Code Edits via Interleaving Neural-based Induction and Tool-based Deduction](../Inbox/2026-04-14--learning-project-wise-subsequent-code-edits-via-interleaving-neural-based-induction-and-tool-based-deduction.md): TRACE provides the tool-routing design, the specific structural edit cases, and the cross-project gains in location precision, generation accuracy, time cost, and suggestion acceptance.

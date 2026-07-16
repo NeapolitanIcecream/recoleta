@@ -39,7 +39,7 @@ Pre-VLA gives a concrete design: encode the instruction, visual observation, pro
 
 The cheap adoption test is to run the verifier offline on failed rollout logs, then replay the same task set with filtering enabled. The key measurements are false passes on invalid chunks, closed-loop success, rejected-chunk rate, and added wall-clock time. CrossVLA’s latency breakdown also points to the right optimization target for flow-matching policies: π₀.₅ spends about 220 ms of a 280 ms sample_actions call in the denoising loop, so verifier cost has to be judged against action generation and resampling cost, not only prefix computation.
 
-### Evidence
+### Sources
 - [Pre-VLA: Preemptive Runtime Verification for Reliable Vision-Language-Action and World-Model Rollouts](../Inbox/2026-05-21--pre-vla-preemptive-runtime-verification-for-reliable-vision-language-action-and-world-model-rollouts.md): Pre-VLA provides the verifier design, LIBERO validity metrics, closed-loop success gain, and per-chunk verification latency.
 - [CrossVLA: Cross-Paradigm Post-Training and Inference Optimization for Vision-Language-Action Models](../Inbox/2026-05-21--crossvla-cross-paradigm-post-training-and-inference-optimization-for-vision-language-action-models.md): CrossVLA provides the flow-matching latency breakdown and evidence that prefix caching is a weak speed target for π₀.₅.
 
@@ -50,7 +50,7 @@ AVP is the clearest build pattern. The VLM predicts visual primitives for the ne
 
 GesVLA covers the human-interface side. It extracts wrist and index-finger keypoints with MediaPipe, turns them into latent gesture tokens, and trains intent grounding with semi-synthetic pointing data rendered on real RGB-D scenes. Across three real-robot tasks, it reports 83.3% average success versus 31.7% for a text-only VLA. A practical pilot would add target-token logging to a pick-and-place workcell, then compare wrong-object grasps, placement errors, and instruction latency on cluttered scenes with at least several similar objects.
 
-### Evidence
+### Sources
 - [Action with Visual Primitives](../Inbox/2026-05-21--action-with-visual-primitives.md): AVP provides the visual-primitive interface, calibration-derived labels, latency, and real-robot pick-and-place gains.
 - [GesVLA: Gesture-Aware Vision-Language-Action Model Embedded Representations](../Inbox/2026-05-21--gesvla-gesture-aware-vision-language-action-model-embedded-representations.md): GesVLA provides the gesture-token design, semi-synthetic pointing data method, and real-robot gains over text-only VLA.
 
@@ -61,5 +61,5 @@ TRM tests this directly. It trains a pairwise head on encoded state pairs from l
 
 The near pilot is an offline candidate-ranking audit. For each planning call, score the same sampled candidates with raw latent MSE and with a learned reachability head, then compare geodesic ranking or task-state progress for the selected endpoint. TRM’s same-candidate audit reports geodesic Spearman rising from 0.018 to 0.729 and the oracle-best candidate moving from rank percentile 31.71 to 3.86, which gives a concrete diagnostic before changing the closed-loop controller.
 
-### Evidence
+### Sources
 - [Beyond Euclidean Proximity: Repairing Latent World Models with Horizon-Matched Trajectory Reachability Metrics](../Inbox/2026-05-21--beyond-euclidean-proximity-repairing-latent-world-models-with-horizon-matched-trajectory-reachability-metrics.md): TRM provides the reachability metric design, fixed-planner intervention, TwoRoom success gains, and same-candidate ranking audit.

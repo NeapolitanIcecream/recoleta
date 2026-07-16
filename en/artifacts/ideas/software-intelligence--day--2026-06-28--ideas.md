@@ -37,7 +37,7 @@ Security teams should test an agent credential layer before giving agents broad 
 
 The first useful check is small: inventory one agent-enabled workflow, replace its direct secrets with aliases, and run a revocation drill. The drill should record whether a blocked agent loses access within the promised window, whether legitimate runs continue, and whether the audit trail is clear enough for incident response. This matters because the cited incidents are no longer theoretical: the DevFortress piece cites 28,649,024 new secrets exposed on public GitHub in 2025, 64% of 2022 leaked credentials still active in January 2026, and 24,008 unique secrets found in MCP configuration files. It also cites a Cursor agent deleting a production database in 9 seconds after finding an unscoped Railway CLI token.
 
-### Evidence
+### Sources
 - [AI Agent Credential Crisis: Six Months of Incidents](../Inbox/2026-06-28--ai-agent-credential-crisis-six-months-of-incidents.md): Summarizes the credential-aliasing approach, scoped credentials, session monitoring, revocation claims, and incident metrics.
 - [AI Agent Credential Crisis: Six Months of Incidents](../Inbox/2026-06-28--ai-agent-credential-crisis-six-months-of-incidents.md): Gives the cited scale of exposed secrets and specific agent-related incident numbers.
 - [AI Agent Credential Crisis: Six Months of Incidents](../Inbox/2026-06-28--ai-agent-credential-crisis-six-months-of-incidents.md): Names the least agency principle for bounded agent tasks and identity/privilege risk.
@@ -49,7 +49,7 @@ CrewAI’s Iris example shows why this is worth trying for small work. A setting
 
 A pilot should limit eligibility to small, reversible changes with a named reviewer and a required test. Complex engineering work should remain outside the queue until the team has measured merge rate, review time, rollback rate, and how often the agent creates extra review burden.
 
-### Evidence
+### Sources
 - [My coworker Iris isn't a person](../Inbox/2026-06-28--my-coworker-iris-isn-t-a-person.md): Summarizes Iris as a Slack-based agent for small engineering tasks and gives the three-minute PR example.
 - [My coworker Iris isn't a person](../Inbox/2026-06-28--my-coworker-iris-isn-t-a-person.md): Describes the nine-step manual workflow, the whitespace-trim bug, the PR, and the added newline test.
 - [/Dev/Notion](../Inbox/2026-06-28--dev-notion.md): Describes @mentioning agents, Notion Workers, shared interfaces, permissions, and review or approval points.
@@ -61,7 +61,7 @@ This is a buildable pattern for terminals, IDEs, and internal developer tools. T
 
 The cheap validation is to compare a week of parallel agent work with and without the queue. Useful measures are time spent in waiting state, number of missed prompts, review rework, and how often the developer kills or restarts a session.
 
-### Evidence
+### Sources
 - [Mux – A tmux overlay for managing Claude Code sessions](../Inbox/2026-06-28--mux-a-tmux-overlay-for-managing-claude-code-sessions.md): Summarizes Mux’s queue, status sorting, live pane matching, and jump behavior for Claude Code sessions.
 - [Mux – A tmux overlay for managing Claude Code sessions](../Inbox/2026-06-28--mux-a-tmux-overlay-for-managing-claude-code-sessions.md): Shows the overlay fields, waiting-first sort, live preview, and one-key pane jump.
 - [The Usefulness of AI Agents](../Inbox/2026-06-28--the-usefulness-of-ai-agents.md): Lists practical coding-agent guardrails: plan before coding, focused edits, and approval for larger changes.

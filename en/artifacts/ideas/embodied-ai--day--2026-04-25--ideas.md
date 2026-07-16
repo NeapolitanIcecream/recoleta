@@ -35,7 +35,7 @@ Adding tactile and torque inputs to an existing VLA now looks like a practical u
 
 The near-term build is a sensor add-on path for one or two failure-prone skills, not a full policy rewrite. A team already running GR00T, pi_0, or a similar diffusion-style VLA could attach fingertip tactile sensing and joint torque logging, keep those streams separate in the adapter, and test on a narrow set of contact-driven tasks. The cheap check is simple: compare vision-only, tactile-only, torque-only, and dual-signal variants on the same task mix. If the pattern matches the paper, the combined model should beat each single-signal version on the tasks where contact timing and force correction matter most.
 
-### Evidence
+### Sources
 - [Modular Sensory Stream for Integrating Physical Feedback in Vision-Language-Action Models](../Inbox/2026-04-25--modular-sensory-stream-for-integrating-physical-feedback-in-vision-language-action-models.md): Summary reports average success gains on GR00T N1.5 and pi_0, the contact-rich task set, and the 1.11x inference overhead.
 - [Modular Sensory Stream for Integrating Physical Feedback in Vision-Language-Action Models](../Inbox/2026-04-25--modular-sensory-stream-for-integrating-physical-feedback-in-vision-language-action-models.md): Introduction explains why tactile and torque cues matter for plug insertion and other contact events that vision alone can miss.
 
@@ -44,7 +44,7 @@ Low-data post-training needs an instruction-following check before teams call an
 
 The workflow change is to add a small lock-in benchmark to every low-data adaptation run. For each adapted skill, hold back prompt variants that change object identity, attribute, or spatial relation, then compare standard fine-tuning against a visual-drift-regularized model with and without CPG. The paper's ablations give a useful acceptance test: without CPG, spatial-lock tasks collapsed to 0/20 across T5 to T8, while the full method reached 11/20 to 14/20 on T5 to T7 and 13/20 on T8. That makes steerability measurable with a modest trial budget before a team spends more time collecting demonstrations.
 
-### Evidence
+### Sources
 - [Breaking Lock-In: Preserving Steerability under Low-Data VLA Post-Training](../Inbox/2026-04-25--breaking-lock-in-preserving-steerability-under-low-data-vla-post-training.md): Summary defines lock-in, describes the visual regularization and CPG method, and gives the novel-prompt and ablation results.
 - [Breaking Lock-In: Preserving Steerability under Low-Data VLA Post-Training](../Inbox/2026-04-25--breaking-lock-in-preserving-steerability-under-low-data-vla-post-training.md): Main text describes the low-data post-training setting and the over-specialization problem under narrow instruction coverage.
 
@@ -53,6 +53,6 @@ There is room for a thin support layer that sits between post-training and deplo
 
 A practical first version would expose a small library of trained-prompt anchors for each adapted skill, then evaluate which anchor helps the policy follow unseen prompts for object swaps, side changes, and placement changes. The evidence points to spatial instructions as the highest-value case. DeLock's ablation shows that removing CPG drove T5 to T8 to 0/20, while the full method restored 11/20, 13/20, 14/20, and 13/20. That suggests a deployment tool focused on prompt selection, prompt contrast, and trial logging could improve steerability even when the post-training dataset stays small.
 
-### Evidence
+### Sources
 - [Breaking Lock-In: Preserving Steerability under Low-Data VLA Post-Training](../Inbox/2026-04-25--breaking-lock-in-preserving-steerability-under-low-data-vla-post-training.md): Summary explains CPG as a test-time method and reports that removing it wipes out performance on spatial-lock tasks.
 - [Breaking Lock-In: Preserving Steerability under Low-Data VLA Post-Training](../Inbox/2026-04-25--breaking-lock-in-preserving-steerability-under-low-data-vla-post-training.md): Abstract states that lock-in appears after low-data post-training and that the method recovers generalization to novel instructions.

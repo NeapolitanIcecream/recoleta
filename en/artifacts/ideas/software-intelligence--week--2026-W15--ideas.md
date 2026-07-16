@@ -35,7 +35,7 @@ A governance file that an agent must satisfy before it can save code is becoming
 
 A cheap validation step is to apply this to one narrow workflow such as adding a feature that must include updated tests, linked requirements, and an approved architecture note. If the tool can reject incomplete agent edits and return actionable failure signals that help the next attempt succeed, teams will use it. If it only produces another static checklist, it will stall. The case is credible now because the paper reports a self-hosting deployment on a 100,000-line system with proof obligations checked on every commit, including a concrete rejected delivery that passed only after the agent added a missing test file.
 
-### Evidence
+### Sources
 - [Nidus: Externalized Reasoning for AI-Assisted Engineering](../Inbox/2026-04-06--nidus-externalized-reasoning-for-ai-assisted-engineering.md): Describes a governance runtime with solver-checked mutations, proof obligations on every commit, and a concrete rejected change that passed after adding a missing test.
 - [Nidus: Externalized Reasoning for AI-Assisted Engineering](../Inbox/2026-04-06--nidus-externalized-reasoning-for-ai-assisted-engineering.md): The abstract states the self-hosting deployment and externalized enforcement model in direct terms.
 
@@ -44,7 +44,7 @@ Repository migration agents need a dedicated validation loop that translates tes
 
 The useful scope is narrower than full autonomous translation across every language pair. Start with one migration class where teams already know the target stack and care about preserving behavior more than perfect style. The early product can expose the plan, name mappings, translated tests, uncovered functions, and repair loop as reviewable artifacts. The evidence supports this as a workflow change, not just a benchmark trick: removing the Validator cut test pass rate by 30.3 percentage points, and the full system reached 99.4% compilation success and 86.5% test pass rate across 118 real-world projects.
 
-### Evidence
+### Sources
 - [ReCodeAgent: A Multi-Agent Workflow for Language-agnostic Translation and Validation of Large-scale Repositories](../Inbox/2026-04-08--recodeagent-a-multi-agent-workflow-for-language-agnostic-translation-and-validation-of-large-scale-repositories.md): Provides the multi-agent workflow, including translated tests, coverage-gap checks, and repair reports, plus the ablation showing the Validator’s effect.
 - [ReCodeAgent: A Multi-Agent Workflow for Language-agnostic Translation and Validation of Large-scale Repositories](../Inbox/2026-04-08--recodeagent-a-multi-agent-workflow-for-language-agnostic-translation-and-validation-of-large-scale-repositories.md): The abstract confirms repository-level autonomous translation and validation for large-scale projects.
 
@@ -53,6 +53,6 @@ Security review for AI-written code needs an exploitability check layer, not jus
 
 This fits first in narrow surfaces where the weakness classes are known and the cost of missed bugs is high: C and C++ memory code, auth handlers, SQL-facing request code, archive extraction, and similar paths. The first product does not need whole-program proof. It needs to prove or falsify exploitability for a small set of common failure modes and attach the witness to the review. The paper’s self-review result also gives a workflow clue: models spotted their own vulnerable outputs 78.7% of the time in review mode, so a paired generation-plus-proof-review path is easier to justify than trusting generation alone.
 
-### Evidence
+### Sources
 - [Broken by Default: A Formal Verification Study of Security Vulnerabilities in AI-Generated Code](../Inbox/2026-04-07--broken-by-default-a-formal-verification-study-of-security-vulnerabilities-in-ai-generated-code.md): Reports the core vulnerability rates, Z3-proven findings, secure-prompt ablation, industry-tool miss rate, and self-review asymmetry.
 - [Broken by Default: A Formal Verification Study of Security Vulnerabilities in AI-Generated Code](../Inbox/2026-04-07--broken-by-default-a-formal-verification-study-of-security-vulnerabilities-in-ai-generated-code.md): The paper abstract states the formal verification framing and headline exploitability numbers.

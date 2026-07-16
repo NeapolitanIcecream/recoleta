@@ -27,7 +27,7 @@ language_code: zh-CN
 
 # 机器人操作控制和安全层
 
-## Summary
+## 摘要
 机器人 VLA 部署工作正围绕三类运行需求变得更具体：操作过程中的接触校正、策略未完成长时程任务后的在线适应，以及将物理损伤与任务成功分开记录的安全评测。最可执行的改动，是在现有策略外增加小型控制层和评测层，并配套明确的 episode 数、扰动测试和仿真检查。
 
 ## 用于插入、擦拭、调整和装配任务的触觉残差校正
@@ -35,7 +35,7 @@ language_code: zh-CN
 
 低成本验证方式是在少量视觉丢失接触点的任务上做扰动接触测试：USB 插入、擦拭、对齐调整或小型装配。UniTacVLA 报告了八个真实机器人子任务上的 64.0% 干净场景成功率和 53.5% 扰动场景成功率；复现的 pi0.5-TacVLA 基线为 45.25% 干净场景成功率和 16.25% 扰动场景成功率。它的 USB 消融实验还区分了触觉输入、触觉思维链监督、未来触觉预测和残差控制器各自的贡献，为实现者提供了一个实用的组件测试顺序。
 
-### Evidence
+### 资料来源
 - [UniTacVLA: Unified Tactile Understanding and Prediction in Vision Language Action Models](../Inbox/2026-06-30--unitacvla-unified-tactile-understanding-and-prediction-in-vision-language-action-models.md): 描述了 UniTacVLA 的触觉 token、未来触觉预测、高频校正控制器、扰动结果和 USB 插入消融实验。
 
 ## 用于长时程 VLA 任务恢复的提示词级强化学习
@@ -43,7 +43,7 @@ language_code: zh-CN
 
 一个实用试点可以先为某个任务加入三条由语言引导的示范，运行在线 episode，然后比较固定任务提示词下的成功率和学习到的提示词序列下的成功率。SARL 报告称，在 Libero-10 和四个真实 WidowX 长时程任务上，任务提示词下的初始成功率接近 0%，经过 60 到 100 个在线 episode 后成功率约为 80%。Z-1 为基于 flow 的 VLA 策略提供了一个相关的仿真侧检查：在公共 RoboCasa 示范上进行监督微调后，GRPO 将 24 个 RoboCasa 任务的平均成功率从 67.4% 提高到 80.6%。
 
-### Evidence
+### 资料来源
 - [Adapting Generalist Robot Policies with Semantic Reinforcement Learning](../Inbox/2026-06-30--adapting-generalist-robot-policies-with-semantic-reinforcement-learning.md): 展示了 SARL 的“提示词即动作”适应回路、示范使用方式，以及 Libero-10 和 WidowX 任务上的在线 episode 结果。
 - [Z-1: Efficient Reinforcement Learning for Vision-Language-Action Models](../Inbox/2026-06-30--z-1-efficient-reinforcement-learning-for-vision-language-action-models.md): 展示了对基于 flow 的 VLA 策略进行 RL 后训练，以及相对作者 SFT 初始化的受控 13.2 个百分点提升。
 
@@ -52,6 +52,6 @@ language_code: zh-CN
 
 这对带有不安全捷径的任务最有用，例如推挤易碎物体、接触高温表面、洒出液体，或让机器人连杆过载。OopsieBench 覆盖 OmniGibson 和 RoboCasa 中的 32 个任务实例，DamageSim 已在 Nvidia Omniverse 和基于 MuJoCo 的栈中实现。给定证据更多支持评测流程，而不是策略改进结论，因此第一步采用方式是在仿真中设置一道门槛：完成任务，并保持在损伤阈值以下。
 
-### Evidence
+### 资料来源
 - [OopsieVerse: A Safety Benchmark with Damage-Aware Simulation for Robot Manipulation](../Inbox/2026-06-30--oopsieverse-a-safety-benchmark-with-damage-aware-simulation-for-robot-manipulation.md): 定义了 DamageSim、OopsieBench、每个物体的健康值、损伤类别、仿真器覆盖范围和基准范围。
 - [OopsieVerse: A Safety Benchmark with Damage-Aware Simulation for Robot Manipulation](../Inbox/2026-06-30--oopsieverse-a-safety-benchmark-with-damage-aware-simulation-for-robot-manipulation.md): 说明了标准操作基准的缺口：它们给任务完成打分，却不测量执行过程中造成的损伤。

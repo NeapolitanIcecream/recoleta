@@ -35,7 +35,7 @@ A useful product here is a structured intake and triage tool for developer relat
 
 The cheap test is to run the workflow at two or three events on the published schedule and check whether teams can turn raw conversations into an issue list with owner, severity, and release relevance within a week. If that fails, the problem is not missing software but missing taxonomy and staffing.
 
-### Evidence
+### Sources
 - [Come meet the Flutter core team on tour in 2026](../Inbox/2026-04-14--come-meet-the-flutter-core-team-on-tour-in-2026.md): The source ties upcoming Dart 3.12 and Flutter 3.44 work to direct feedback gathering across multiple community channels.
 - [Come meet the Flutter core team on tour in 2026](../Inbox/2026-04-14--come-meet-the-flutter-core-team-on-tour-in-2026.md): The event list and invitation to give feedback in person show a concrete flow of incoming feedback that needs collection and triage.
 
@@ -46,6 +46,6 @@ The product can stay narrow: a searchable calendar with geography, date windows,
 
 The cheap test is simple. Publish the 2026 route as a shared calendar or map and measure whether organizers use it to propose side events in cities already on the schedule or in nearby travel windows. If usage stays low, the schedule may still be too sparse or too static to support coordination.
 
-### Evidence
+### Sources
 - [Come meet the Flutter core team on tour in 2026](../Inbox/2026-04-14--come-meet-the-flutter-core-team-on-tour-in-2026.md): The summary states that the team published a global event schedule with at least 18 named entries in 2026.
 - [Come meet the Flutter core team on tour in 2026](../Inbox/2026-04-14--come-meet-the-flutter-core-team-on-tour-in-2026.md): The content lists specific event stops and dates across multiple regions, which supports a planning map or calendar.

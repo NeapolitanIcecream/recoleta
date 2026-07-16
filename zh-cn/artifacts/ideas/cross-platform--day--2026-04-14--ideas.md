@@ -21,7 +21,7 @@ language_code: zh-CN
 
 # Flutter 活动协调
 
-## Summary
+## 摘要
 这些证据支持的是一条很窄的产品和工作流故事，围绕 Flutter 2026 年活动日程，以及在 Dart 3.12 和 Flutter 3.44 之前的反馈收集。它不支持关于技术进展、基准测试或新研究结果的说法。这里的两个具体案例分别聚焦于处理线下产品反馈，以及围绕已公布的行程安排社区活动。
 
 ## Flutter 发布规划的活动反馈收集与分流
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 成本最低的测试，是在已公布日程里的两三个活动上跑这个流程，看看团队能否在一周内把原始对话整理成带有负责人、严重程度和发布相关性的议题列表。如果做不到，问题不是缺软件，而是缺分类和人手。
 
-### Evidence
+### 资料来源
 - [Come meet the Flutter core team on tour in 2026](../Inbox/2026-04-14--come-meet-the-flutter-core-team-on-tour-in-2026.md): The source ties upcoming Dart 3.12 and Flutter 3.44 work to direct feedback gathering across multiple community channels.
 - [Come meet the Flutter core team on tour in 2026](../Inbox/2026-04-14--come-meet-the-flutter-core-team-on-tour-in-2026.md): The event list and invitation to give feedback in person show a concrete flow of incoming feedback that needs collection and triage.
 
@@ -42,6 +42,6 @@ language_code: zh-CN
 
 最低成本的测试很简单。把 2026 路线做成共享日历或地图，观察组织者是否会用它来在已排期城市或附近旅行窗口提出配套活动。如果使用率还是很低，说明这个日程对协调来说可能仍然太稀疏或太静态。
 
-### Evidence
+### 资料来源
 - [Come meet the Flutter core team on tour in 2026](../Inbox/2026-04-14--come-meet-the-flutter-core-team-on-tour-in-2026.md): The summary states that the team published a global event schedule with at least 18 named entries in 2026.
 - [Come meet the Flutter core team on tour in 2026](../Inbox/2026-04-14--come-meet-the-flutter-core-team-on-tour-in-2026.md): The content lists specific event stops and dates across multiple regions, which supports a planning map or calendar.

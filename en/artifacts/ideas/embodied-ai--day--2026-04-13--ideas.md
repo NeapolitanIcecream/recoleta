@@ -39,7 +39,7 @@ The workflow change is straightforward. Before adding robot pretraining, action 
 
 A cheap check is to rerun one current internal model comparison with the backbone and dataset held constant, then compare only the action head and one added training trick. If the simple head stays within a few points or wins outright, the team can cut model complexity and keep evaluation cleaner.
 
-### Evidence
+### Sources
 - [StarVLA-$α$: Reducing Complexity in Vision-Language-Action Systems](../Inbox/2026-04-13--starvla-a-reducing-complexity-in-vision-language-action-systems.md): StarVLA-α reports the benchmark results and action-head ablations that support a simple VLM plus MLP baseline.
 
 ## Language-scored trajectory reranking for semantic generalization tests
@@ -49,7 +49,7 @@ This matters for workflows where the robot has seen the motions before but fails
 
 A buildable first step is a reranker over retrieved trajectories or policy proposals. Keep the current proposal generator, predict short-horizon outcomes, and rank them by cosine similarity to the instruction in a frozen multimodal embedding model. The first validation pass does not need full robot retraining. It needs a held-out instruction split with paraphrases, new referring expressions, and visual substitutions that preserve the required motion.
 
-### Evidence
+### Sources
 - [Grounded World Model for Semantically Generalizable Planning](../Inbox/2026-04-13--grounded-world-model-for-semantically-generalizable-planning.md): Grounded World Model provides the language-conditioned MPC setup and the train/test semantic generalization results on WISER.
 
 ## Affordance-conditioned grasp generation for pouring and hanging tasks
@@ -59,5 +59,5 @@ The concrete build is an affordance-conditioned grasp proposer for data generati
 
 A cheap check is to pick five existing tasks that depend on object parts, regenerate demonstrations with affordance-conditioned grasps, and compare success against a generic grasp planner. The early readout should focus on pouring, hanging, and tool-use tasks, where part selection decides most of the outcome.
 
-### Evidence
+### Sources
 - [AffordSim: A Scalable Data Generator and Benchmark for Affordance-Aware Robotic Manipulation](../Inbox/2026-04-13--affordsim-a-scalable-data-generator-and-benchmark-for-affordance-aware-robotic-manipulation.md): AffordSim reports the task breakdown and the affordance-aware trajectory generation ablation that motivate an affordance-conditioned grasp layer.

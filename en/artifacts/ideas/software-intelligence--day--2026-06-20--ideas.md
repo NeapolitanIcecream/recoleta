@@ -37,7 +37,7 @@ Teams running more than one coding agent against the same repository can add a s
 
 The useful test is operational. Run two or three agents on independent tasks in a repo with a real test command, then inspect whether reviewers can answer three questions without reading every diff first: what files did the task own, what proof did it produce, and what should happen after a failed gate. GlueRun-go reports that detached dispatch lets `gluerun reconcile --actuate` return within seconds while workers continue in the background, and crash detection drops from a 60-minute stale-lease window to about one reconcile cycle. That is enough to justify a trial for teams whose agent runs currently leave stale branches, unclear ownership, or unreviewable changes.
 
-### Evidence
+### Sources
 - [Show HN: Agentic coding workflows built on Git worktrees and task evidence](../Inbox/2026-06-20--show-hn-agentic-coding-workflows-built-on-git-worktrees-and-task-evidence.md): Summarizes GlueRun-go's worktree isolation, JSON leases, state packets, auditor, deterministic recovery actions, detached dispatch, crash detection, and regression tests.
 - [Show HN: Agentic coding workflows built on Git worktrees and task evidence](../Inbox/2026-06-20--show-hn-agentic-coding-workflows-built-on-git-worktrees-and-task-evidence.md): Details the state packet contents, gate result, audit verdict, recovery actions, detached dispatch, and one-cycle crash attribution.
 
@@ -46,7 +46,7 @@ Internal agents need a memory layer that can say which claims are supported, sta
 
 This fits internal support agents, onboarding agents, and engineering assistants that already consult runbooks, decisions, tickets, and API docs. A first deployment can be limited to one service area and judged by simple failure cases: unsupported answer, stale decision, missing referenced doc, deprecated endpoint, wrong argument type, and unauthorized result. Vitrus reports `source-hit ≥90%` on its eval gate, `100%` gap recall and precision on a controlled synthetic corpus, `0` unauthorized results in ACL leak testing, and more than 200 tests. The synthetic nature of the gap result should keep the rollout narrow, but the mechanism is concrete enough for a service-team pilot.
 
-### Evidence
+### Sources
 - [Show HN: Vitrus – the company brain that tells you what it doesn't know](../Inbox/2026-06-20--show-hn-vitrus-the-company-brain-that-tells-you-what-it-doesn-t-know.md): Describes Vitrus's sourced answers, confidence, freshness, deterministic gaps, Markdown source of truth, retrieval method, OpenAPI verification, ACL testing, and reported eval results.
 - [Show HN: Vitrus – the company brain that tells you what it doesn't know](../Inbox/2026-06-20--show-hn-vitrus-the-company-brain-that-tells-you-what-it-doesn-t-know.md): Shows the API import, search, verify, and call path, including checks for missing arguments, wrong types, unknown arguments, unknown endpoints, deprecated endpoints, and fail-closed content tools.
 
@@ -55,6 +55,6 @@ Companies giving agents access to IT systems should separate agent identity from
 
 A practical adoption check is to instrument one internal agent with its own account, task-specific policy, and denial messages for production-impacting actions. The audit log should answer who owned the request, which agent acted, what resource it touched, and why any blocked action was blocked. Amazon does not provide a benchmark or numeric safety result, so this should be treated as a governance design to test on a bounded workflow, such as database maintenance requests or ticket-driven infrastructure changes.
 
-### Evidence
+### Sources
 - [Why Amazon hates 'human-in-the-loop' AI governance](../Inbox/2026-06-20--why-amazon-hates-human-in-the-loop-ai-governance.md): Summarizes Amazon's governance argument: repeated approvals weaken, agents get separate identities, permissions are scoped by task risk, and denial reasons are supplied.
 - [Why Amazon hates 'human-in-the-loop' AI governance](../Inbox/2026-06-20--why-amazon-hates-human-in-the-loop-ai-governance.md): Gives the concrete log pattern: a named agent acted on behalf of a named human, with human responsibility preserved.

@@ -39,7 +39,7 @@ Agent teams with repeated 429s or overloaded internal services should put a smal
 
 A useful pilot would wrap one high-traffic agent tool behind a durable queue and measure failed calls, queue wait time, retries, and task completion. The test should include an upstream slowdown, since Aquifer’s design allows response headers to reduce the live rate under the configured ceiling. This is a practical support layer for teams whose agents already work but fail when many runs hit the same backend at once.
 
-### Evidence
+### Sources
 - [Show HN: Aquifer – an MCP runtime for spiky agent tool traffic](../Inbox/2026-06-06--show-hn-aquifer-an-mcp-runtime-for-spiky-agent-tool-traffic.md): Aquifer queues MCP or HTTP jobs in SQLite, dispatches through per-upstream workers, supports live rate reduction, and gives concrete RPS and concurrency examples.
 - [Show HN: Aquifer – an MCP runtime for spiky agent tool traffic](../Inbox/2026-06-06--show-hn-aquifer-an-mcp-runtime-for-spiky-agent-tool-traffic.md): The source describes distributed agents calling APIs in bursts and using Aquifer as a coordination layer before shared backends or external APIs.
 
@@ -48,7 +48,7 @@ Coding-agent users still hit workflows that leave the editor: browser dialogs, i
 
 The first adoption test should focus on a narrow desktop workflow with clear stop conditions, such as filling a local app form, saving a file through a native dialog, or completing a browser-based admin task. The evaluation should log which actions used accessibility metadata, which fell back to OCR or screenshots, which actions needed confirmation, and whether batching reduced tool-call count. This keeps desktop automation close to named user tasks and makes safety prompts part of the workflow from the first trial.
 
-### Evidence
+### Sources
 - [AI Can now control your desktop](../Inbox/2026-06-06--ai-can-now-control-your-desktop.md): clawdcursor exposes desktop control through MCP, uses accessibility before OCR and screenshots, has 6 compact tool groups, and gates destructive actions through confirmation.
 - [AI Can now control your desktop](../Inbox/2026-06-06--ai-can-now-control-your-desktop.md): The source describes the compact grouped surface, cross-platform support, accessibility-first operation, and batched deterministic actions.
 
@@ -57,5 +57,5 @@ Long-running coding and corpus-grounded agents need a way to shed stale files, f
 
 A practical test should allow context rewriting only under explicit caps: maximum rewrites, maximum added latency, maximum spend, and a hard stop after repeated non-improving edits. The evaluation should compare pass rate, total turns, cost, and reviewer-visible trace quality on tasks known to contain stale context or distracting files. This makes context editing a measured intervention for specific long-run failures, with policy limits set before the agent starts.
 
-### Evidence
+### Sources
 - [Context Sculpting](../Inbox/2026-06-06--context-sculpting.md): Context Sculpting reports the two-model harness design, rewrite actions, pass-through results, active rewrite runs, and the coding repair cost and latency comparison.

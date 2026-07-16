@@ -27,7 +27,7 @@ language_code: zh-CN
 
 # 受控的代理式工程工作流
 
-## Summary
+## 摘要
 工程团队可以通过在上下文、支出、验证和数据不变量上加明确控制，把代理式开发推进到更窄的生产工作流里。最直接的近期开关是有支出上限的 Claude Code 子代理链、带代理可读契约和代理自跑测试门禁的项目规范，以及在加锁前要求写明数据库不变量的 Rails 变更审查。
 
 ## 为调试工作流设置支出上限的 Claude Code 子代理链
@@ -37,7 +37,7 @@ language_code: zh-CN
 
 最低成本的测试是一条真实事故回放。记录 token、耗时、生成的代理数量，以及父会话是否拿到了足够证据来做决定，而不需要原始日志倾倒。
 
-### Evidence
+### 资料来源
 - [Claude Code v2.1.172: Sub-Agents Can Now Spawn Sub-Agents](../Inbox/2026-06-13--claude-code-v2-1-172-sub-agents-can-now-spawn-sub-agents.md): 概括了 Claude Code 的嵌套子代理、五层深度、独立上下文、模型路由、token 开销和已报告的成本事故。
 - [Claude Code v2.1.172: Sub-Agents Can Now Spawn Sub-Agents](../Inbox/2026-06-13--claude-code-v2-1-172-sub-agents-can-now-spawn-sub-agents.md): 说明了在子代理定义里需要支出上限和 `Agent()` 允许列表。
 - [Claude Code v2.1.172: Sub-Agents Can Now Spawn Sub-Agents](../Inbox/2026-06-13--claude-code-v2-1-172-sub-agents-can-now-spawn-sub-agents.md): 描述了分层路由和循环生成的风险。
@@ -49,7 +49,7 @@ language_code: zh-CN
 
 先从一个服务和一种常见请求开始。只要代理能接单、产出 pull request、在没有开发者盯着环境的情况下跑完约定检查，并留下足够证据让评审快速通过或拒绝，这个试点就算成功。
 
-### Evidence
+### 资料来源
 - [Designing Software for Software Factories](../Inbox/2026-06-13--designing-software-for-software-factories.md): 列出了项目契约、分层验证、代理运行测试循环、隔离环境和反馈记录，作为代理式开发循环的要求。
 - [Designing Software for Software Factories](../Inbox/2026-06-13--designing-software-for-software-factories.md): 描述了并发请求处理，以及共享 staging、分支或部署名额造成的瓶颈。
 - [Designing Software for Software Factories](../Inbox/2026-06-13--designing-software-for-software-factories.md): 指出软件工厂工作流需要模式、契约和脚手架。
@@ -61,7 +61,7 @@ language_code: zh-CN
 
 一个轻量的落地方式，是给 pull request 加检查清单，并且对每条高风险路径做两个并发测试：一个测试同一行的同时写入，另一个测试更宽的不变量。如果第二个测试失败，修复应放在数据库规则或事务设计里，而不是再加一个应用层守卫。
 
-### Evidence
+### 资料来源
 - [Rails: The Sharp Parts. Lock Is Not a Mutex](../Inbox/2026-06-13--rails-the-sharp-parts-lock-is-not-a-mutex.md): 概括了为什么 Rails 锁容易误用，并建议从不变量出发，选择最小的数据库机制。
 - [Rails: The Sharp Parts. Lock Is Not a Mutex](../Inbox/2026-06-13--rails-the-sharp-parts-lock-is-not-a-mutex.md): 说明 Rails 的悲观锁取决于事务边界、隔离级别、数据库行为和查询形状，而且行锁不能覆盖多行不变量。
 - [Rails: The Sharp Parts. Lock Is Not a Mutex](../Inbox/2026-06-13--rails-the-sharp-parts-lock-is-not-a-mutex.md): 列出了评审者在动用锁之前应先问的不变量问题。

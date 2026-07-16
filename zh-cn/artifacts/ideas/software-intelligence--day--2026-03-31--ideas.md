@@ -21,7 +21,7 @@ language_code: zh-CN
 
 # 可执行的语义检查
 
-## Summary
+## 摘要
 当模型输出被转成代码可以执行、评分或拒绝的检查时，软件工具会更有用。近期最清晰的产品方向是面向命令式例程的验证式代码生成，以及和测试行为绑定的语义故障定位。另一个更窄的训练方向也可行：在专有任务上，先按执行行为过滤自生成代码样本，再做偏好微调。
 
 ## 面向命令式例程的按生成即验证式代码审查
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 这里的评估细节也说明了一个真实的产品要求。WybeCoder 在加入命令式约束过滤器以去掉“函数式作弊”解时，结果明显下降，其中一个 GPT-5 设置从 75.1% 降到 51.9%。任何做命令式代码验证生成的团队，都需要在产品和内部评估里做这种基准清洗，否则系统会奖励那些在错误编程模型里满足规格的解。
 
-### Evidence
+### 资料来源
 - [WybeCoder: Verified Imperative Code Generation](../Inbox/2026-03-31--wybecoder-verified-imperative-code-generation.md): Describes the prove-as-you-generate loop, benchmark results, and the imperativeness guard effect.
 - [WybeCoder: Verified Imperative Code Generation](../Inbox/2026-03-31--wybecoder-verified-imperative-code-generation.md): States the review burden and the limits of testing and fuzzing for full assurance.
 
@@ -42,7 +42,7 @@ language_code: zh-CN
 
 第一个可交付版本不需要完整自动修复。它可以放进测试运行器或 CI 失败页面里，向开发者显示那些只在失败测试上出错的少数语义检查，以及它们锚定到的代码位置。最直接的验证标准是：工程师是否能检查更少的代码行，并在覆盖率无法区分的语义 bug 上更快找到出错语句。
 
-### Evidence
+### 资料来源
 - [SemLoc: Structured Grounding of Free-Form LLM Reasoning for Fault Localization](../Inbox/2026-03-31--semloc-structured-grounding-of-free-form-llm-reasoning-for-fault-localization.md): Gives the SemLoc pipeline, benchmark results, and reduction in code inspection.
 - [SemLoc: Structured Grounding of Free-Form LLM Reasoning for Fault Localization](../Inbox/2026-03-31--semloc-structured-grounding-of-free-form-llm-reasoning-for-fault-localization.md): Explains why semantic bugs evade structural signals even when coverage profiles match.
 
@@ -53,7 +53,7 @@ language_code: zh-CN
 
 这最好被看作训练数据分流层，而不是一整套新的模型栈。一个实用的第一步测试可以离线完成：把语义熵和一致性过滤器跑在现有的自生成语料上，把保留下来的样本和未过滤基线做对比，看看过滤后的集合是否能在相同微调算力下带来更好的 pass@1。这里的证据比验证和调试工作流更有限，因为摘要里没有完整的基准拆分，所以首个落地场景应该保持范围小，并且以测量为主。
 
-### Evidence
+### 资料来源
 - [Self-Improving Code Generation via Semantic Entropy and Behavioral Consensus](../Inbox/2026-03-31--self-improving-code-generation-via-semantic-entropy-and-behavioral-consensus.md): Describes code semantic entropy, behavioral consensus, and the reported relative improvement range.
 - [Self-Improving Code Generation via Semantic Entropy and Behavioral Consensus](../Inbox/2026-03-31--self-improving-code-generation-via-semantic-entropy-and-behavioral-consensus.md): States the target setting where problem descriptions and test inputs exist without reference solutions or reliable test oracles.
 - [Think Anywhere in Code Generation](../Inbox/2026-03-31--think-anywhere-in-code-generation.md): Provides adjacent evidence that execution-linked training signals can improve code generation performance when inserted into the generation process.

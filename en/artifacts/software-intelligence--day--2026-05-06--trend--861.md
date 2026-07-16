@@ -32,7 +32,7 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s strongest software-agent papers make large language models (LLMs) propose code, plans, or actions, then check them with execution, verifiers, retrieval gates, or live tools. ReaComp, Slyp, and ARC-AGI-3 show the same current emphasis: agent output needs a testable substrate and a bounded operating surface.
 
-## Clusters
+## Findings
 
 ### Executable solvers and world models
 ReaComp gives the clearest efficiency result. It turns about 100 LLM reasoning traces per benchmark into reusable Python symbolic solvers. On PBEBench-Hard, the symbolic ensemble reaches 84.7% accuracy with no test-time LLM tokens, while Best-of-K reaches 68.4%. The hybrid also cuts reported token use by 78%.
@@ -41,7 +41,7 @@ The ARC-AGI-3 work applies the same discipline to interactive games. The coding 
 
 UVMarvel extends the pattern to hardware verification. It builds Universal Verification Methodology (UVM) testbenches for subsystem-level RTL, then uses coverage reports and signal tracing to ask LLMs for new sequences. The paper reports 95.65% average code coverage across six subsystem benchmarks.
 
-#### Evidence
+#### Sources
 - [ReaComp: Compiling LLM Reasoning into Symbolic Solvers for Efficient Program Synthesis](../Inbox/2026-05-06--reacomp-compiling-llm-reasoning-into-symbolic-solvers-for-efficient-program-synthesis.md): ReaComp method and PBEBench token/accuracy results
 - [Executable World Models for ARC-AGI-3 in the Era of Coding Agents](../Inbox/2026-05-06--executable-world-models-for-arc-agi-3-in-the-era-of-coding-agents.md): ARC-AGI-3 executable world-model design and public-set results
 - [UVMarvel: an Automated LLM-aided UVM Machine for Subsystem-level RTL Verification](../Inbox/2026-05-06--uvmarvel-an-automated-llm-aided-uvm-machine-for-subsystem-level-rtl-verification.md): UVMarvel coverage-guided UVM generation results
@@ -53,7 +53,7 @@ The safety picture is broader than bug finding. Agents of Chaos tested six auton
 
 Enterprise retrieval adds a different control point. The OGX design tags chunks with tenant and access metadata, applies authorization before and during retrieval, and keeps tool execution and conversation state on the server. In its reported tests, ungated retrieval leaked cross-tenant data in 98–100% of probes; ABAC gating reduced leakage and authorization violations to 0%.
 
-#### Evidence
+#### Sources
 - [Agentic Vulnerability Reasoning on Windows COM Binaries](../Inbox/2026-05-06--agentic-vulnerability-reasoning-on-windows-com-binaries.md): Slyp COM vulnerability discovery and PoC verification results
 - [Agents of Chaos](../Inbox/2026-05-06--agents-of-chaos.md): Live autonomous-agent security study and incident counts
 - [Securing the Agent: Vendor-Neutral, Multitenant Enterprise Retrieval and Tool Use](../Inbox/2026-05-06--securing-the-agent-vendor-neutral-multitenant-enterprise-retrieval-and-tool-use.md): Multitenant RAG authorization design and leakage results
@@ -65,7 +65,7 @@ The platform-service scaffolding paper gives a more concrete deployment test. A 
 
 Repository mining adds one more view of context. Agents with bash and git access classify commits, reviews, code lines, and repositories with similar accuracy to fixed-context LLM calls, while avoiding context-window overflows across 4,943 valid classifications. The cost is higher per run, but it scales less with artifact size.
 
-#### Evidence
+#### Sources
 - [Mise en Place for Agentic Coding: Deliberate Preparation as Context Engineering Methodology](../Inbox/2026-05-06--mise-en-place-for-agentic-coding-deliberate-preparation-as-context-engineering-methodology.md): Preparation-first agentic coding method and hackathon case results
 - [Architectural Constraints Alignment in AI-assisted, Platform-based Service Development](../Inbox/2026-05-06--architectural-constraints-alignment-in-ai-assisted-platform-based-service-development.md): RAG template-selection results and deployment gate comparison
 - [Agentic Repository Mining: A Multi-Task Evaluation](../Inbox/2026-05-06--agentic-repository-mining-a-multi-task-evaluation.md): Repository-mining agent evaluation and context-window findings
@@ -77,6 +77,6 @@ Learning evidence is weaker. The pooled learning effect is small and non-signifi
 
 The refactoring-adoption study shows how developers actually use suggestions. In 169 GitHub refactoring commits linked to ChatGPT conversations, many committed changes are either close copies or partial selections from longer suggestions. Readability and maintainability are the most common goals, but one repository supplies most commits, so the dataset is imbalanced.
 
-#### Evidence
+#### Sources
 - [A meta-analysis of the effect of generative AI on productivity and learning in programming](../Inbox/2026-05-06--a-meta-analysis-of-the-effect-of-generative-ai-on-productivity-and-learning-in-programming.md): Meta-analysis productivity and learning effect sizes
 - [Patterns of Developer Adoption of LLM-Generated Code Refactoring Suggestions](../Inbox/2026-05-06--patterns-of-developer-adoption-of-llm-generated-code-refactoring-suggestions.md): Developer adoption patterns for LLM refactoring suggestions

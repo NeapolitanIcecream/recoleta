@@ -34,7 +34,7 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s robotics papers concentrate on making vision-language-action (VLA) policies executable: online adaptation, 3D/contact feedback, and cheaper planning models. SARL, 3D HAMSTER, and DVG-WM show the current emphasis on evidence that survives control loops, geometry, and physical interaction.
 
-## Clusters
+## Findings
 
 ### Online VLA adaptation
 Several papers treat deployment as a learning loop. SARL trains over language prompts as semantic actions, then uses reward to learn which prompts produce useful robot behavior. On Libero-10 and four real WidowX tasks, it reports near-zero initial success under a single task prompt and about 80% success after 60 to 100 online episodes.
@@ -43,7 +43,7 @@ Z-1 applies reinforcement learning after supervised fine-tuning for flow-based V
 
 A pruning study adds a deployment-cost angle. It uses weight changes during VLM-to-VLA adaptation to decide which OpenVLA and pi_0.5 components can be removed. The reported target is 12% to 30% parameter reduction while keeping about 90% of original LIBERO performance without post-pruning recovery.
 
-#### Evidence
+#### Sources
 - [Adapting Generalist Robot Policies with Semantic Reinforcement Learning](../Inbox/2026-06-30--adapting-generalist-robot-policies-with-semantic-reinforcement-learning.md): SARL prompt-level reinforcement learning and online adaptation results.
 - [Z-1: Efficient Reinforcement Learning for Vision-Language-Action Models](../Inbox/2026-06-30--z-1-efficient-reinforcement-learning-for-vision-language-action-models.md): Z-1 RL post-training design and RoboCasa success-rate gains.
 - [Revisiting Parameter Redundancy in Vision-Language-Action Models: Insights from VLM-to-VLA Adaptation](../Inbox/2026-06-30--revisiting-parameter-redundancy-in-vision-language-action-models-insights-from-vlm-to-vla-adaptation.md): VLA pruning results based on VLM-to-VLA weight divergence.
@@ -55,7 +55,7 @@ UniTacVLA adds tactile tokens, future tactile prediction, and a high-frequency c
 
 The data side matches this emphasis. RoboTacDex contributes 6,000 humanoid trajectories with multi-view RGB-D, tactile signals, joint states, actions, and task labels on a Unitree G1. Human-as-Humanoid takes a different route by converting synchronized ego-exo human videos into executable 60-DoF humanoid labels, with a claimed 4.8× to 7.2× demonstration-throughput gain over humanoid teleoperation.
 
-#### Evidence
+#### Sources
 - [3D HAMSTER: Bridging Planning and Control in Hierarchical Vision Language Action Models through 3D Trajectory Guidance](../Inbox/2026-06-30--3d-hamster-bridging-planning-and-control-in-hierarchical-vision-language-action-models-through-3d-trajectory-guidance.md): 3D HAMSTER waypoint planning, depth encoding, and DroidSpatial-Bench results.
 - [UniTacVLA: Unified Tactile Understanding and Prediction in Vision Language Action Models](../Inbox/2026-06-30--unitacvla-unified-tactile-understanding-and-prediction-in-vision-language-action-models.md): UniTacVLA tactile prediction, correction controller, and real-robot success rates.
 - [RoboTacDex: A Dexterous Visual-Tactile-Action Dataset for Humanoid Manipulation](../Inbox/2026-06-30--robotacdex-a-dexterous-visual-tactile-action-dataset-for-humanoid-manipulation.md): RoboTacDex dataset size, modalities, and humanoid manipulation coverage.
@@ -70,7 +70,7 @@ Delta-JEPA targets action sensitivity without pixel reconstruction. Its latent d
 
 OopsieVerse adds a separate safety signal: explicit damage tracking for household manipulation. Its benchmark has 32 task instances across OmniGibson and RoboCasa, with mechanical, thermal, and fluid damage classes. The supplied text gives benchmark scope rather than quantitative policy gains, so its contribution is mainly evaluation design.
 
-#### Evidence
+#### Sources
 - [DVG-WM: Disentangled Video Generation Enables Efficient Embodied World Model for Robotic Manipulation](../Inbox/2026-06-30--dvg-wm-disentangled-video-generation-enables-efficient-embodied-world-model-for-robotic-manipulation.md): DVG-WM video world model design and LIBERO speed and quality results.
 - [AdaJEPA: An Adaptive Latent World Model](../Inbox/2026-06-30--adajepa-an-adaptive-latent-world-model.md): AdaJEPA closed-loop test-time adaptation and PointMaze results.
 - [Delta-JEPA: Learning Action-Sensitive World Models via Latent Difference Decoding](../Inbox/2026-06-30--delta-jepa-learning-action-sensitive-world-models-via-latent-difference-decoding.md): Delta-JEPA latent displacement decoder and planning success rates.

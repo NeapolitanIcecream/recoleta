@@ -41,7 +41,7 @@ The case is concrete because the measured failure rate is no longer hypothetical
 
 A practical first deployment is a CI job on changed MCP tools, with stricter review for filesystem, network, auth, analytics, and state-changing tools. The output should include the descriptor text, the code path that caused the flag, and the inconsistency subtype so maintainers can fix the description or the implementation before an agent can call it.
 
-### Evidence
+### Sources
 - [Description-Code Inconsistency in Real-world MCP Servers: Measurement, Detection, and Security Implications](../Inbox/2026-06-03--description-code-inconsistency-in-real-world-mcp-servers-measurement-detection-and-security-implications.md): Defines description-code inconsistency for MCP tools, describes DCIChecker, and reports 9.93% inconsistent pairs across 19,200 tool pairs from 2,214 servers.
 - [Description-Code Inconsistency in Real-world MCP Servers: Measurement, Detection, and Security Implications](../Inbox/2026-06-03--description-code-inconsistency-in-real-world-mcp-servers-measurement-detection-and-security-implications.md): Explains that LLMs usually plan from tool descriptions without inspecting code, and gives an example of undisclosed state and analytics side effects.
 
@@ -52,7 +52,7 @@ Context-as-a-Service gives a workable pattern. In two production-SDK case studie
 
 The first useful adoption point is high-risk generated docs: API references for public methods, tutorials with executable snippets, and docs that depend on lifecycle behavior or objects created in other files. Review should keep only findings tied to concrete evidence snippets and source paths, so the doc owner can accept or reject a fix without rerunning the agent’s search.
 
-### Evidence
+### Sources
 - [Context-as-a-Service: Surfacing Cross-File Dependency Chains for LLM-Generated Developer Documentation](../Inbox/2026-06-03--context-as-a-service-surfacing-cross-file-dependency-chains-for-llm-generated-developer-documentation.md): Describes CaaS as a retrieval layer for documentation agents and reports retained findings rising from 5 to 13 across two production-SDK workflows.
 - [Context-as-a-Service: Surfacing Cross-File Dependency Chains for LLM-Generated Developer Documentation](../Inbox/2026-06-03--context-as-a-service-surfacing-cross-file-dependency-chains-for-llm-generated-developer-documentation.md): Lists the extra findings surfaced by CaaS and reports 22% to 34% wall-clock reduction across the two tasks.
 - [Context-as-a-Service: Surfacing Cross-File Dependency Chains for LLM-Generated Developer Documentation](../Inbox/2026-06-03--context-as-a-service-surfacing-cross-file-dependency-chains-for-llm-generated-developer-documentation.md): Explains why ordinary repository tools miss non-obvious dependency chains behind documentation claims.
@@ -64,6 +64,6 @@ Ekka shows this workflow can move silent-error triage beyond output comparison. 
 
 A small operational version can start with nightly canary prompts for models that have custom kernels, quantization, paged attention, or sliding-window attention enabled. When an accuracy metric drops, the diagnosis artifact should include the prompt, model revision, engine revision, aligned component path, activation-difference summary, and candidate faulty layer for the serving engineer.
 
-### Evidence
+### Sources
 - [Ekka: Automated Diagnosis of Silent Errors in LLM Inference](../Inbox/2026-06-03--ekka-automated-diagnosis-of-silent-errors-in-llm-inference.md): Summarizes Ekka’s differential debugging method and reports 80% pass@1 and 88% pass@5 diagnosis accuracy on real silent serving errors.
 - [Ekka: Automated Diagnosis of Silent Errors in LLM Inference](../Inbox/2026-06-03--ekka-automated-diagnosis-of-silent-errors-in-llm-inference.md): Explains why optimized LLM serving engines can return responses without explicit errors while output quality degrades.

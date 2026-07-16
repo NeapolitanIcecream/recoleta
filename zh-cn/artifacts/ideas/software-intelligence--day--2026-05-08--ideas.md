@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Coding Agent Control Points
 
-## Summary
+## 摘要
 采用 coding agent 的团队现在可以加上三个具体控制：针对过期问题的预编辑拒答检查、针对代理指令和权限的仓库配置审计，以及针对需要机器检查正确性的代码的证明导向通道。
 
 ## Pre-edit abstention checks for stale and duplicate bug reports
@@ -33,7 +33,7 @@ FixedBench 给出了测试这一点的直接理由。在已经修复的 SWE-benc
 
 最先会用到它的是那些让代理从问题队列里打开或更新维护类 PR 的团队。流程改动很小：在代理提交代码 diff 之前，要求一份复现说明和一条“为什么不改代码是安全的”路径。人类审阅者仍然保留合并权限，这也符合当前的 GitHub 证据：在 29,585 个与 AI 代理相关的 PR 中，代理批准的 PR 只有 14 个，并且每个工具都低于 0.1%。
 
-### Evidence
+### 资料来源
 - [Coding Agents Don't Know When to Act](../Inbox/2026-05-08--coding-agents-don-t-know-when-to-act.md): FixedBench measures unwanted edits on already-fixed issues and shows the prompt tradeoff on partially fixed issues.
 - [Coding Agents Don't Know When to Act](../Inbox/2026-05-08--coding-agents-don-t-know-when-to-act.md): The paper frames stale and duplicate bug reports as a routine repository condition where agents should abstain.
 - [Collaborator or Assistant? How AI Coding Agents Partition Work Across Pull Request Lifecycles](../Inbox/2026-05-08--collaborator-or-assistant-how-ai-coding-agents-partition-work-across-pull-request-lifecycles.md): The PR lifecycle study shows humans almost always retain merge authority in AI-agent PR workflows.
@@ -45,7 +45,7 @@ FixedBench 给出了测试这一点的直接理由。在已经修复的 SWE-benc
 
 安全研究给出了清单应先运行的检查。subagent 系统需要有边界的记忆继承、按角色划分的资源访问、生命周期控制和安全终止规则。运行时治理研究补充了一种实用的放置方式：对受限操作设置 pre-action 门禁，对高风险工具使用设置 action-time 监视器，对轨迹审计设置 post-action 审核器，在策略无法自动决定时走升级路由。CI 审计可以先做静态检测，再把高风险项移到代理实际动作时的运行时检查中。
 
-### Evidence
+### 资料来源
 - [A Dataset of Agentic AI Coding Tool Configurations](../Inbox/2026-05-08--a-dataset-of-agentic-ai-coding-tool-configurations.md): The dataset quantifies repository-level agent configuration artifacts across tools and configuration mechanisms.
 - [A Dataset of Agentic AI Coding Tool Configurations](../Inbox/2026-05-08--a-dataset-of-agentic-ai-coding-tool-configurations.md): The paper defines context files, skills, subagents, commands, rules, settings, hooks, and MCP configurations.
 - [When Child Inherits: Modeling and Exploiting Subagent Spawn in Multi-Agent Networks](../Inbox/2026-05-08--when-child-inherits-modeling-and-exploiting-subagent-spawn-in-multi-agent-networks.md): The subagent security paper identifies memory inheritance, resource access, stale state, and termination-control vulnerabilities.
@@ -58,7 +58,7 @@ VeriContest 说明了为什么应该把这个范围收窄。GPT-5.5 在自然语
 
 一个有用的落地测试很小：选 10 个带清晰前置条件和后置条件的函数，要求 Verus 检查，并记录代理在哪一步失败：缺少规格、后置条件不完整、不变式无效，还是代码错误。VeriContest 使用的 Post2Exe 和大规模负测试集，也给出了一个具体模式，可以在弱规格被信任前把它们抓出来。
 
-### Evidence
+### 资料来源
 - [VeriContest: A Competitive-Programming Benchmark for Verifiable Code Generation](../Inbox/2026-05-08--vericontest-a-competitive-programming-benchmark-for-verifiable-code-generation.md): VeriContest reports the benchmark composition and the large drop from ordinary code generation to verified generation.
 - [VeriContest: A Competitive-Programming Benchmark for Verifiable Code Generation](../Inbox/2026-05-08--vericontest-a-competitive-programming-benchmark-for-verifiable-code-generation.md): The paper reports the pass@1 split across code, specification, proof, and end-to-end verified generation.
 - [VeriContest: A Competitive-Programming Benchmark for Verifiable Code Generation](../Inbox/2026-05-08--vericontest-a-competitive-programming-benchmark-for-verifiable-code-generation.md): The content describes Verus specifications, executable Rust code, loop invariants, assertions, and proof structure.

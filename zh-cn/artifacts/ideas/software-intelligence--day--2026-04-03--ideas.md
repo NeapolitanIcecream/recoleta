@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # 仓库代理安全门
 
-## Summary
+## 摘要
 代码代理评估正在转向真实仓库状态、真实用户失败轨迹和真实扩展安全检查。眼下最明确的近期开销变化，是基于支持失败构建内部回放套件、带仓库健康评分的有状态 pull request 序列基准，以及在第三方技能接触开发者机器或 CI 之前设置隔离步骤。
 
 ## 从代码代理支持失败中构建以仓库为基础的回放套件
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 一个具体做法是为某个代码代理部署建立内部回放套件，输入来源包括工单、Slack 故障报告和支持升级单。第一版不需要基于模型的 fuzzing。它可以覆盖少量常见的工作流错误，比如改错文件、回滚后留下部分修改、在工作区状态过期时声称成功，或者执行了错误的命令序列。把这套测试放在每次代理升级、每次工具权限变更、每次脚手架变更时运行。对已经把代理接到生产仓库的团队来说，这比等用户在真实使用中不断报错要便宜得多。
 
-### Evidence
+### 资料来源
 - [ABTest: Behavior-Driven Testing for AI Coding Agents](../Inbox/2026-04-03--abtest-behavior-driven-testing-for-ai-coding-agents.md): ABTest converts 400 confirmed failure reports into 647 executable repository-grounded cases and confirms 642 new anomalies across major coding agents.
 - [ABTest: Behavior-Driven Testing for AI Coding Agents](../Inbox/2026-04-03--abtest-behavior-driven-testing-for-ai-coding-agents.md): The paper describes practical workflow failures such as wrong-file edits and unintended side effects during real repository interaction.
 
@@ -42,7 +42,7 @@ language_code: zh-CN
 
 一个具体的流程改动，是在现有单任务基准旁边增加一条有状态评测轨道。先从某个活跃仓库里选一小串历史 pull request，步骤之间保留工作区状态，同时给功能正确性和修改后的可维护性信号打分，比如静态分析告警或复杂度增长。这类测试对平台团队有用，他们要判断代理能不能在几天内处理积压工作；对买家也有用，因为很多排行榜分数来自干净重置，而这种重置会抹掉早先错误的后果。
 
-### Evidence
+### 资料来源
 - [Beyond Isolated Tasks: A Framework for Evaluating Coding Agents on Sequential Software Evolution](../Inbox/2026-04-03--beyond-isolated-tasks-a-framework-for-evaluating-coding-agents-on-sequential-software-evolution.md): SWE-STEPS reports that isolated PR evaluation can overstate success by up to 20 points and gives concrete drops under continuous evaluation.
 - [Beyond Isolated Tasks: A Framework for Evaluating Coding Agents on Sequential Software Evolution](../Inbox/2026-04-03--beyond-isolated-tasks-a-framework-for-evaluating-coding-agents-on-sequential-software-evolution.md): The paper states that previous inefficient or buggy code causes spillover effects and degrades repository health through higher complexity and technical debt.
 
@@ -51,6 +51,6 @@ language_code: zh-CN
 
 一个具体做法是给技能和 MCP 风格扩展加一道隔离步骤：解析 SKILL.md 和相关文档，提取可执行片段和配置片段，标出网络目标和 shell 命令，并要求先在隔离环境中干净运行一次，才能让这个技能接触开发者工作站或 CI 秘钥范围。团队可以先从市场导入和高权限内部技能开始。直接价值是减少一类从示例和模板进入的攻击，而开发者常把这些内容当成无害的参考文本。
 
-### Evidence
+### 资料来源
 - [Supply-Chain Poisoning Attacks Against LLM Coding Agent Skill Ecosystems](../Inbox/2026-04-03--supply-chain-poisoning-attacks-against-llm-coding-agent-skill-ecosystems.md): The paper documents documentation-driven poisoning of coding-agent skills with measured bypass rates across frameworks and models.
 - [Supply-Chain Poisoning Attacks Against LLM Coding Agent Skill Ecosystems](../Inbox/2026-04-03--supply-chain-poisoning-attacks-against-llm-coding-agent-skill-ecosystems.md): The abstract states that skill documentation functions as operational directives with system-level privilege implications for host compromise.

@@ -35,7 +35,7 @@ VLA teams with low early success rates should add a relabeling stage to RL post-
 
 A low-cost check can run on stored failures before collecting more robot data. Relabel a few hundred trajectories, manually inspect a stratified sample for instruction and reward accuracy, then compare usable-group rate and held-out task success with the current reward pipeline. Deployment should keep relabeling focused on coherent completed behavior and reject ambiguous clips, since incorrect hindsight instructions would train the policy on mislabeled actions.
 
-### Evidence
+### Sources
 - [Learning More from Less: Reinforcement Learning from Hindsight](../Inbox/2026-07-10--learning-more-from-less-reinforcement-learning-from-hindsight.md): Documents the relabeling method, usable-group rates, sample-efficiency result, backbone coverage, and physical Franka comparison.
 - [Learning More from Less: Reinforcement Learning from Hindsight](../Inbox/2026-07-10--learning-more-from-less-reinforcement-learning-from-hindsight.md): Describes the operational workflow in which one VLM proposes hindsight instructions, scores rollout groups, and supplies joint training signal.
 
@@ -44,7 +44,7 @@ Manipulation teams should evaluate action policies across a speed-and-contact en
 
 The acceptance test should report completion time, success, tracking error, peak force, and the share of force samples above a task-specific threshold at each speed setting. B-spline Policy cut table-cleaning time from 23.57 to 11.80 seconds while success moved from 13/20 to 14/20, yet its Speed Stacking result fell to 0/20 at 4× speed because of controller tracking limits. PAC-ACT reduced force readings above 60 N by 46 times on a precision-contact task. A bounded trial at 1×, 2×, and 4× speed can identify the usable operating range before a longer deployment run.
 
-### Evidence
+### Sources
 - [B-spline Policy: Accelerating Manipulation Policies via B-spline Action Representations](../Inbox/2026-07-10--b-spline-policy-accelerating-manipulation-policies-via-b-spline-action-representations.md): Provides real-robot timing and success results, integration details, and the failure at aggressive speedup.
 - [PAC-ACT: Post-training Actor-Critic for Action Chunking Transformers](../Inbox/2026-07-10--pac-act-post-training-actor-critic-for-action-chunking-transformers.md): Provides the chunk-level RL design and reported reduction in force readings above 60 N.
 - [PAC-ACT: Post-training Actor-Critic for Action Chunking Transformers](../Inbox/2026-07-10--pac-act-post-training-actor-critic-for-action-chunking-transformers.md): Explains why pose and contact distribution shifts create force-safety failures in behavior-cloned action-chunking policies.
@@ -54,7 +54,7 @@ World-model teams using unlabeled video should test whether latent actions encod
 
 CD-LAM shows that this audit can guide a targeted fine-tuning stage using embodiment-weighted reconstruction, action-centric contrastive learning, and latent-space calibration. Its camera-shift response fell from 0.555 to 0.156 horizontally and from 0.545 to 0.110 vertically; the 14B model matched the DreamDojo reference with more than 12 times fewer robot-action adaptation updates. Teams can first run these perturbations on a few hundred held-out clips, then proceed to expensive action-labeled training only when latent responses track robot and object interaction consistently.
 
-### Evidence
+### Sources
 - [Causally Debiased Latent Action Model for Embodied Action Conditioned World Models](../Inbox/2026-07-10--causally-debiased-latent-action-model-for-embodied-action-conditioned-world-models.md): Reports the confounder audit metrics, debiasing objectives, and robot-action adaptation efficiency.
 - [Causally Debiased Latent Action Model for Embodied Action Conditioned World Models](../Inbox/2026-07-10--causally-debiased-latent-action-model-for-embodied-action-conditioned-world-models.md): Explains how reconstruction-only latent action training admits backgrounds and non-interacted objects into action codes.
 - [Causally Debiased Latent Action Model for Embodied Action Conditioned World Models](../Inbox/2026-07-10--causally-debiased-latent-action-model-for-embodied-action-conditioned-world-models.md): Details the staged fine-tuning pipeline used before adaptation to executable robot actions.

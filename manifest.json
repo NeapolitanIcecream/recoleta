@@ -29,6 +29,7 @@
           "archive/page/9/index.html",
           "archive/page/10/index.html"
         ],
+        "favicon": "assets/favicon.svg",
         "idea_pages": [
           "ideas/embodied-ai--day--2026-07-13--ideas.html",
           "ideas/software-intelligence--day--2026-07-13--ideas.html",
@@ -4107,6 +4108,7 @@
           "archive/page/9/index.html",
           "archive/page/10/index.html"
         ],
+        "favicon": "assets/favicon.svg",
         "idea_pages": [
           "ideas/embodied-ai--day--2026-07-13--ideas.html",
           "ideas/software-intelligence--day--2026-07-13--ideas.html",
@@ -5762,8 +5764,7 @@
           ],
           "agent-security": [
             "topics/agent-security.html",
-            "topics/agent-security/page/2/index.html",
-            "topics/agent-security/page/3/index.html"
+            "topics/agent-security/page/2/index.html"
           ],
           "agent-skills": [
             "topics/agent-skills.html"
@@ -6033,8 +6034,7 @@
             "topics/coding-agents/page/12/index.html",
             "topics/coding-agents/page/13/index.html",
             "topics/coding-agents/page/14/index.html",
-            "topics/coding-agents/page/15/index.html",
-            "topics/coding-agents/page/16/index.html"
+            "topics/coding-agents/page/15/index.html"
           ],
           "coding-benchmarks": [
             "topics/coding-benchmarks.html"
@@ -8431,6 +8431,7 @@
         ]
       }
     },
+    "favicon": "assets/favicon.svg",
     "idea_pages": [
       "ideas/embodied-ai--day--2026-07-13--ideas.html",
       "ideas/software-intelligence--day--2026-07-13--ideas.html",
@@ -12519,7 +12520,8 @@
   "pagination": {
     "card_page_size": 12,
     "dense_page_size": 24,
-    "topic_column_page_size": 6
+    "topic_column_page_size": 12,
+    "topic_page_size": 12
   },
   "topics_total": 547,
   "trends_total": 225

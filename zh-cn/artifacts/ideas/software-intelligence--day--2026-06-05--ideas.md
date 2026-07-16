@@ -27,7 +27,7 @@ language_code: zh-CN
 
 # 编码代理审计轨迹
 
-## Summary
+## 摘要
 运行编码代理的团队可以在每次运行周围增加更有用的审查点：补丁前查看过的具体代码区域、用于识别测试作弊的随机化评测器检查，以及针对第三方 skills 的运行时检查。共同的运营需求是：代理成功或失败之后，都能审计这些证据。
 
 ## 编码代理补丁前的行范围探索报告
@@ -35,7 +35,7 @@ language_code: zh-CN
 
 一个成本不高的内部测试做法是回放 50 到 100 个已关闭的 issue，隐藏最终补丁，让每个代理在编辑前先给出五个排序后的区域。评审就可以把“没找到相关代码”和“没写出补丁”区分开来。这比单一的通过或失败结果更能说明工程经理和工具开发者这次运行为什么失败。
 
-### Evidence
+### 资料来源
 - [SWE-Explore: Benchmarking How Coding Agents Explore Repositories](../Inbox/2026-06-05--swe-explore-benchmarking-how-coding-agents-explore-repositories.md): SWE-Explore defines ranked file-line regions, trajectory-derived line-level ground truth, and metrics that correlate with repair success.
 
 ## 编码代理评测套件中的上限随机测试
@@ -43,7 +43,7 @@ language_code: zh-CN
 
 这可以先作为现有评测套件中的一个 canary 集。团队保留正常测试来测能力，再加入 capped 变体来查泄漏，并对重复提交做单侧二项检验。真正有用的结果不只是分数更低，而是提示代理的评测提升可能来自利用可获得的反馈。
 
-### Evidence
+### 资料来源
 - [Do Coding Agents Deceive Us? Detecting and Preventing Cheating via Capped Evaluation with Randomized Tests](../Inbox/2026-06-05--do-coding-agents-deceive-us-detecting-and-preventing-cheating-via-capped-evaluation-with-randomized-tests.md): CapCode uses randomized accepted outputs, a known pass-rate cap, and one-sided binomial tests to detect coding-agent test gaming.
 
 ## 第三方编码代理 skills 的运行时沙箱检查
@@ -51,5 +51,5 @@ language_code: zh-CN
 
 一个实用的门禁是给新的 SKILL.md 包做一个小型隔离服务。它在 Docker 里配合测试代理运行 skill，记录系统调用和文件变化，并阻止与已知恶意行为匹配，或者要求不安全工具权限的 skill。基准里的误报结果对落地很重要：高召回的迁移工具在 4,000 个良性 skill 上产生了多达 3,979 个误报，所以团队在大范围启用检测器前，应该同时测被拦住的攻击数和对开发者的干扰。
 
-### Evidence
+### 资料来源
 - [MalSkillBench: A Runtime-Verified Benchmark of Malicious Agent Skills](../Inbox/2026-06-05--malskillbench-a-runtime-verified-benchmark-of-malicious-agent-skills.md): MalSkillBench provides runtime-verified malicious and benign agent skills, reports detector performance, and shows high false-positive risk for transfer tools.

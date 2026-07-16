@@ -37,7 +37,7 @@ The useful product here is a migration kit for documentation teams: content mode
 
 A cheap test is to migrate one section with mixed content types, such as tutorials plus interactive examples, and compare setup time for contributors, number of build tools in CI, and how many custom DOM scripts remain after the move. The evidence does not include benchmark numbers, so any adoption case still needs local performance measurement before a full rebuild.
 
-### Evidence
+### Sources
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md): Summary states that Flutter and Dart migrated three major sites to Jaspr, consolidated to one Dart SDK, and used partial hydration for static pages with selective interactivity.
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md): Content describes contributor friction from Node.js and Python tooling and the difficulty of adding interactive elements under the previous setup.
 - [We rebuilt Flutter’s websites with Dart and Jaspr](../Inbox/2026-04-15--we-rebuilt-flutters-websites-with-dart-and-jaspr.md): Content explains that Jaspr supports partial hydration and lowers the barrier for Flutter developers building DOM-based web pages.
@@ -49,7 +49,7 @@ A practical build is an upgrade assistant for Lynx apps that reads project depen
 
 The cheapest validation is to run the tool on a few apps moving across recent versions and count manual fixes that still require a framework expert. This case is supported by roadmap commitments, not by migration incident data, so the first version should stay close to release notes and static analysis instead of claiming automatic fixes.
 
-### Evidence
+### Sources
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): Summary says Lynx plans monthly releases, stronger API stability, and better upgrade guidance for teams shipping apps.
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): Content notes recent releases from v3.2 to v3.6 and improved native API stability, which supports a real versioning surface for upgrade tooling.
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): Content adds production-focused infrastructure work, more native capabilities, and stronger DevTool, profiling, and diagnostics, which increases the need for targeted upgrade checks.
@@ -61,6 +61,6 @@ A useful product is a docs-to-context pipeline for Lynx: extract API references,
 
 A cheap check is to package a small part of the Lynx docs and examples, then test whether code assistants produce more accurate component scaffolds or fewer invalid API calls on common tasks such as navigation setup or lynx-ui usage. The evidence here is still roadmap-level, so this is a near-term tooling build for framework teams, not proof of downstream developer gains yet.
 
-### Evidence
+### Sources
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): Summary identifies AI-oriented docs and tooling as one of the roadmap's five priorities.
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): Content specifies stable and well-structured APIs, LLM-friendly documentation, Agent Skills, tooling, and examples on the Lynx website.

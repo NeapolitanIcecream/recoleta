@@ -41,7 +41,7 @@ FASE gives a cheaper companion check when tests are missing or expensive. It sam
 
 A practical adoption test is a CI or agent-router step that records these scores for generated code, then compares score bands with real review outcomes, unit-test failures, and rollback data. Low-score outputs can be sent to retry, extra tests, or human review before another agent builds on them.
 
-### Evidence
+### Sources
 - [Code Is More Than Text: Uncertainty Estimation for Code Generation](../Inbox/2026-06-08--code-is-more-than-text-uncertainty-estimation-for-code-generation.md): Shows the three code-specific uncertainty signals and benchmark gains for predicting generated-code correctness.
 - [FASE: Fast Adaptive Semantic Entropy for Code Quality](../Inbox/2026-06-08--fase-fast-adaptive-semantic-entropy-for-code-quality.md): Shows a lower-cost semantic entropy method based on sample embeddings and MST clustering.
 
@@ -50,7 +50,7 @@ Enterprise MCP agents should have an explicit context policy that keeps recent t
 
 The build is small enough for a middleware layer around an MCP client: persist every call, pass only the last five complete interactions plus a short rolling summary to the model, and attach trace IDs to each tool result. The trace IDs matter because enterprise MCP practitioners named fast fault localization as the main troubleshooting obstacle in all 20 interviews. The same runtime layer should also enforce controls outside model obedience, such as tool allowlists, state checks, and stop conditions, matching the agent-harness requirement for control mechanisms independent of the model.
 
-### Evidence
+### Sources
 - [Less Context, Better Agents: Efficient Context Engineering for Long-Horizon Tool-Using LLM Agents](../Inbox/2026-06-08--less-context-better-agents-efficient-context-engineering-for-long-horizon-tool-using-llm-agents.md): Reports the D365 F&O context-pruning experiment, completion rates, token counts, and the last-five-plus-summary policy.
 - [Understanding How Enterprises Adopt the Model Context Protocol for LLM-Driven Software Engineering](../Inbox/2026-06-08--understanding-how-enterprises-adopt-the-model-context-protocol-for-llm-driven-software-engineering.md): Reports enterprise MCP adoption interviews and the universal complaint about fault localization.
 - [What makes a harness a harness: necessary and sufficient conditions for an agent harness](../Inbox/2026-06-08--what-makes-a-harness-a-harness-necessary-and-sufficient-conditions-for-an-agent-harness.md): Defines agent-harness runtime requirements, including task-aware context management and controls independent of model obedience.
@@ -60,5 +60,5 @@ Teams accepting AI-generated tests need a record for each candidate test, includ
 
 This is a practical workflow change for test-generation pilots. Each generated test can enter review with its target method, baseline coverage, coverage change, mutation signal, build and execution logs, repair count, and smell checks attached. Reviewers can reject tests that only compile, prioritize tests with coverage or mutation evidence, and inspect recurring failure modes by model, prompt, context mode, or repair budget. The useful first check is whether this record reduces reviewer time and catches low-value passing tests in one real repository.
 
-### Evidence
+### Sources
 - [TestMap: Evidence Infrastructure for Foundation-Model-Assisted Test Generation](../Inbox/2026-06-08--testmap-evidence-infrastructure-for-foundation-model-assisted-test-generation.md): Describes TestMap’s evidence categories, .NET toolchain, outcome labels, and candidate-level traceability for generated tests.

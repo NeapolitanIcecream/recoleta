@@ -37,7 +37,7 @@ Teams buying or deploying coding agents should test them on complete repository 
 
 DeNovoSWE gives a template for this setup. It selects repositories with stable Docker environments, high original test pass rates, and test coverage filters, then maps tests and traced functions to documented capabilities. The dataset has 4,818 document-to-repository instances, and fine-tuning Qwen3-30B-A3B on it raised BeyondSWE-Doc2Repo performance from 5.8% to 47.2%. EsoLang-Bench adds a useful stress test for internal DSLs and proprietary tools: give the agent a persistent workspace, local execution, and hidden submissions, then measure whether it can learn an unfamiliar executable interface during the session.
 
-### Evidence
+### Sources
 - [DeNovoSWE: Scaling Long-Horizon Environments for Generating Entire Repositories from Scratch](../Inbox/2026-06-09--denovoswe-scaling-long-horizon-environments-for-generating-entire-repositories-from-scratch.md): DeNovoSWE describes whole-repository generation tasks, sandbox cleanup, Docker environments, executable checks, and the 5.8% to 47.2% fine-tuning result.
 - [Frontier Coding Agents Use Metaprogramming to Adapt to Unfamiliar Programming Languages](../Inbox/2026-06-09--frontier-coding-agents-use-metaprogramming-to-adapt-to-unfamiliar-programming-languages.md): EsoLang-Bench shows how persistent workspaces, local interpreters, and hidden tests expose adaptation ability in unfamiliar executable interfaces.
 
@@ -46,7 +46,7 @@ Code-assistant deployments need a scan of the context they send into generation:
 
 The strongest cheap validation is a red-team set built from the team’s own docs and examples. Seed safe tasks with adversarial comments or examples for SQL injection, XSS, hardcoded credentials, path traversal, and insecure cryptography, then measure whether the assistant emits vulnerable code and whether the gate blocks the prompt or output. In the adversarial-context study, vulnerability generation rose from 3.5% to 37.4% across 2,800 trials, and context placed 10 to 50 tokens before the target function reached 62.1% attack success. The paper’s combined detector reported 89.1% detection with 0.3% false positives on a held-out set.
 
-### Evidence
+### Sources
 - [Context-Based Adversarial Attacks on AI Code Generators: Vulnerability Analysis and Implications](../Inbox/2026-06-09--context-based-adversarial-attacks-on-ai-code-generators-vulnerability-analysis-and-implications.md): The study reports attacks through comments, documentation, variable names, and examples, with vulnerability rates, nearby-context effects, and detector results.
 - [Context-Based Adversarial Attacks on AI Code Generators: Vulnerability Analysis and Implications](../Inbox/2026-06-09--context-based-adversarial-attacks-on-ai-code-generators-vulnerability-analysis-and-implications.md): The abstract states the 2,800-experiment setup and the rise in vulnerability generation under adversarial context.
 
@@ -55,6 +55,6 @@ API teams with broad endpoint coverage can add an agent step that reads implemen
 
 MASTOR shows why this is worth testing on REST services. It targets failures that status-code, crash, and schema checks miss, including business-logic errors and state-dependent inconsistencies. Across 13 open-source RESTful API projects with 296 operations and 251,303 lines of code, it generated 10,022 oracles and reached a 75.4% average mutation score. On a 50-operation comparison using status and field oracles, it scored 69.9%, compared with 39.8% for Direct Prompting and 20.5% for SATORI.
 
-### Evidence
+### Sources
 - [MASTOR: A Multi-Agent Approach to Semantic Test Oracle Generation for RESTful APIs](../Inbox/2026-06-09--mastor-a-multi-agent-approach-to-semantic-test-oracle-generation-for-restful-apis.md): MASTOR details source analysis, oracle generation, reviewer checks, benchmark size, mutation scores, and baseline comparisons.
 - [MASTOR: A Multi-Agent Approach to Semantic Test Oracle Generation for RESTful APIs](../Inbox/2026-06-09--mastor-a-multi-agent-approach-to-semantic-test-oracle-generation-for-restful-apis.md): The abstract explains the problem with simple REST API checks and the source-based multi-agent oracle-generation workflow.

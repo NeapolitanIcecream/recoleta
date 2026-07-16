@@ -29,17 +29,17 @@ language_code: zh-CN
 
 # 机器人世界模型现在必须在延迟和数据限制下证明控制价值
 
-## Overview
+## 概览
 这一时期的机器人学习工作集中在能在真实系统上运行的预测控制。MotuBrain、Being-H0.7 和 LaST-R1 给出的信号最清楚：只要未来状态推理能提高长时程动作质量，又不增加部署延迟，它就有价值。
 
-## Clusters
+## 研究发现
 
 ### 适用于可部署机器人控制的世界-行动模型
 世界-行动模型现在被当作控制系统来评估，而不只是预测器。MotuBrain把未来视频潜变量和动作 token 放进一个扩散模型里，然后把报告的端到端延迟从 4.90 秒降到 0.09 秒。它在 RoboTwin 2.0 上的得分在干净和随机化设置下都保持在 95% 以上，这让延迟结果成了这项主张的核心。
 
 Being-H0.7 走的是更轻的路线。它在训练时用未来观测训练潜变量 token，然后在推理时去掉感知未来的分支。这个策略保留了面向动作的潜在状态，避免了测试时的视频展开，报告的部署延迟是每步 3–4 毫秒。综述论文给出了这些系统背后的共同定义：机器人世界模型会在当前状态、动作和可选语言条件下预测未来状态或观测。
 
-#### Evidence
+#### 资料来源
 - [MotuBrain: An Advanced World Action Model for Robot Control](../Inbox/2026-04-30--motubrain-an-advanced-world-action-model-for-robot-control.md): MotuBrain summary, architecture, RoboTwin scores, and latency reduction.
 - [Being-H0.7: A Latent World-Action Model from Egocentric Videos](../Inbox/2026-04-30--being-h0-7-a-latent-world-action-model-from-egocentric-videos.md): Being-H0.7 latent future training and deployment latency.
 - [World Model for Robot Learning: A Comprehensive Survey](../Inbox/2026-04-30--world-model-for-robot-learning-a-comprehensive-survey.md): Survey definition of robot world models and their role in action-conditioned prediction.
@@ -49,7 +49,7 @@ Being-H0.7 走的是更轻的路线。它在训练时用未来观测训练潜变
 
 PRTS 加入了另一种进展信号。它用离线轨迹上的对比学习训练一个 4B VLA 模型，判断状态-动作对是否能到达语言目标。摘录没有给出成功率表，但给出了运行规模：167B token、64 块 H100 GPU、训练一周，以及覆盖 LIBERO 系列基准、SimplerEnv 和 14 个真实世界操作任务的评测。
 
-#### Evidence
+#### 资料来源
 - [LaST-R1: Reinforcing Robotic Manipulation via Adaptive Physical Latent Reasoning](../Inbox/2026-04-30--last-r1-reinforcing-robotic-manipulation-via-adaptive-physical-latent-reasoning.md): LaST-R1 method and reported LIBERO and real-world gains.
 - [PRTS: A Primitive Reasoning and Tasking System via Contrastive Representations](../Inbox/2026-04-30--prts-a-primitive-reasoning-and-tasking-system-via-contrastive-representations.md): PRTS goal-reachability training, scale, and evaluation coverage.
 
@@ -58,7 +58,7 @@ Lucid-XR 把扩展现实（XR）当成机器人操作的数据采集界面。示
 
 报告数字指向数据吞吐量和视觉覆盖。这个仿真器在 Apple Vision Pro 上以 90 fps 运行，以 25 fps 记录。在三个任务的 30 分钟采集中，用户收集到的示范数量大约是实际遥操作的两倍。加入增强后，有效数据集规模达到了实际遥操作基线的约五倍。在使用未见网格的厨房清理任务上，ACT 加 LucidSim 在低杂乱环境中保持了 90% 成功率，而 ACT 单独使用时降到 0%。
 
-#### Evidence
+#### 资料来源
 - [Lucid-XR: An Extended-Reality Data Engine for Robotic Manipulation](../Inbox/2026-04-30--lucid-xr-an-extended-reality-data-engine-for-robotic-manipulation.md): Lucid-XR system design, collection speed, augmentation scale, and kitchen clearing results.
 
 ### 世界模型综述正在收紧具身预测的术语
@@ -66,6 +66,6 @@ Lucid-XR 把扩展现实（XR）当成机器人操作的数据采集界面。示
 
 图世界模型综述把视角收窄到实体和关系。它用结构抽象和关系转移操作来定义图世界模型，然后按空间、物理和逻辑偏置来归类既有工作。这对操作和导航很重要，因为很多失败来自漏掉对象关系、接触关系或长时程状态更新，而不只是视觉特征不够强。
 
-#### Evidence
+#### 资料来源
 - [World Model for Robot Learning: A Comprehensive Survey](../Inbox/2026-04-30--world-model-for-robot-learning-a-comprehensive-survey.md): Robot world-model survey taxonomy, equations, and core capabilities.
 - [Graph World Models: Concepts, Taxonomy, and Future Directions](../Inbox/2026-04-30--graph-world-models-concepts-taxonomy-and-future-directions.md): Graph world-model definition, taxonomy, and relation-based modeling claims.

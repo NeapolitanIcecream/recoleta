@@ -32,14 +32,14 @@ pass_kind: trend_synthesis
 ## Overview
 This week’s strongest signal is execution quality for robot Vision-Language-Action (VLA) models. Work on HarmoWAM, RAW-Dream, and Pelican-Unified ties policy gains to imagined rollouts, phase-aware action control, and shared reasoning-action state.
 
-## Clusters
+## Findings
 
 ### World-model training and adaptation
 World models are now used as training spaces and control priors, with clear pressure to reduce task-specific robot data. HarmoWAM combines a video world model with predictive and reactive action experts, then routes between transit and interaction phases. Its reported out-of-domain gains are 33 percentage points over prior VLA models and 29 points over prior World Action Models (WAMs) across six real-world tasks.
 
 RAW-Dream gives the week’s clearest data-efficiency claim. It trains OpenVLA-OFT with reinforcement learning inside a task-agnostic video world model and uses Qwen3-VL for reward judgments. On LIBERO, it raises a 1-shot supervised fine-tuning baseline from 43.4% to 52.3% with 10 target demonstrations and no target rollouts for world-model training; with in-domain world-model tuning, it reaches 66.0%.
 
-#### Evidence
+#### Sources
 - [HarmoWAM: Harmonizing Generalizable and Precise Manipulation via Adaptive World Action Models](../Inbox/2026-05-11--harmowam-harmonizing-generalizable-and-precise-manipulation-via-adaptive-world-action-models.md): HarmoWAM summary gives the two-expert design, phase gate, real-world evaluation setup, and OOD gains.
 - [Reinforcing VLAs in Task-Agnostic World Models](../Inbox/2026-05-12--reinforcing-vlas-in-task-agnostic-world-models.md): RAW-Dream summary provides the task-agnostic world-model training setup and LIBERO data-efficiency results.
 
@@ -48,7 +48,7 @@ Several papers target the exact moments and scene features that decide whether a
 
 FrameSkip treats dense demonstrations as uneven supervision. It keeps 20% of unique frames, protects gripper transitions and high-action-change frames, and raises the macro average across RoboCasa-GR1, SimplerEnv, and LIBERO from 66.50% to 76.15%. Evo-Depth and AffordVLA add complementary spatial signals: RGB-derived depth for placement and grasping, and training-time affordance alignment for contact regions without an added inference module.
 
-#### Evidence
+#### Sources
 - [GuidedVLA: Specifying Task-Relevant Factors via Plug-and-Play Action Attention Specialization](../Inbox/2026-05-12--guidedvla-specifying-task-relevant-factors-via-plug-and-play-action-attention-specialization.md): GuidedVLA summary gives action-head specialization and results on LIBERO-Plus, perturbations, RoboTwin 2.0, and real-world trials.
 - [FrameSkip: Learning from Fewer but More Informative Frames in VLA Training](../Inbox/2026-05-13--frameskip-learning-from-fewer-but-more-informative-frames-in-vla-training.md): FrameSkip summary reports the 20% frame-retention setup and benchmark gains.
 - [Evo-Depth: A Lightweight Depth-Enhanced Vision-Language-Action Model](../Inbox/2026-05-14--evo-depth-a-lightweight-depth-enhanced-vision-language-action-model.md): Evo-Depth summary gives the RGB-derived depth design, model size, benchmark results, memory use, and inference rate.
@@ -59,7 +59,7 @@ Long execution is treated as a control problem with shared state and protected t
 
 DyGRO-VLA focuses on reinforcement learning after imitation training. It freezes a base VLA and learns routed residual experts that correct action chunks, reducing damage to shared representations during multi-task tuning. On LIBERO it reports 97.1% average success, and on LIBERO-Long it adds 9.8 percentage points over its offline base.
 
-#### Evidence
+#### Sources
 - [Pelican-Unified 1.0: A Unified Embodied Intelligence Model for Understanding, Reasoning, Imagination and Action](../Inbox/2026-05-14--pelican-unified-1-0-a-unified-embodied-intelligence-model-for-understanding-reasoning-imagination-and-action.md): Pelican-Unified summary provides the shared latent-state design and RoboTwin, WorldArena, and VLM benchmark results.
 - [DyGRO-VLA: Cross-Task Scaling of Vision-Language-Action Models via Dynamic Grouped Residual Optimization](../Inbox/2026-05-17--dygro-vla-cross-task-scaling-of-vision-language-action-models-via-dynamic-grouped-residual-optimization.md): DyGRO-VLA summary provides the frozen-base residual RL design and LIBERO, LIBERO-Long, and RoboTwin2 results.
 
@@ -68,6 +68,6 @@ Evaluation is adding checks for what happens during a rollout, not only the fina
 
 The same concern appears in the week’s contact-aware VLA work. AffordVLA trains policies to attend to functional contact regions, and the May 17 trend note highlights behavior-level checks as part of VLA interpretability and safety. The evidence points to a stricter deployment bar: success rates need to be paired with contact, order, recovery, and unsafe-state exposure measurements.
 
-#### Evidence
+#### Sources
 - [SafeManip: A Property-Driven Benchmark for Temporal Safety Evaluation in Robotic Manipulation](../Inbox/2026-05-12--safemanip-a-property-driven-benchmark-for-temporal-safety-evaluation-in-robotic-manipulation.md): SafeManip summary gives the temporal safety-monitor design, task set, policy set, and safety-versus-success results.
 - [AffordVLA: Injecting Affordance Representations into Vision-Language-Action Models via Implicit Feature Alignment](../Inbox/2026-05-17--affordvla-injecting-affordance-representations-into-vision-language-action-models-via-implicit-feature-alignment.md): AffordVLA summary grounds the contact-region training method and inference-path detail.

@@ -29,7 +29,7 @@ language_code: zh-CN
 
 # Operational Robot Learning
 
-## Summary
+## 摘要
 机器人团队可以直接做三项具体改动：把部署 rollout 收集为训练数据，把长时程计划暴露为缓存的文本和关键帧轨迹，再给快速模仿控制器加入空间注意点跟踪。共同的压力来自运行层面：固定的演示集、隐藏的计划和不稳定的视觉特征，会在机器人离开受控测试环境后变成失败。
 
 ## Fleet replay loop for deployed VLA manipulators
@@ -37,7 +37,7 @@ language_code: zh-CN
 
 采用这类方法时，成本较低的验证办法很窄：挑两到三个在物体、摆放或用户指令有小变化后会失败的任务，然后跑一个带成功、失败和介入标签的短回放循环。LWD 仍然是研究结果，但它的评估用了 16 台双臂机器人、8 个真实世界任务，包括 3 到 5 分钟的操作任务，并报告在几小时的在线交互后平均成功率达到 95%。这已经足够说明，在再买一轮干净演示数据之前，先把数据管道搭起来是值得的。
 
-### Evidence
+### 资料来源
 - [Learning while Deploying: Fleet-Scale Reinforcement Learning for Generalist Robot Policies](../Inbox/2026-05-01--learning-while-deploying-fleet-scale-reinforcement-learning-for-generalist-robot-policies.md): Summarizes LWD's fleet rollout, online replay, mixed offline-online retraining, sparse-reward value learning, and 16-robot real-world result.
 - [Learning while Deploying: Fleet-Scale Reinforcement Learning for Generalist Robot Policies](../Inbox/2026-05-01--learning-while-deploying-fleet-scale-reinforcement-learning-for-generalist-robot-policies.md): Confirms the deployment problem: offline data misses distribution shifts, long-tail failures, task variations, and human correction opportunities.
 
@@ -46,7 +46,7 @@ language_code: zh-CN
 
 这对那类常见失败点在于步骤顺序和目标位置的任务最有用，比如移动多个物体、在最终放置前先使用工具，或准备一串物品。第一次测试应该记录生成的轨迹、执行视频和失败位置，然后比较无轨迹、仅文本、仅视觉和完整轨迹这几种变体。在 LIBERO-Long 上，IVLR 在无轨迹时成功率为 37.7%，仅文本轨迹为 62.0%，仅视觉轨迹为 68.4%，完整交错轨迹为 92.4%。当前限制是实用层面的：完整轨迹生成在一块 NVIDIA H20 GPU 上大约需要 10 秒，所以它适合在运动开始前留有规划余量的任务。
 
-### Evidence
+### 资料来源
 - [Thinking in Text and Images: Interleaved Vision--Language Reasoning Traces for Long-Horizon Robot Manipulation](../Inbox/2026-05-01--thinking-in-text-and-images-interleaved-vision-language-reasoning-traces-for-long-horizon-robot-manipulation.md): Describes IVLR-Trace, its text subgoals plus RGB keyframes, cached execution, ablations, and planning latency.
 - [Thinking in Text and Images: Interleaved Vision--Language Reasoning Traces for Long-Horizon Robot Manipulation](../Inbox/2026-05-01--thinking-in-text-and-images-interleaved-vision-language-reasoning-traces-for-long-horizon-robot-manipulation.md): Confirms the LIBERO-Long ablation numbers and notes the limits around stale plans and initial planning latency.
 
@@ -55,6 +55,6 @@ language_code: zh-CN
 
 这种改造适合双臂精细操作和移动操作，那里漏接、相机视角变化和干扰物会破坏稠密视觉特征。在 ALOHA 双臂试验中，MSACT 在 400 次真实世界试验中报告总体成功率 53.00%，而 ACT 为 23.25%，同时延迟几乎不变，约 45 毫秒。一个相关的双目移动操作系统在四个真实世界任务上的平均成功率为 85.0%，ACT 为 46.0%，在扰动测试下也表现更好。实际验证时可以保留现有的 ACT 基线，再把注意点漂移、推理延迟和随机视觉扰动检查加入任务评分表。
 
-### Evidence
+### 资料来源
 - [MSACT: Multistage Spatial Alignment for Stable Low-Latency Fine Manipulation](../Inbox/2026-05-01--msact-multistage-spatial-alignment-for-stable-low-latency-fine-manipulation.md): Summarizes MSACT's self-supervised attention-point tracking, real-world ALOHA results, and ACT-level latency.
 - [Stereo Multistage Spatial Attention for Real-Time Mobile Manipulation Under Visual Scale Variation and Disturbances](../Inbox/2026-05-01--stereo-multistage-spatial-attention-for-real-time-mobile-manipulation-under-visual-scale-variation-and-disturbances.md): Summarizes stereo multistage spatial attention for mobile manipulation, including four-task real-world success and disturbance tests.

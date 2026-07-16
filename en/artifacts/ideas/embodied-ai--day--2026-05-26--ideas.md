@@ -37,7 +37,7 @@ VLA data teams should add a short execution annotation pass to manipulation demo
 
 The payoff is better control over how a robot completes the same task. FineVLA reports that mixed fine-grained and raw goal labels performed best, with AlohaMix-OFT reaching 86.8% Easy and 82.5% Hard on RoboTwin. In real dual-arm manipulation, a 1:1 fine-grained-to-raw mix scored 62.7/100, compared with 49.9 for raw-only training. A cheap internal test is to pick one high-volume task with multiple valid executions, label a clustered subset, and measure compliance on the fields that operators can see, such as pose, approach direction, and contact point.
 
-### Evidence
+### Sources
 - [FineVLA: Fine-Grained Instruction Alignment for Steerable Vision-Language-Action Policies](../Inbox/2026-05-26--finevla-fine-grained-instruction-alignment-for-steerable-vision-language-action-policies.md): FineVLA describes the annotation workflow, selected 47,159 representative trajectories, and reports simulation and real dual-arm gains from mixed fine-grained and raw labels.
 - [FineVLA: Fine-Grained Instruction Alignment for Steerable Vision-Language-Action Policies](../Inbox/2026-05-26--finevla-fine-grained-instruction-alignment-for-steerable-vision-language-action-policies.md): The paper excerpt gives the key mixed-label results and the largest real-world gains on pose, color, and approach direction.
 
@@ -46,7 +46,7 @@ Robot learning teams that update a deployed VLA policy with new task data need a
 
 The same study gives a concrete starting configuration. Experience replay with buffer ratio 0.2 and replay frequency 0.2 reached a final average score of 93.5 across Stack Bowl, Hang Cup, Press Button, and Fold Towel, while sequential fine-tuning ended at 37.3. The action-scaling check matters as much as the replay setting: per-task normalization collapsed to a 23.7 average, while fixed normalization reached 93.5. A small adoption step is to add a four-task regression suite and fail a model update when any old task falls below a set score or when normalization statistics change without an explicit ablation.
 
-### Evidence
+### Sources
 - [Can VLA Models Learn from Real-World Data Continually without Forgetting?](../Inbox/2026-05-26--can-vla-models-learn-from-real-world-data-continually-without-forgetting.md): The summary reports the forgetting results, replay settings, final scores, and the action-normalization collapse.
 - [Can VLA Models Learn from Real-World Data Continually without Forgetting?](../Inbox/2026-05-26--can-vla-models-learn-from-real-world-data-continually-without-forgetting.md): The paper abstract and introduction frame continual real-world VLA learning as a deployment requirement for retaining old skills while adding new ones.
 
@@ -55,6 +55,6 @@ Manipulation teams blocked by real demonstration cost can run a smaller validati
 
 The reported numbers support a practical pilot size. On a deep-bin sorting task with more than 400 real-world executions, HyperSim mixed synthetic data with 35 real demonstrations. With pi0, the mixed setting reached 95% SR3, compared with 70% for the real-only baseline using the same number of real demonstrations. The first internal check should be narrow: choose one bin-picking or sorting cell, record 35 real demonstrations, generate perturbation-heavy synthetic recovery data, and compare mixed training against a real-only run on fixed evaluation trials.
 
-### Evidence
+### Sources
 - [HyperSim: A Holistic Sim-To-Real Framework For Robust Robotic Manipulation](../Inbox/2026-05-26--hypersim-a-holistic-sim-to-real-framework-for-robust-robotic-manipulation.md): HyperSim describes high-fidelity scene rendering, adversarial synthetic trajectories, 35 real demonstrations, and the mixed sim-real results against real-only baselines.
 - [HyperSim: A Holistic Sim-To-Real Framework For Robust Robotic Manipulation](../Inbox/2026-05-26--hypersim-a-holistic-sim-to-real-framework-for-robust-robotic-manipulation.md): The paper excerpt states the pipeline components and reports 400 real-world task executions with 80% and 95% sim-to-real success rates for the tested models.

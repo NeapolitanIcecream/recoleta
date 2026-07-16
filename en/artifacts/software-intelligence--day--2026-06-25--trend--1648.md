@@ -32,14 +32,14 @@ pass_kind: trend_synthesis
 ## Overview
 This period treats large language model (LLM) agents as operational software. Rel(AI)Build manages agent configs like supply-chain artifacts, CodeAnchor adds static structure to repository navigation, and AgentX ties agent work to live recommender experiments.
 
-## Clusters
+## Findings
 
 ### Agent configuration and collaboration control
 Rel(AI)Build targets a practical weak point in coding-agent use: the files that define prompts, permissions, and tool behavior often have little provenance or review history. Its corpus study found exact duplicate agent config paths in 10.1% of tracked cases after fork adjustment, and 75.5% of duplicate clone pairs crossed organization boundaries. The proposed control plane adds hashes, lockfiles, audit logs, permission tiers, pre-tool checks, and compilation into seven IDE targets.
 
 Knowledge-Based Pull Requests (KPR) applies a similar control instinct to collaboration. External code, tests, logs, and cleaned agent traces become a reviewed knowledge package. A project-owned agent then regenerates candidate code inside the receiving repository. The pilot covers seven merged public pull requests, so the evidence is early, but the workflow names a real review problem: maintainers need intent, risk, and provenance before they accept agent-assisted changes.
 
-#### Evidence
+#### Sources
 - [A Deterministic Control Plane for LLM Coding Agents](../Inbox/2026-06-25--a-deterministic-control-plane-for-llm-coding-agents.md): Rel(AI)Build design, repository prevalence study, duplicate config rates, permission-boundary findings, and conformance results.
 - [Knowledge-Based Pull Requests: A Trusted Workflow for Agent-Mediated Knowledge Collaboration](../Inbox/2026-06-25--knowledge-based-pull-requests-a-trusted-workflow-for-agent-mediated-knowledge-collaboration.md): KPR workflow, trust-boundary model, evidence-package design, and seven-PR pilot scope.
 
@@ -48,7 +48,7 @@ CodeAnchor shows that simple static facts can make grep-first agents easier to i
 
 The execution-cost study questions a common repair loop. Across 7,745 public SWE-bench traces, agents ran tests 8.8 times per task on average. In 3,000 controlled attempts, commercial agents gained only 1.25 percentage points in resolve rate under unrestricted execution, with no statistically significant gap. Claude Code resolved 63% without execution and 64% with unrestricted execution, while the no-execution setting saved 56% of tokens and 48% of wall-clock time.
 
-#### Evidence
+#### Sources
 - [How Much Static Structure Do Code Agents Need? A Study of Deterministic Anchoring](../Inbox/2026-06-25--how-much-static-structure-do-code-agents-need-a-study-of-deterministic-anchoring.md): CodeAnchor method and reported SWE-bench Lite localization, trajectory, variance, and token-cost results.
 - [To Run or Not to Run: Analyzing the Cost-Effectiveness of Code Execution in LLM-Based Program Repair](../Inbox/2026-06-25--to-run-or-not-to-run-analyzing-the-cost-effectiveness-of-code-execution-in-llm-based-program-repair.md): Public trace analysis, controlled execution-access study, resolve-rate gap, and token/time savings.
 
@@ -57,7 +57,7 @@ Two repair papers warn against relying on a single aggregate score or a single s
 
 TerraProbe makes the oracle problem concrete for Terraform security repair. Gemini cleared the targeted Checkov finding in 83.3% of first-pass repairs, but full Checkov cleanliness fell to 10.4%. Among plan-compared real-world TerraDS repairs, 71.4% were deceptive fixes that passed automated checks while leaving the target vulnerability in place. The paper’s layered evaluation adds `terraform validate`, `terraform plan`, JSON plan comparison, and human labels.
 
-#### Evidence
+#### Sources
 - [Smaller Models, Unexpected Costs: Trade-offs in LLM Quantization for Automated Program Repair](../Inbox/2026-06-25--smaller-models-unexpected-costs-trade-offs-in-llm-quantization-for-automated-program-repair.md): Quantization experiment design, memory savings, repair-count changes, solved-set consistency, and Pareto findings.
 - [Empirical Software Engineering TerraProbe: A Layered-Oracle Framework for Detecting Deceptive Fixes in LLM-Assisted Terraform](../Inbox/2026-06-25--empirical-software-engineering-terraprobe-a-layered-oracle-framework-for-detecting-deceptive-fixes-in-llm-assisted-terraform.md): TerraProbe layered oracle, Checkov versus full validation results, deceptive-fix rates, and Terraform plan comparison.
 
@@ -66,6 +66,6 @@ AgentX and NOVA give the day’s clearest industrial deployments. AgentX runs a 
 
 NOVA focuses on architecture changes in an advertising recommender used by more than 1 billion users. It records candidate model graphs and feature settings, checks semantic validity before training, and writes failed directions back into the search process. The reported L3 Literature-to-Production effective pass rate was 60.0%, more than double the human expert loop baseline in the paper. Selected online tests improved GMV on three pCVR objectives by 1.25%, 1.70%, and 2.02%.
 
-#### Evidence
+#### Sources
 - [AgentX: Towards Agent-Driven Self-Iteration of Industrial Recommender Systems](../Inbox/2026-06-25--agentx-towards-agent-driven-self-iteration-of-industrial-recommender-systems.md): AgentX production deployment, staged agent loop, launch counts, throughput claims, and online app-time result.
 - [NOVA: A Verification-Aware Agent Harness for Architecture Evolution in Industrial Recommender Systems](../Inbox/2026-06-25--nova-a-verification-aware-agent-harness-for-architecture-evolution-in-industrial-recommender-systems.md): NOVA verification-aware harness, industrial recommender deployment, effective pass rates, human-attended time reduction, and online GMV results.

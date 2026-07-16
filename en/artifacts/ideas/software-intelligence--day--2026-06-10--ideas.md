@@ -37,7 +37,7 @@ Teams evaluating coding agents should score the harness as a product component, 
 
 A practical adoption step is to add a small fixed benchmark run to every harness change. The run should keep the task set, Docker workspace, prompt template, wall-clock budget, patch extraction, and prediction format stable, then report Pass@1 beside token cost and wall-clock time. Claw-SWE-Bench Lite is a useful pattern because its 80-instance subset tracked the 350-instance run closely while costing about 22.9% of the full run. This gives engineering teams a way to catch regressions in adapters, stopping rules, and patch extraction before attributing movement to the model.
 
-### Evidence
+### Sources
 - [Claw-SWE-Bench: A Benchmark for Evaluating OpenClaw-style Agent Harnesses on Coding Tasks](../Inbox/2026-06-10--claw-swe-bench-a-benchmark-for-evaluating-openclaw-style-agent-harnesses-on-coding-tasks.md): Reports the fixed scoring contract, adapter lifecycle, Pass@1 differences between minimal and full adapters, harness-choice spread, and Lite-80 cost and tracking results.
 - [Claw-SWE-Bench: A Benchmark for Evaluating OpenClaw-style Agent Harnesses on Coding Tasks](../Inbox/2026-06-10--claw-swe-bench-a-benchmark-for-evaluating-openclaw-style-agent-harnesses-on-coding-tasks.md): Confirms the 350-instance benchmark, 80-instance Lite subset, 19.1% versus 73.4% Pass@1 result, and harness/cost accounting claim.
 
@@ -46,7 +46,7 @@ Agent-authored pull requests need a checkpoint that catches repeated failed fixe
 
 A buildable workflow is a pre-merge bot for AI-authored changes. Before the agent opens or updates a pull request, it checks touched files against the project memory log. Before the PR is marked ready, it requires deterministic checks, independent refute-first review, a secrets check, human approval for irreversible or outward actions, and a receipt in a hash-chained ledger. The first useful measurement is simple: count how often the bot blocks repeated edits to known-problem files or blocks a “done” claim with missing tests, review, secret scan, approval, or receipt.
 
-### Evidence
+### Sources
 - [PROJECTMEM: A Local-First, Event-Sourced Memory and Judgment Layer for AI Coding Agents](../Inbox/2026-06-10--projectmem-a-local-first-event-sourced-memory-and-judgment-layer-for-ai-coding-agents.md): Describes PROJECTMEM's append-only event log, deterministic summaries, MCP and CLI access, and `precheck_file(path)` warnings for prior failed attempts, open issues, and high-churn files.
 - [Agent-gate – fail-closed agent gate and tamper-evident receipts as an MCP server](../Inbox/2026-06-10--agent-gate-fail-closed-agent-gate-and-tamper-evident-receipts-as-an-mcp-server.md): Describes agent-gate's fail-closed completion checks, required default fields, independent review requirement, and SHA-256 hash-chained receipt ledger.
 - [Agent-gate – fail-closed agent gate and tamper-evident receipts as an MCP server](../Inbox/2026-06-10--agent-gate-fail-closed-agent-gate-and-tamper-evident-receipts-as-an-mcp-server.md): Shows the demo path where missing human approval and missing receipt block completion, and where ledger verification detects tampering.
@@ -56,6 +56,6 @@ Teams enabling grammar-constrained decoding for code should add a security regre
 
 The concrete test is to run a malicious-code benchmark with and without the grammar constraint for each model and inference stack. The gate should fail when the constrained run produces executable harmful code at a higher rate than the unconstrained run. If grammar output is mandatory, CodeShield points to one mitigation pattern: train preference behavior for cases where only code is allowed, so the model emits harmless code when a refusal cannot be represented.
 
-### Evidence
+### Sources
 - [Grammar-Constrained Decoding Can Jailbreak LLMs into Generating Malicious Code](../Inbox/2026-06-10--grammar-constrained-decoding-can-jailbreak-llms-into-generating-malicious-code.md): Explains how grammar-constrained decoding can suppress refusals, lists affected deployment settings, reports attack success rates, and describes CodeShield's preference-training approach.
 - [Grammar-Constrained Decoding Can Jailbreak LLMs into Generating Malicious Code](../Inbox/2026-06-10--grammar-constrained-decoding-can-jailbreak-llms-into-generating-malicious-code.md): Confirms that vLLM and SGLang support grammar-constrained decoding and describes the mechanism by which a standard code grammar can force malicious code generation.

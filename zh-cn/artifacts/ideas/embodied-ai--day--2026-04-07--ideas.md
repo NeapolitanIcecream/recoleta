@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Robot policy validation tooling
 
-## Summary
+## 摘要
 这一天的机器人动作工作支持三项具体改动：在固定控制预算下比较不同延迟补丁的部署工具、评估中加入改写对抗的语言压力测试，以及给同时输出子任务文本和动作的系统做一致性检查。证据最强的地方，是论文给出了机器人团队可以直接测试的运行指标：SnapFlow、A1 和 VLA-InfoEntropy 的延迟下降，DAERT 的大幅指令脆弱性差距，以及 GPLA 的可训练 grounding scorer，它能把动作质量保持在接近监督基线的水平。
 
 ## Latency budget harness for VLA acceleration patches
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 缺少的是比较式部署工具，而不是另一个基础模型。机器人团队在碰硬件前，需要一种可重复的方法回答一个简单问题：哪种加速方法组合能在固定控制周期预算内运行，同时不破坏长时任务。一个有用的初版工具，应记录端到端延迟、动作头延迟、骨干延迟、各任务集成功率，以及长任务上的失败集中情况。一个低成本检查办法，是把同一个标准策略放进 LIBERO 跑四种模式：基线、动作步压缩、骨干提前退出和 token 剪枝，然后看是否有任意组合能低于目标周期时间，并保住 Long 任务上的成功率。这类工具基础设施可以缩短已经在用 pi0.5、OpenVLA 或类似 VLA 的团队，从模型到机器人落地的交接时间。
 
-### Evidence
+### 资料来源
 - [SnapFlow: One-Step Action Generation for Flow-Matching VLAs via Progressive Self-Distillation](../Inbox/2026-04-07--snapflow-one-step-action-generation-for-flow-matching-vlas-via-progressive-self-distillation.md): SnapFlow reports one-step action generation with 274 ms to 83 ms latency reduction and maintained LIBERO success.
 - [A1: A Fully Transparent Open-Source, Adaptive and Efficient Truncated Vision-Language-Action Model](../Inbox/2026-04-07--a1-a-fully-transparent-open-source-adaptive-and-efficient-truncated-vision-language-action-model.md): A1 reports early exit plus truncated flow matching with lower per-episode latency and backbone computation.
 - [VLA-InfoEntropy: A Training-Free Vision-Attention Information Entropy Approach for Vision-Language-Action Models Inference Acceleration and Success](../Inbox/2026-04-07--vla-infoentropy-a-training-free-vision-attention-information-entropy-approach-for-vision-language-action-models-inference-acceleration-and-success.md): VLA-InfoEntropy shows a training-free token-selection path with lower latency and slightly higher LIBERO success on OpenVLA.
@@ -41,7 +41,7 @@ language_code: zh-CN
 
 这说明，想让实验室和产品团队把口语或文本控制接到操作任务里，需要一个缺失的 QA 环节。直接可做的构建，是一个指令压力测试集生成器：生成语义等价的改写，做有效性过滤，再把它们放进仿真里做回归测试。真正有用的输出，不该只是一个通过率数字。团队需要按任务划分的失败簇、能稳定翻转结果的改写模式，以及一小组难例，用来回流到微调或提示约束里。一个低成本验证方法，是拿现有的 LIBERO 评测脚本，加上改写生成和语义过滤，然后比较原始措辞和每条指令五到十个改写版本下的成功率。如果差距和 DAERT 的结果接近，语言稳健性就该变成一个跟踪发布指标。
 
-### Evidence
+### 资料来源
 - [Uncovering Linguistic Fragility in Vision-Language-Action Models via Diversity-Aware Red Teaming](../Inbox/2026-04-07--uncovering-linguistic-fragility-in-vision-language-action-models-via-diversity-aware-red-teaming.md): DAERT provides concrete failure rates for semantically equivalent instruction rewrites against pi0 and OpenVLA, showing large robustness gaps.
 
 ## Language-action consistency checking for hierarchical robot policies
@@ -49,5 +49,5 @@ language_code: zh-CN
 
 做透明机器人界面的团队需要这个能力来支持操作员信任和调试。一个机器人如果叙述的是错误的子任务，演示时看起来仍然能干，但在交接、纠正或故障恢复时会误导人类伙伴。产品形态很直接：记录观测、生成的子任务文本、执行轨迹和一致性分数；把低分回合标出来复查；再用选中和被拒绝的样本对来调高层语言输出做微调。一个低成本检查方法，是从现有的分层策略里抽样一些回合，让评分器为同一条轨迹下的多个子任务描述排序，看看低排名描述是否和人类对“不一致”的判断一致。如果一致，这个检查器就可以同时进入训练流程和事后审计。
 
-### Evidence
+### 资料来源
 - [Grounding Hierarchical Vision-Language-Action Models Through Explicit Language-Action Alignment](../Inbox/2026-04-07--grounding-hierarchical-vision-language-action-models-through-explicit-language-action-alignment.md): GPLA introduces an explicit grounding scorer and preference tuning loop, with action metrics close to supervised tuning on LanguageTable.

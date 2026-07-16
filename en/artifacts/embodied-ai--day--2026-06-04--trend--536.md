@@ -32,14 +32,14 @@ pass_kind: trend_synthesis
 ## Overview
 The day is dominated by robotics papers that treat Vision-Language-Action (VLA) policy quality as a closed-loop control problem. WLA, MPCoT, and PiL-World give the clearest evidence: future-state prediction, latent action selection, and imagined rollouts are tied directly to success rates and latency.
 
-## Clusters
+## Findings
 
 ### World models inside robot policies
 Several papers use future-state prediction as a training signal or as part of action choice. WLA predicts a textual subtask, a compact physical transition, and an action chunk in one policy. Its world-modeling loss has a measurable effect: removing it lowers RoboTwin Clean success from 92.94% to 90.98% and LIBERO average success from 98.6% to 97.9%.
 
 The same idea appears beyond tabletop manipulation. WorldFly couples future video latents with navigation actions for low-altitude UAV control. On its Urban Canyon Traversal benchmark, it reports 87% success on seen intersections and 31% on harder unseen intersections, beating OpenFly and Pi-0-UAV on the reported metrics. DexFuture uses predicted future hand-tool-object targets for bimanual tool use and runs at 60 Hz, avoiding slow online planning over high-dimensional hand actions.
 
-#### Evidence
+#### Sources
 - [World-Language-Action Model for Unified World Modeling, Language Reasoning, and Action Synthesis](../Inbox/2026-06-04--world-language-action-model-for-unified-world-modeling-language-reasoning-and-action-synthesis.md): WLA architecture, world-model ablation, LIBERO and RoboTwin results.
 - [WorldFly: A World-Model-Based Vision-Language-Action Model for UAV Navigation](../Inbox/2026-06-04--worldfly-a-world-model-based-vision-language-action-model-for-uav-navigation.md): WorldFly future-view/action coupling and Urban Canyon Traversal results.
 - [DexFuture: Hierarchical Future-State Visuomotor Targeting for Bimanual Dexterous Tool Use](../Inbox/2026-06-04--dexfuture-hierarchical-future-state-visuomotor-targeting-for-bimanual-dexterous-tool-use.md): DexFuture future-state targeting, success rates, and 60 Hz execution.
@@ -49,7 +49,7 @@ The strongest control papers report compute as part of the result. MPCoT keeps O
 
 A second line cuts decoding cost. The one-step VLA paper shows that a high-noise-biased flow-matching schedule can make single-step action generation competitive with 10-step decoding. On LIBERO-Plus, all 18 comparable recipes place one-step decoding at or above 10-step decoding, with a mean margin of 5.4 success points. TempoVLA addresses execution speed at the policy level by conditioning one VLA policy on commanded speed, with similar LIBERO success across three speed-conditioning methods.
 
-#### Evidence
+#### Sources
 - [MPCoT: Reward-Guided Multi-Path Latent Reasoning for Test-Time Scalable Vision-Language-Action](../Inbox/2026-06-04--mpcot-reward-guided-multi-path-latent-reasoning-for-test-time-scalable-vision-language-action.md): MPCoT latent refinement, LIBERO/CALVIN gains, and latency numbers.
 - [Let It Be Simple: One-Step Action Generation for Vision-Language-Action Models](../Inbox/2026-06-04--let-it-be-simple-one-step-action-generation-for-vision-language-action-models.md): One-step action generation method and LIBERO-family results.
 - [TempoVLA: Learning Speed-Controllable Vision-Language-Action Policies](../Inbox/2026-06-04--tempovla-learning-speed-controllable-vision-language-action-policies.md): TempoVLA speed conditioning and reported LIBERO speed-control results.
@@ -59,7 +59,7 @@ AffordanceVLA makes contact cues explicit. It predicts the target object, a 2D i
 
 DexFuture gives a more measured version of the same concern for dexterous tool use. It predicts sparse future targets for hand links, the tool, and the object, then lets a low-level policy track those targets. On OakInk2 bimanual tasks, it reports 59.69% average success, close to the privileged target baseline at 66.52%; the no-target policy is reported near 7% average success in the abstract.
 
-#### Evidence
+#### Sources
 - [AffordanceVLA: A Vision-Language-Action Model Empowering Action Generation through Affordance-Aware Understanding](../Inbox/2026-06-04--affordancevla-a-vision-language-action-model-empowering-action-generation-through-affordance-aware-understanding.md): AffordanceVLA object, contact-region, 3D shape cues, and annotation pipeline.
 - [DexFuture: Hierarchical Future-State Visuomotor Targeting for Bimanual Dexterous Tool Use](../Inbox/2026-06-04--dexfuture-hierarchical-future-state-visuomotor-targeting-for-bimanual-dexterous-tool-use.md): DexFuture target representation and OakInk2 success comparisons.
 
@@ -68,6 +68,6 @@ Evaluation work is using world models to reduce reliance on full robot rollouts.
 
 The logistics data-flywheel paper uses an action-conditioned world model for recovery data. WM-DAgger generates and filters synthetic recovery trajectories, then trains imitation policies with real demonstrations. In Soft Bag Pushing, 5 real demonstrations plus 1,500 generated trajectories reach 93.3% success, compared with 26.7% for behavioral cloning.
 
-#### Evidence
+#### Sources
 - [PiL-World: A Chunk-Wise World Model for VLA Policy-in-the-Loop Evaluation](../Inbox/2026-06-04--pil-world-a-chunk-wise-world-model-for-vla-policy-in-the-loop-evaluation.md): PiL-World closed-loop imagined evaluation and real-imagined gap results.
 - [Towards a Data Flywheel for Embodied Intelligence in Logistics](../Inbox/2026-06-04--towards-a-data-flywheel-for-embodied-intelligence-in-logistics.md): WM-DAgger synthetic recovery data and logistics manipulation success rates.

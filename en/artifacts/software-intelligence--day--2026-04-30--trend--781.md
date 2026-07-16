@@ -30,14 +30,14 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s strongest research treats large language models (LLMs) as dependencies that need evidence gates. C2VEval exposes visual-code shortcuts, Claw-Eval-Live grades real workflow traces, and IronCurtain ties security claims to harnesses and executable proof.
 
-## Clusters
+## Findings
 
 ### Benchmarks that test the work artifact
 C2VEval shows how a vision-to-code benchmark can overstate capability when task text leaks the answer. In circuit-to-Verilog generation, model headers such as `sum`, `cout`, or `fsm_3state` let multimodal LLMs (MLLMs) produce plausible register-transfer-level code without reading the diagram. When the authors replace the image with a blank one, Mirage mode matches or beats real-image mode on all eight evaluated MLLMs. After anonymizing identifiers, GPT-5.4 drops from 45.51% to 24.55% Functional Pass@1, and Opus 4.6 drops from 52.69% to 11.38%.
 
 Claw-Eval-Live applies the same evidence-first instinct to workflow agents. It grades 105 tasks using traces, audit logs, service state, post-run files, command traces, and tests. Claude Opus 4.6 leads at 66.7% pass rate, and no evaluated model reaches 70%. The result is a concrete ceiling on today’s workflow automation claims, especially for HR, management, and multi-system business tasks.
 
-#### Evidence
+#### Sources
 - [From Mirage to Grounding: Towards Reliable Multimodal Circuit-to-Verilog Code Generation](../Inbox/2026-04-30--from-mirage-to-grounding-towards-reliable-multimodal-circuit-to-verilog-code-generation.md): C2VEval design, Mirage failure, anonymized results, and VeriGround metrics.
 - [Claw-Eval-Live: A Live Agent Benchmark for Evolving Real-World Workflows](../Inbox/2026-04-30--claw-eval-live-a-live-agent-benchmark-for-evolving-real-world-workflows.md): Claw-Eval-Live task construction, grading evidence, model results, and hard task families.
 
@@ -46,7 +46,7 @@ IronCurtain frames vulnerability discovery as a stateful investigation. A centra
 
 The same report gives useful cost and access details. Opus and Sonnet runs used about 10 million tokens per investigation, with reported costs near $150 and $30. Hosted GLM 5.1 runs averaged 27 million tokens and still produced a proof-of-concept plus sanitizer-validated harness for an 18-year-old integer truncation flaw. The evidence favors security pipelines that validate reachability, not static bug reports alone.
 
-#### Evidence
+#### Sources
 - [Finding Zero Days with any model?](../Inbox/2026-04-30--finding-zero-days-with-any-model.md): IronCurtain workflow, OpenBSD reproduction, GLM 5.1 finding, validation tiers, and token costs.
 
 ### Model and package dependencies are treated as governed production risks
@@ -54,7 +54,7 @@ The LLM supply-chain paper argues for deployer-side compatibility gates before h
 
 Deptex extends the same operational lens to open-source package risk. It combines an organization graph, policy checks, code-property-graph reachability, and constrained LLM verification. In its scenario, a CVSS 9.8 issue appears in 10 repositories, but eight paths are downgraded because they sit in offline batch scripts six function hops deep, while two public unauthenticated API paths receive high exposure. The paper is mostly a design and scenario report, so its claims need measured alert-reduction results.
 
-#### Evidence
+#### Sources
 - [Test Before You Deploy: Governing Updates in the LLM Supply Chain](../Inbox/2026-04-30--test-before-you-deploy-governing-updates-in-the-llm-supply-chain.md): Production contracts, risk-category tests, Claude validation setup, and observed drift examples.
 - [DEPTEX: Organization-First, Open Source Dependency Risk Monitoring](../Inbox/2026-04-30--deptex-organization-first-open-source-dependency-risk-monitoring.md): Deptex architecture, Execution Path Dominance scoring, and CVSS 9.8 scenario.
 
@@ -63,6 +63,6 @@ The hardware items share a concern about models that produce convincing artifact
 
 JuliaHub’s Dyad 3.0 announcement makes a related product claim for physical-system engineering. It connects agents with physics simulation, control design, safety analysis, and embedded code generation. The release says a Scientific Machine Learning digital twin used four sensor inputs to predict pump faults with over 90% accuracy in work with Binnies and Williams Grand Prix Technologies. The announcement includes useful engineering direction, but its benchmark evidence is limited compared with the circuit-generation paper.
 
-#### Evidence
+#### Sources
 - [From Mirage to Grounding: Towards Reliable Multimodal Circuit-to-Verilog Code Generation](../Inbox/2026-04-30--from-mirage-to-grounding-towards-reliable-multimodal-circuit-to-verilog-code-generation.md): VeriGround training recipe, functional pass rates, and refusal metrics.
 - [Building Persona-Based Agents On Demand: Tailoring Multi-Agent Workflows to User Needs](../Inbox/2026-04-30--building-persona-based-agents-on-demand-tailoring-multi-agent-workflows-to-user-needs.md): Dyad 3.0 claims, physics-grounded workflow, and pump-fault digital twin result.

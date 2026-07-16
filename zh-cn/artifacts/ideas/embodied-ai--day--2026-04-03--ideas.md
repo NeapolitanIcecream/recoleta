@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Robot control bottlenecks
 
-## Summary
+## 摘要
 最清楚的实用变化出现在动作接口、规划栈和推理循环三个地方。一篇论文表明，当 VLA 策略把控制压缩成离散动作 token 时，更好的视觉编码器会停止带来收益，这说明在继续做编码器之前，先做一次简单的动作容量审计更合适。另一篇展示了在只有目标图像的长时程机器人任务上，层级潜在规划能带来真实收益，这给 world model 团队一个直接测试自动 subgoal 的办法。第三篇说明，重型 VLA 控制器可以用分块规划加在线验证来部署，在每一步之外加一个小型运行时检查，而不是每步都调用完整模型。
 
 ## Action-channel capacity audit for VLA policies with discrete action tokens
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 这对机器人基础模型路线图是一个有用的落地调整，因为它把一个含糊的扩缩问题变成了一个低成本的门槛实验。判断很直接：只有当控制质量随着编码器质量一起上升时，才继续投入编码器；否则把精力转向 tokenizer、codebook 大小，或者连续动作头。
 
-### Evidence
+### 资料来源
 - [The Compression Gap: Why Discrete Tokenization Limits Vision-Language-Action Model Scaling](../Inbox/2026-04-03--the-compression-gap-why-discrete-tokenization-limits-vision-language-action-model-scaling.md): Shows that encoder upgrades give large gains for continuous actions but small or inconsistent gains for discrete action tokenization on LIBERO-10.
 - [The Compression Gap: Why Discrete Tokenization Limits Vision-Language-Action Model Scaling](../Inbox/2026-04-03--the-compression-gap-why-discrete-tokenization-limits-vision-language-action-model-scaling.md): States the action tokenizer is the tightest bottleneck when actions are discretized, grounding the proposed audit around action-channel capacity.
 
@@ -44,7 +44,7 @@ language_code: zh-CN
 
 最先适合尝试的是已经有短时域 world model、但在多阶段操作上会崩掉的研究团队和应用机器人团队。一个低成本检查办法，是把当前的 goal-image 基准再跑一遍，分别使用 oracle subgoal 和自动 latent subgoal 做对比。论文在提供 oracle subgoal 时，平面规划和 HWM 都达到 80%，这说明 subgoal 生成才是主要缺口。
 
-### Evidence
+### 资料来源
 - [Hierarchical Planning with Latent World Models](../Inbox/2026-04-03--hierarchical-planning-with-latent-world-models.md): Provides the real-robot success gains, the hierarchical planning mechanism, and the claimed reduction in planning compute.
 - [Hierarchical Planning with Latent World Models](../Inbox/2026-04-03--hierarchical-planning-with-latent-world-models.md): Describes the long-horizon failure mode of flat world-model planning and why hierarchical temporal abstraction addresses it.
 
@@ -55,6 +55,6 @@ language_code: zh-CN
 
 直接测试也很清楚。拿现有的分块控制器，加一个小型图像编码器和动作距离门控，在同一任务上比较三种设置：开放环分块、验证器门控分块，以及在延迟允许时的逐步闭环。现有证据比规划和动作接口两篇论文更窄，因为摘要里没有每任务分数或延迟表，所以更适合作为已知 VLA 栈的部署实验，而不是对所有机器人控制都成立的广泛判断。
 
-### Evidence
+### 资料来源
 - [Open-Loop Planning, Closed-Loop Verification: Speculative Verification for VLA](../Inbox/2026-04-03--open-loop-planning-closed-loop-verification-speculative-verification-for-vla.md): Summarizes the verifier design, the frozen heavy VLA setup, and the reported LIBERO gain from 79.5% to 90.90%.
 - [Open-Loop Planning, Closed-Loop Verification: Speculative Verification for VLA](../Inbox/2026-04-03--open-loop-planning-closed-loop-verification-speculative-verification-for-vla.md): Grounds the operational problem: stale observations during open-loop chunk execution cause drift and degraded control.

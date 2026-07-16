@@ -37,7 +37,7 @@ The useful unit is the application requirement, not a provider benchmark score. 
 
 A cheap starting point is a nightly check over the 20 to 50 prompts that write code, produce machine-readable output, or touch security-sensitive paths. A model update can stay blocked for that workflow when any required category falls below its threshold, then move through prompt edits, fallback routing, or revalidation.
 
-### Evidence
+### Sources
 - [Test Before You Deploy: Governing Updates in the LLM Supply Chain](../Inbox/2026-04-30--test-before-you-deploy-governing-updates-in-the-llm-supply-chain.md): Summarizes deployer-side production contracts, risk-category tests, repeated runs, and observed drift across Claude models.
 - [Test Before You Deploy: Governing Updates in the LLM Supply Chain](../Inbox/2026-04-30--test-before-you-deploy-governing-updates-in-the-llm-supply-chain.md): States the core problem: hosted LLM services can change behavior without endpoint or version changes.
 
@@ -48,7 +48,7 @@ Claw-Eval-Live gives a concrete pattern for this kind of pilot gate. Its public 
 
 A practical rollout check is to pick ten recurring internal workflows, define the required writes and files for each one, and replay agent runs against a staging tenant. The agent passes when the service state and workspace artifacts match the task rubric within the time and turn budget, not when the transcript sounds plausible.
 
-### Evidence
+### Sources
 - [Claw-Eval-Live: A Live Agent Benchmark for Evolving Real-World Workflows](../Inbox/2026-04-30--claw-eval-live-a-live-agent-benchmark-for-evolving-real-world-workflows.md): Describes Claw-Eval-Live task construction, grading evidence, pass thresholds, and model results.
 - [Claw-Eval-Live: A Live Agent Benchmark for Evolving Real-World Workflows](../Inbox/2026-04-30--claw-eval-live-a-live-agent-benchmark-for-evolving-real-world-workflows.md): Reports the leading 66.7% pass rate, the failure to reach 70%, and harder workflow families.
 
@@ -59,6 +59,6 @@ C2VEval shows why this matters in circuit-to-Verilog generation. Normal prompts 
 
 EDA teams can add this as a pre-merge evaluation for any circuit-to-Verilog assistant. UI-to-code and chart-to-code teams can adapt the same pattern by blanking or corrupting the visual input and replacing semantic labels with placeholders, then checking whether executable outputs still pass task tests.
 
-### Evidence
+### Sources
 - [From Mirage to Grounding: Towards Reliable Multimodal Circuit-to-Verilog Code Generation](../Inbox/2026-04-30--from-mirage-to-grounding-towards-reliable-multimodal-circuit-to-verilog-code-generation.md): Summarizes C2VEval, Mirage mode, anonymized identifiers, and Functional Pass@1 drops for frontier models.
 - [From Mirage to Grounding: Towards Reliable Multimodal Circuit-to-Verilog Code Generation](../Inbox/2026-04-30--from-mirage-to-grounding-towards-reliable-multimodal-circuit-to-verilog-code-generation.md): Explains the blank-image Mirage failure and the risk in circuit-to-Verilog generation.

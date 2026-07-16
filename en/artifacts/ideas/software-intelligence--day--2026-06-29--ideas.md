@@ -41,7 +41,7 @@ SWE-Together gives a usable measurement pattern: it scores final repository corr
 
 A small adoption test is practical: take 20 recent internal agent sessions with enough repository state to replay, hide the final requirement set inside a reviewer script or simulator, and compare candidate agents on pass rate, correction turns, user messages, cost, and failure labels. This exposes agents that can discover most goals but still drop requirements or ship implementation bugs.
 
-### Evidence
+### Sources
 - [SWE-Together: Evaluating Coding Agents in Interactive User Sessions](../Inbox/2026-06-29--swe-together-evaluating-coding-agents-in-interactive-user-sessions.md): SWE-Together defines replayed multi-turn coding tasks, final correctness scoring, User Correction, and reported model results.
 - [SWE-INTERACT: Reimagining SWE Benchmarks as User-Driven Long-Horizon Coding Sessions](../Inbox/2026-06-29--swe-interact-reimagining-swe-benchmarks-as-user-driven-long-horizon-coding-sessions.md): SWE-INTERACT reports large single-turn to interactive resolve drops, higher per-trial cost, and failure labels such as forgotten requirements and implementation bugs.
 
@@ -52,7 +52,7 @@ TraceLab makes the case concrete. Its trace covers 4,265 Claude Code and Codex s
 
 A cheap first build is a log normalizer for local and hosted coding-agent sessions. It can drop raw user text and tool I/O, keep timestamps and token counts, and flag sessions where prefix-cache misses or one-minute-plus tool calls dominate cost. That gives product and infra teams a shared view of which agent loops are expensive before changing model choice or context policy.
 
-### Evidence
+### Sources
 - [TraceLab: Characterizing Coding Agent Workloads for LLM Serving](../Inbox/2026-06-29--tracelab-characterizing-coding-agent-workloads-for-llm-serving.md): TraceLab provides the step-level schema, token split, session scale, cache-hit result, and cost share for prefix tokens.
 
 ## MCP tool-flow enforcement with scoped tool exposure
@@ -62,6 +62,6 @@ trajeckt demonstrates the concrete mechanism for MCP-speaking agents: a sealed c
 
 Tool exposure also needs an operational limit. The MCP pattern study reports that tool-selection accuracy drops below 90% between 10 and 15 visible tools for Claude Haiku 4.5 and between 20 and 30 for Claude Sonnet 4. A gateway can combine both controls: expose only the tools relevant to the current session scope and enforce the approved call path after selection.
 
-### Evidence
+### Sources
 - [Show HN: A Firewall for AI agents with auditing](../Inbox/2026-06-29--show-hn-a-firewall-for-ai-agents-with-auditing.md): trajeckt describes sealed pre-session commitments, fail-closed checks, taint tracking, audit reason codes, and the read/summarize/email block example.
 - [MCP Server Architecture Patterns for LLM-Integrated Applications](../Inbox/2026-06-29--mcp-server-architecture-patterns-for-llm-integrated-applications.md): The MCP server pattern study reports tool-selection degradation as visible tool count grows and recommends scoped aggregation or retrieval over tools for larger deployments.

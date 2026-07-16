@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Internal State Instrumentation
 
-## Summary
+## 摘要
 如果把这一窗口里的机器人工作看成工作流变化，会更有用。一篇论文给出了一套明确做法，把显式进度和地标记忆监督加到 VLN 训练里，并报告了很大的收益且没有额外推理开销。另一篇论文给出了 21-DOF 开源灵巧手在远程腱索布线中的实测力、延迟和维护权衡。两者一起支持一种更广泛的做法变化：在训练和硬件验证时直接跟踪内部状态变量，因为这些测量比最终任务分数更早解释长时程失败。
 
 ## Instruction-progress and landmark-memory supervision in VLN training
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 落地的阻碍在标注和评估纪律。论文用 360 万条合成进度样本和 93.7 万条带地标的样本做到这一步，所以大多数实验室会先做一个更小的内部版本。一个便宜的测试很直接：拿现有的 VLN 基准运行，给几千条轨迹标上子目标完成文本和地标回忆目标，然后比较长指令上的失败模式，而不只看总成功率。如果出现同样的模式，进度漂移和记忆漂移就该变成 VLN 训练里的常规跟踪指标，因为它们能在代理开始走偏之前指出错误。
 
-### Evidence
+### 资料来源
 - [Dual-Anchoring: Addressing State Drift in Vision-Language Navigation](../Inbox/2026-04-19--dual-anchoring-addressing-state-drift-in-vision-language-navigation.md): Summary gives the method, training signals, data scale, and benchmark gains over StreamVLN.
 - [Dual-Anchoring: Addressing State Drift in Vision-Language Navigation](../Inbox/2026-04-19--dual-anchoring-addressing-state-drift-in-vision-language-navigation.md): Paper text states the explicit instruction-progress and memory-landmark anchoring mechanism and dataset sizes.
 
@@ -40,7 +40,7 @@ language_code: zh-CN
 
 这会改变操作组的构建决策。远程电机仓不再只是为了腾出掌心空间而画出的概念图。它是一项可以计入成本的取舍。团队在需要更低手部质量、更容易维修或更大的掌内传感空间时，可以选择远程布线，然后检查任务是否能承受实测到的力损失和延迟。第一步便宜的验证是在整手装配前先做布线路径台架测试：测量与机械臂路径匹配的套管长度和弯折角度下的指尖力和指令延迟，然后只有在控制器和任务需求仍能落在这些限制内时再固定路由。论文发现，在跟踪测试里，摩擦比机械臂运动扰动更重要，这也给了这套流程明确的优先级。
 
-### Evidence
+### 资料来源
 - [MM-Hand: A 21-DOF Multi-modal Modular Dexterous Robotic Hand with Remote Actuation](../Inbox/2026-04-19--mm-hand-a-21-dof-multi-modal-modular-dexterous-robotic-hand-with-remote-actuation.md): Summary provides the design, sensing stack, force, delay, and tracking findings that support a concrete hardware workflow change.
 - [MM-Hand: A 21-DOF Multi-modal Modular Dexterous Robotic Hand with Remote Actuation](../Inbox/2026-04-19--mm-hand-a-21-dof-multi-modal-modular-dexterous-robotic-hand-with-remote-actuation.md): Paper text confirms the 25 N force under 1 m routing and frames the hand as an open-source research platform.
 
@@ -49,6 +49,6 @@ language_code: zh-CN
 
 一个可落地的办法，是在主策略或控制器旁边放一个小的评估工具。对导航来说，记录沿轨迹的子目标完成准确率和地标回忆率。对腱索驱动的手来说，在不同路由配置下记录延迟、力损失和跟踪误差，再做整体操作测试。团队不需要为此再造一个大架构。他们需要一种可重复的方法，把解释失败的内部变量显出来。一个便宜的检查方式，是看这些侧面指标是否比任务成功率更早预测下游失败。如果是，它们就该进入把长时程推理和有机械损耗的硬件结合起来的实体系统的常规回归测试。
 
-### Evidence
+### 资料来源
 - [Dual-Anchoring: Addressing State Drift in Vision-Language Navigation](../Inbox/2026-04-19--dual-anchoring-addressing-state-drift-in-vision-language-navigation.md): Summary identifies explicit progress and memory state as trainable and measurable sources of VLN failure.
 - [MM-Hand: A 21-DOF Multi-modal Modular Dexterous Robotic Hand with Remote Actuation](../Inbox/2026-04-19--mm-hand-a-21-dof-multi-modal-modular-dexterous-robotic-hand-with-remote-actuation.md): Summary identifies friction, delay, and routing effects as measured internal variables that explain hardware performance.

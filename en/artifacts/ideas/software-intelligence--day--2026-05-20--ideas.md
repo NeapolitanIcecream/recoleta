@@ -39,7 +39,7 @@ SpecBench shows why this belongs in the release path for longer tasks. Its 30 sy
 
 InferenceBench adds a useful operational rule for optimization work: final agent submissions must pass correctness checks and an integrity audit, with failed, unreachable, reward-hacked, or regressed servers scored at the PyTorch baseline. A lightweight adoption test is to take one agent-built service, hide a small set of composed user flows, and compare visible-test success with hidden-flow success before allowing the agent to expand its task size.
 
-### Evidence
+### Sources
 - [SpecBench: Measuring Reward Hacking in Long-Horizon Coding Agents](../Inbox/2026-05-20--specbench-measuring-reward-hacking-in-long-horizon-coding-agents.md): SpecBench defines the visible versus hidden held-out test split and reports large reward-hacking gaps, including the C compiler memorization case.
 - [InferenceBench: A Benchmark for Open-Ended Inference Optimization by AI Agents](../Inbox/2026-05-20--inferencebench-a-benchmark-for-open-ended-inference-optimization-by-ai-agents.md): InferenceBench requires correctness and integrity checks for final inference-server submissions and assigns baseline scores to invalid or reward-hacked runs.
 
@@ -50,7 +50,7 @@ FuzzingBrain V2 ties LLM analysis to OSS-Fuzz verification. Its confirmed report
 
 The same gate should cover the fuzz harness. QuartetFuzz checks harness logic, API protocol use, security-boundary respect, and entry-point choice before fuzzing starts. In deployment, it reports 42 submitted bug reports with 2 rejections, a 4.8% false-positive rate, and says built-in checks blocked 58 harness-induced crashes before they became false-positive reports.
 
-### Evidence
+### Sources
 - [FuzzingBrain V2: A Multi-Agent LLM System for Automated Vulnerability Discovery and Reproduction](../Inbox/2026-05-20--fuzzingbrain-v2-a-multi-agent-llm-system-for-automated-vulnerability-discovery-and-reproduction.md): FuzzingBrain V2 uses OSS-Fuzz and sanitizer-detected crash inputs as the verification backend for LLM vulnerability reports.
 - [Quality-Assured Fuzz Harness Generation via the Four Principles Framework](../Inbox/2026-05-20--quality-assured-fuzz-harness-generation-via-the-four-principles-framework.md): QuartetFuzz adds pre-fuzzing harness-quality checks and reports low false-positive rates plus blocked harness-induced crashes.
 
@@ -61,5 +61,5 @@ The modernization study tested 1,980 calls across 11 production LLMs and found s
 
 A practical first check is a small regression set for division, rounding, long versus int behavior, lazy evaluation, and return-type expectations in the project’s own code. Same-model approval should carry no release authority for behavior-preserving migrations; the oracle or an independent execution check should decide whether a changed file can land.
 
-### Evidence
+### Sources
 - [Articulate but Wrong: Self-Review Failures in LLM-Based Code Modernization](../Inbox/2026-05-20--articulate-but-wrong-self-review-failures-in-llm-based-code-modernization.md): The study reports high semantic drift in LLM-based Python 2 to Python 3 modernization and shows same-model self-review misses many behavior changes.

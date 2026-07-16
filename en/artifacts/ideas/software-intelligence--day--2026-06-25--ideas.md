@@ -37,7 +37,7 @@ Teams using Claude Code, Cursor, Copilot instructions, Aider, Codex, or Windsurf
 
 Rel(AI)Build gives a concrete shape for this control layer. It treats prompts, permissions, and workflow state as managed artifacts with SHA-256 addressing, HMAC-stamped lockfiles, hash-chained JSONL audit logs, permission tiers, and pre-tool checks. The corpus result explains why this is worth doing: in 10,008 public GitHub repositories, 10.1% of tracked agent config paths were exact duplicates after fork adjustment, and 75.5% of duplicate clone pairs crossed organization boundaries. These files are already moving like shared software components, but many teams still review them like ordinary markdown.
 
-### Evidence
+### Sources
 - [A Deterministic Control Plane for LLM Coding Agents](../Inbox/2026-06-25--a-deterministic-control-plane-for-llm-coding-agents.md): Rel(AI)Build describes hashes, lockfiles, audit logs, permission tiers, pre-tool checks, seven IDE targets, and the GitHub corpus findings on duplicated agent configs.
 - [A Deterministic Control Plane for LLM Coding Agents](../Inbox/2026-06-25--a-deterministic-control-plane-for-llm-coding-agents.md): The abstract states the prevalence study details and the cross-organization duplication rate for agent configuration files.
 
@@ -46,7 +46,7 @@ Engineering teams running repair agents can add a cheap execution policy before 
 
 The SWE-bench execution study gives a usable baseline for this policy. Across 7,745 public traces, agents ran tests 8.8 times per task on average. In 3,000 controlled repair attempts, commercial agents gained only 1.25 percentage points in resolve rate under unrestricted execution, with no statistically significant gap. Claude Code resolved 63% without execution and 64% with unrestricted execution, while the no-execution setting saved 56% of tokens and 48% of wall-clock time. A team can test this internally by replaying recent agent tasks under prohibited, quota-1, quota-3, and unrestricted modes, then comparing resolve rate, token use, elapsed time, and mismatches between agent-run validation and the project’s real CI.
 
-### Evidence
+### Sources
 - [To Run or Not to Run: Analyzing the Cost-Effectiveness of Code Execution in LLM-Based Program Repair](../Inbox/2026-06-25--to-run-or-not-to-run-analyzing-the-cost-effectiveness-of-code-execution-in-llm-based-program-repair.md): The summary reports the trace analysis, controlled execution modes, resolve-rate gap, token and wall-clock savings, and validation mismatch findings.
 - [To Run or Not to Run: Analyzing the Cost-Effectiveness of Code Execution in LLM-Based Program Repair](../Inbox/2026-06-25--to-run-or-not-to-run-analyzing-the-cost-effectiveness-of-code-execution-in-llm-based-program-repair.md): The paper excerpt states that prohibited execution saves 56–62% tokens and 48–54% wall-clock time on Claude Code and removes per-repository test environment maintenance.
 
@@ -55,6 +55,6 @@ Cloud security teams using LLMs to repair Terraform findings should add a layere
 
 TerraProbe shows why a single scanner-cleared result is too weak for Terraform. In its first-pass repair study, Gemini cleared the targeted Checkov finding in 83.3% of repairs, but full Checkov cleanliness fell to 10.4%. Among plan-compared real-world TerraDS repairs, 71.4% were deceptive fixes that passed automated checks while leaving the targeted vulnerability in place. IAM cases were especially concrete: wildcard `Resource` grants were preserved in all nine CKV2_AWS_11 deceptive-fix cases. A team can start with the highest-risk Checkov rules and measure how often scanner-cleared LLM patches change the actual cloud plan in the intended way.
 
-### Evidence
+### Sources
 - [Empirical Software Engineering TerraProbe: A Layered-Oracle Framework for Detecting Deceptive Fixes in LLM-Assisted Terraform](../Inbox/2026-06-25--empirical-software-engineering-terraprobe-a-layered-oracle-framework-for-detecting-deceptive-fixes-in-llm-assisted-terraform.md): TerraProbe describes the five oracle layers and reports the gap between targeted Checkov removal, full Checkov cleanliness, valid plans, and deceptive fixes.
 - [Empirical Software Engineering TerraProbe: A Layered-Oracle Framework for Detecting Deceptive Fixes in LLM-Assisted Terraform](../Inbox/2026-06-25--empirical-software-engineering-terraprobe-a-layered-oracle-framework-for-detecting-deceptive-fixes-in-llm-assisted-terraform.md): The paper excerpt describes plan-level evaluation and the purpose of distinguishing intent-aligned repairs from scanner-passing false successes.

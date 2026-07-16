@@ -39,7 +39,7 @@ The missing piece to add around that server is a small manifest and audit layer.
 
 A useful first test is a two-agent pilot inside one engineering team: one code-maintenance agent and one outreach or triage agent. Give each a manifest, require approval for external side effects, and review a week of run records for missing owner, missing grant, stale secret, or unreviewed action.
 
-### Evidence
+### Sources
 - [Show HN: Lite-Harness – Self-Hosted Cursor Agents (Use Claude Code/OpenCode)](../Inbox/2026-05-30--show-hn-lite-harness-self-hosted-cursor-agents-use-claude-code-opencode.md): Lite-Harness provides scheduled agent runs, secrets, sandboxes, persistent sessions, and human approval routing.
 - [Show HN: Lite-Harness – Self-Hosted Cursor Agents (Use Claude Code/OpenCode)](../Inbox/2026-05-30--show-hn-lite-harness-self-hosted-cursor-agents-use-claude-code-opencode.md): The example deployment shows cron scheduling, vault keys, a sandbox check, a test run, and approval before each send.
 - [A case for an Autonomy Kernel](../Inbox/2026-05-30--a-case-for-an-autonomy-kernel.md): Autonomy Kernel defines the runtime responsibilities: execution, identity, authority, communication, auditing, stoppability, and traceable authorization.
@@ -51,7 +51,7 @@ The practical build is a local recipe pack for the workflows a team actually all
 
 Start with five recipes tied to real failures or risky side effects. Save artifacts for each run, including prompt, model/provider, tools, trace, pass-fail checks, and reviewer notes. The score matters less than whether a maintainer can inspect why a run passed, failed, or needed a human decision.
 
-### Evidence
+### Sources
 - [Show HN: HermesBench – workflow reliability evals for personal AI agents](../Inbox/2026-05-30--show-hn-hermesbench-workflow-reliability-evals-for-personal-ai-agents.md): HermesBench evaluates complete agent configurations with recipes, traces, deterministic checks, and a public baseline across 27 workflows.
 - [Show HN: HermesBench – workflow reliability evals for personal AI agents](../Inbox/2026-05-30--show-hn-hermesbench-workflow-reliability-evals-for-personal-ai-agents.md): The site describes visible limits, redacted traces, score axes, and a single-recipe quick-start path for current configurations.
 - [The Manifesto for Dimensional Design](../Inbox/2026-05-30--the-manifesto-for-dimensional-design.md): Dimensional Design argues for deterministic pass-fail gates and small recorded human review around AI outputs that need exactness.
@@ -63,6 +63,6 @@ This targets a specific source of technical debt: teams skip ADRs because a seni
 
 The adoption test is simple. Run the tool on ten closed issues that should have had ADRs, hide the merged solution from the reviewer, and ask a staff engineer whether the generated options and recommendation would have improved the original review. Keep the approval gate mandatory, and store rejected drafts as useful evidence about where the agent missed project context.
 
-### Evidence
+### Sources
 - [Arch-Decision – A multi-agent architecture tool for Claude Code](../Inbox/2026-05-30--arch-decision-a-multi-agent-architecture-tool-for-claude-code.md): arch-decision describes the ADR workflow, eight phases, parallel codebase exploration, generated options, a synthesizer, and a required human approval gate.
 - [Arch-Decision – A multi-agent architecture tool for Claude Code](../Inbox/2026-05-30--arch-decision-a-multi-agent-architecture-tool-for-claude-code.md): The refinedev/refine case reports a recommendation that matched a later community PR in callback name, scope, and placement.

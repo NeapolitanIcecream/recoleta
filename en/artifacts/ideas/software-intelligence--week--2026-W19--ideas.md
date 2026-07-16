@@ -37,7 +37,7 @@ Teams giving coding agents access to APIs, deploy tools, ticket systems, or bill
 
 RubricRefine reports 0.86 success on M3ToolEval across seven models, compared with 0.62 for single-pass CodeAct, with no environment execution during refinement. A practical internal test is 50 archived multi-tool tasks with known correct traces: measure wrong tool routing, malformed arguments, and provenance errors before and after the gate. The gate is most useful where a failed call changes external state, consumes quota, or creates an audit event.
 
-### Evidence
+### Sources
 - [RubricRefine: Improving Tool-Use Agent Reliability with Training-Free Pre-Execution Refinement](../Inbox/2026-05-10--rubricrefine-improving-tool-use-agent-reliability-with-training-free-pre-execution-refinement.md): RubricRefine checks tool contracts before execution, covers tool choice, output shape, call signatures, ordering, and data provenance, and reports 0.86 average success on M3ToolEval versus 0.62 for CodeAct.
 - [RubricRefine: Improving Tool-Use Agent Reliability with Training-Free Pre-Execution Refinement](../Inbox/2026-05-10--rubricrefine-improving-tool-use-agent-reliability-with-training-free-pre-execution-refinement.md): The paper’s abstract identifies inter-tool contract failures that can run to completion without runtime errors, which supports a pre-live-call verifier.
 
@@ -46,7 +46,7 @@ Maintenance agents need PR acceptance rules that cover codebase understanding, t
 
 A useful workflow is to require an evidence manifest with commands run, files inspected, tests added, behavior-preserving rationale for refactors, and a no-code-change option tied to reproduction and git-history evidence. Pilot it on recent duplicate tickets and partially fixed tickets before allowing autonomous merge rights.
 
-### Evidence
+### Sources
 - [SWE Atlas: Benchmarking Coding Agents Beyond Issue Resolution](../Inbox/2026-05-08--swe-atlas-benchmarking-coding-agents-beyond-issue-resolution.md): SWE Atlas covers codebase Q&A, test writing, and refactoring across 18 repositories, and reports gaps between functional checks and rubric checks for engineering quality.
 - [Coding Agents Don't Know When to Act](../Inbox/2026-05-08--coding-agents-don-t-know-when-to-act.md): FixedBench tests already-fixed issues and partial fixes, showing unwanted edits on fixed tasks and wrong abstention on partially fixed tasks.
 
@@ -55,6 +55,6 @@ Security teams testing coding agents on direct harmful prompts are missing the J
 
 Add a regression suite that feeds an agent sequences of benign-looking tickets against a disposable app, composes diffs, and runs exploit oracles on the final deployment. Pair it with monitor tests using refined attack trajectories: MonitoringBench shows a full-trajectory Opus 4.5 monitor fell from 94.9% catch rate on elicited attacks to 60.3% on the best refined attacks. The first target is any team letting agents implement backlog items without a security engineer reviewing cumulative diffs.
 
-### Evidence
+### Sources
 - [MOSAIC-Bench: Measuring Compositional Vulnerability Induction in Coding Agents](../Inbox/2026-05-05--mosaic-bench-measuring-compositional-vulnerability-induction-in-coding-agents.md): MOSAIC-Bench evaluates staged three-ticket attack chains with deterministic proof-of-concept oracles and reports high end-to-end attack success across production coding agents.
 - [MonitoringBench: Semi-Automated Red-Teaming for Agent Monitoring](../Inbox/2026-05-10--monitoringbench-semi-automated-red-teaming-for-agent-monitoring.md): MonitoringBench shows stronger refined attack trajectories sharply reduce monitor catch rates, supporting refreshed monitor tests beyond direct elicitation.

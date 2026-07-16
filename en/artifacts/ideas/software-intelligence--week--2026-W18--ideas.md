@@ -39,7 +39,7 @@ The reported gains are modest on issue resolution and more concrete on cost and 
 
 A team running coding agents on an internal monorepo can test this without changing the model: add a file-view endpoint that takes a path and query, add a patch endpoint that accepts an edit instruction, and compare agent runs on recent bugs. Track resolved issues, failed patches, non-cached input tokens, and reviewer complaints about unrelated edits.
 
-### Evidence
+### Sources
 - [SWE-Edit: Rethinking Code Editing for Efficient SWE-Agent](../Inbox/2026-04-28--swe-edit-rethinking-code-editing-for-efficient-swe-agent.md): SWE-Edit reports the Viewer and Editor split, cost reduction, edit-success gains, token reduction, and SWE-bench Verified results.
 - [SWE-Edit: Rethinking Code Editing for Efficient SWE-Agent](../Inbox/2026-04-28--swe-edit-rethinking-code-editing-for-efficient-swe-agent.md): The paper abstract describes the context-coupling problem and the two-subagent design.
 
@@ -50,7 +50,7 @@ Context-Augmented Code Generation reports a large gain on a small clean-room ben
 
 A cheap first version can cover one product area and ten recurring decisions. Store each decision with an owner, examples, and a regex or review checklist. Run the coding agent on old tickets, then compare generated diffs against the checklist before and after retrieval.
 
-### Evidence
+### Sources
 - [Context-Augmented Code Generation: How Product Context Improves AI Coding Agent Decision Compliance by 49%](../Inbox/2026-04-27--context-augmented-code-generation-how-product-context-improves-ai-coding-agent-decision-compliance-by-49.md): The paper defines decision compliance, describes Brief, and reports the 46% to 95% compliance change plus benchmark limits.
 - [Context-Augmented Code Generation: How Product Context Improves AI Coding Agent Decision Compliance by 49%](../Inbox/2026-04-27--context-augmented-code-generation-how-product-context-improves-ai-coding-agent-decision-compliance-by-49.md): The source text says product decisions may live in tools, design documents, or wikis and can be invisible in code.
 
@@ -61,6 +61,6 @@ On OWASP Benchmark v1.2, QASecClaw reduces false positives from 560 to 64 and ra
 
 The first deployment should run in shadow mode on existing CI alerts. Compare model-suppressed findings with human triage for a few CWE categories, keep all suppressed alerts visible in an audit view, and require structured reasons tied to nearby sanitization, validation, encoding, or parameterized APIs.
 
-### Evidence
+### Sources
 - [QASecClaw: A Multi-Agent LLM Approach for False Positive Reduction in Static Application Security Testing](../Inbox/2026-05-03--qasecclaw-a-multi-agent-llm-approach-for-false-positive-reduction-in-static-application-security-testing.md): QASecClaw uses Semgrep first, applies contextual LLM review, keeps alerts on model failure, and reports OWASP Benchmark results.
 - [QASecClaw: A Multi-Agent LLM Approach for False Positive Reduction in Static Application Security Testing](../Inbox/2026-05-03--qasecclaw-a-multi-agent-llm-approach-for-false-positive-reduction-in-static-application-security-testing.md): The abstract describes the SAST false-positive problem and the Semgrep plus coding-specialized LLM filter setup.

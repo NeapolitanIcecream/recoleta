@@ -37,7 +37,7 @@ For teams training VLA-style policies with discrete action codes, the practical 
 
 This is a useful adoption change for robot foundation model roadmaps because it turns a vague scaling problem into a cheap gating experiment. The decision is concrete: keep investing in encoder quality only if control quality rises with it; otherwise move effort to the tokenizer, codebook size, or continuous-action heads.
 
-### Evidence
+### Sources
 - [The Compression Gap: Why Discrete Tokenization Limits Vision-Language-Action Model Scaling](../Inbox/2026-04-03--the-compression-gap-why-discrete-tokenization-limits-vision-language-action-model-scaling.md): Shows that encoder upgrades give large gains for continuous actions but small or inconsistent gains for discrete action tokenization on LIBERO-10.
 - [The Compression Gap: Why Discrete Tokenization Limits Vision-Language-Action Model Scaling](../Inbox/2026-04-03--the-compression-gap-why-discrete-tokenization-limits-vision-language-action-model-scaling.md): States the action tokenizer is the tightest bottleneck when actions are discretized, grounding the proposed audit around action-channel capacity.
 
@@ -48,7 +48,7 @@ The build here is specific: add a high-level latent waypoint planner on top of a
 
 The first users are research teams and applied robotics groups that already have a world model working on short horizons but see collapse on multi-stage manipulation. A cheap check is to rerun a current goal-image benchmark with oracle subgoals and compare it to automatic latent subgoals. The paper reports both flat planning and HWM at 80% when oracle subgoals are supplied, which points to subgoal generation as the main missing piece.
 
-### Evidence
+### Sources
 - [Hierarchical Planning with Latent World Models](../Inbox/2026-04-03--hierarchical-planning-with-latent-world-models.md): Provides the real-robot success gains, the hierarchical planning mechanism, and the claimed reduction in planning compute.
 - [Hierarchical Planning with Latent World Models](../Inbox/2026-04-03--hierarchical-planning-with-latent-world-models.md): Describes the long-horizon failure mode of flat world-model planning and why hierarchical temporal abstraction addresses it.
 
@@ -59,6 +59,6 @@ This supports a concrete workflow change for teams already serving a heavy manip
 
 The immediate test is straightforward. Take an existing chunked controller, add a small image encoder plus action-distance gate, and compare three settings on the same tasks: open-loop chunking, verifier-gated chunking, and step-wise closed loop if latency allows. The current evidence is narrower than the planning and action-interface papers because the excerpt does not include per-task scores or latency tables, so this reads best as a deployment experiment for known VLA stacks, not a broad claim about all robot control.
 
-### Evidence
+### Sources
 - [Open-Loop Planning, Closed-Loop Verification: Speculative Verification for VLA](../Inbox/2026-04-03--open-loop-planning-closed-loop-verification-speculative-verification-for-vla.md): Summarizes the verifier design, the frozen heavy VLA setup, and the reported LIBERO gain from 79.5% to 90.90%.
 - [Open-Loop Planning, Closed-Loop Verification: Speculative Verification for VLA](../Inbox/2026-04-03--open-loop-planning-closed-loop-verification-speculative-verification-for-vla.md): Grounds the operational problem: stale observations during open-loop chunk execution cause drift and degraded control.

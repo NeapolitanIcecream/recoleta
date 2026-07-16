@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # 智能体执行边界
 
-## Summary
+## 摘要
 智能体团队可以在故障会变贵的位置加入具体运行控制：为 LLM 请求做调用前成本预留，在 RAG chunk 或工具调用到达模型前做确定性授权，以及为消费级 GPU 硬件上的 out-of-core 本地推理设置一条范围明确的 Windows 基准测试。
 
 ## 自主智能体运行的调用前 LLM 支出预留
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 这针对的是普通月度预算或按密钥预算容易漏掉的成本模式：智能体循环会反复发送累积上下文，到第 20 步时一次调用可能超过 50K 输入 token。智能体还需要机器可读的预算状态。Header 和 RFC 9457 problem-detail 错误可以告诉智能体何时选择更便宜的模型、裁剪上下文或干净停止。一个有用的初始测试，是用真实智能体 trace 回放并覆盖并行分支、缺失价格元数据和上下文增长，然后测量新增延迟、被阻止的调用，以及预留金额与实际花费金额。
 
-### Evidence
+### 资料来源
 - [RFC: Stopping runaway AI agent spend with atomic budget reservations](../Inbox/2026-07-04--rfc-stopping-runaway-ai-agent-spend-with-atomic-budget-reservations.md): 概述 RFC 设计：调用前估算支出、原子性预留、范围、预算状态 header，以及缺少评估结果。
 - [RFC: Stopping runaway AI agent spend with atomic budget reservations](../Inbox/2026-07-04--rfc-stopping-runaway-ai-agent-spend-with-atomic-budget-reservations.md): 描述智能体循环的成本机制，包括累积上下文，以及第 20 步时一次调用达到 50K token。
 - [RFC: Stopping runaway AI agent spend with atomic budget reservations](../Inbox/2026-07-04--rfc-stopping-runaway-ai-agent-spend-with-atomic-budget-reservations.md): 列出预算权限行为：在提供商调用前预留、遇到未知价格时关闭放行，并暴露预算状态供智能体调整。
@@ -43,7 +43,7 @@ language_code: zh-CN
 
 智能体工作流需要分别记录人类用户、智能体参与者、委托范围和已执行动作。一个支持台流程可以把工作拆分给范围受限的子智能体，签发带委托声明的短期签名 JWT，并为每次操作记录参与者、委托者、人类用户、角色和范围。一个小型验证集应包含受限文档、过期凭证，以及试图调用范围外工具的委托智能体。
 
-### Evidence
+### 资料来源
 - [AI Authentication and Authorization](../Inbox/2026-07-04--ai-authentication-and-authorization.md): 概述文章中的模式：RAG 过滤、通过 MCP 或 API 访问工具、独立智能体身份、短期凭证和审计日志。
 - [AI Authentication and Authorization](../Inbox/2026-07-04--ai-authentication-and-authorization.md): 解释为什么需要在授权人类与每个智能体动作之间维护身份链。
 - [AI Authentication and Authorization](../Inbox/2026-07-04--ai-authentication-and-authorization.md): 说明 RAG 应在文档到达模型前进行过滤。
@@ -54,7 +54,7 @@ language_code: zh-CN
 
 Kortex 报告称，在 Radeon RX 7900 XT 20 GB 系统上，Llama-3.3-70B Q4_K_M 达到每秒 1.95 token；相比之下，同一硬件上使用 llama.cpp b9860 Vulkan 并卸载 80 层中的 30 层时，每秒为 0.21 token。当前采用边界很明确：流式路径仅支持 Windows，没有 HTTP 服务器或多轮 REPL，Linux 流式尚未测试。这意味着应先走评估和批量推理路径，服务集成留到后续构建。
 
-### Evidence
+### 资料来源
 - [Out-of-core LLM inference engine written from scratch in Rust](../Inbox/2026-07-04--out-of-core-llm-inference-engine-written-from-scratch-in-rust.md): 概述 Kortex 的 out-of-core 设计、报告的 70B 结果、与 llama.cpp 的比较、正确性检查和当前限制。
 - [Out-of-core LLM inference engine written from scratch in Rust](../Inbox/2026-07-04--out-of-core-llm-inference-engine-written-from-scratch-in-rust.md): 说明仅 Windows 支持流式路径，以及在 20 GB 消费级 GPU 上报告的 70B 性能。
 - [Out-of-core LLM inference engine written from scratch in Rust](../Inbox/2026-07-04--out-of-core-llm-inference-engine-written-from-scratch-in-rust.md): 解释测得的 1.95 tok/s 结果、llama.cpp 部分卸载瓶颈，以及 Kortex 使用流式权重进行仅 GPU 计算。

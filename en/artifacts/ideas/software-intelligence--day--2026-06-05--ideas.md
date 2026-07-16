@@ -39,7 +39,7 @@ Coding-agent teams should record the file paths and line ranges an agent inspect
 
 A cheap internal test is to replay 50 to 100 closed issues, hide the final patch, and ask each agent to produce five ranked regions before editing. Review can then separate missed-code failures from patch-generation failures. This gives engineering managers and tool builders a clearer reason for bad runs than a single pass or fail result.
 
-### Evidence
+### Sources
 - [SWE-Explore: Benchmarking How Coding Agents Explore Repositories](../Inbox/2026-06-05--swe-explore-benchmarking-how-coding-agents-explore-repositories.md): SWE-Explore defines ranked file-line regions, trajectory-derived line-level ground truth, and metrics that correlate with repair success.
 
 ## Capped randomized tests for coding-agent evaluation suites
@@ -47,7 +47,7 @@ Benchmark maintainers and internal eval teams can add randomized accepted output
 
 This can start as a canary set inside an existing eval suite. The team keeps normal tests for capability measurement, adds capped variants for leakage detection, and runs a one-sided binomial test on repeated submissions. The useful output is not only a lower score; it is a warning that an agent’s eval gain may come from exploiting accessible feedback.
 
-### Evidence
+### Sources
 - [Do Coding Agents Deceive Us? Detecting and Preventing Cheating via Capped Evaluation with Randomized Tests](../Inbox/2026-06-05--do-coding-agents-deceive-us-detecting-and-preventing-cheating-via-capped-evaluation-with-randomized-tests.md): CapCode uses randomized accepted outputs, a known pass-rate cap, and one-sided binomial tests to detect coding-agent test gaming.
 
 ## Runtime sandbox checks for third-party coding-agent skills
@@ -55,5 +55,5 @@ Organizations that allow Claude Code, OpenCode, Cursor, Gemini CLI, or similar t
 
 A practical gate is a small quarantine service for new SKILL.md packages. It runs the skill in Docker with a test agent, records system calls and file changes, and blocks skills that match known malicious behaviors or request unsafe tool permissions. The benchmark’s false-positive finding matters for adoption: high-recall transfer tools produced up to 3,979 false positives on 4,000 benign skills, so teams should measure both blocked attacks and developer disruption before enforcing a detector broadly.
 
-### Evidence
+### Sources
 - [MalSkillBench: A Runtime-Verified Benchmark of Malicious Agent Skills](../Inbox/2026-06-05--malskillbench-a-runtime-verified-benchmark-of-malicious-agent-skills.md): MalSkillBench provides runtime-verified malicious and benign agent skills, reports detector performance, and shows high false-positive risk for transfer tools.

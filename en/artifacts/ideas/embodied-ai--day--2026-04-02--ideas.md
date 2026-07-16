@@ -37,7 +37,7 @@ Robot teams fine-tuning OpenVLA-like policies can add an action-distribution reg
 
 This also points to a practical support layer for deployment teams: inspection of action sharpness during finetuning. If the policy collapses to narrow peaks, that is a candidate failure mode for small demonstration sets and minor execution shifts. A cheap first test is to replay the current finetuning set, compare log-likelihood-only training against the same setup with a local Gaussian prior around the preferred action, and track success on small visual, semantic, and execution shifts. The controller-gain paper strengthens the case for this workflow because it shows that learnability depends on the control interface as well as the policy objective. In behavior cloning, the best closed-loop success appears in compliant, overdamped gain settings, and torque-to-position retargeting preserves at least 90% success with joint-position MSE below 1e-3 across gain settings up to 25x decimation. Teams adapting pretrained VLAs to a new arm or controller can treat action-tolerance tuning and gain selection as one finetuning problem, not two separate cleanup steps.
 
-### Evidence
+### Sources
 - [Boosting Vision-Language-Action Finetuning with Feasible Action Neighborhood Prior](../Inbox/2026-04-02--boosting-vision-language-action-finetuning-with-feasible-action-neighborhood-prior.md): Reports the core FAN regularizer and the verified ManiSkill gains for in-distribution and OOD success with OpenVLA finetuning.
 - [Tune to Learn: How Controller Gains Shape Robot Policy Learning](../Inbox/2026-04-02--tune-to-learn-how-controller-gains-shape-robot-policy-learning.md): Shows that controller gains materially affect behavior-cloning learnability and that retargeted trajectories remain faithful across gain settings.
 
@@ -46,7 +46,7 @@ Driving teams building world-action models can justify a geometry-first planning
 
 The practical workflow change is in evaluation as much as model design. A visually convincing rollout is not enough if the representation misses free space, layout, or occlusion structure. A simple adoption path is to run a depth-first ablation against an existing future-video planner, then compare closed-loop planning scores and a small set of occlusion-heavy cases. The same logic appears in WAV for robot world models: verification improves when future-state plausibility and action reachability are checked separately, and the paper reports 2x sample efficiency across nine tasks plus an 18% downstream policy gain. Together, these results support a planning workflow where geometry and reachability get explicit intermediate checks, not just a final action loss.
 
-### Evidence
+### Sources
 - [DriveDreamer-Policy: A Geometry-Grounded World-Action Model for Unified Generation and Planning](../Inbox/2026-04-02--drivedreamer-policy-a-geometry-grounded-world-action-model-for-unified-generation-and-planning.md): Provides the geometry-first architecture and benchmarked planning gains on Navsim v1 and v2.
 - [World Action Verifier: Self-Improving World Models via Forward-Inverse Asymmetry](../Inbox/2026-04-02--world-action-verifier-self-improving-world-models-via-forward-inverse-asymmetry.md): Supports the broader workflow of explicit intermediate verification with measured gains in sample efficiency and downstream policy quality.
 
@@ -55,5 +55,5 @@ Anyone evaluating VLA manipulation systems on physical tasks needs an object-sur
 
 The workflow change is straightforward. Before shipping a new checkpoint, take a small set of benchmark objects, optimize surface textures against the frozen policy in simulation, and record failure rates by task family and object category. That gives teams a way to find policies that rely on brittle visual shortcuts even when standard perturbation tests look clean. The paper does not yet give a defense recipe with verified recovery numbers, so the near-term product is an evaluation harness and acceptance threshold, not a robustness claim. For teams selling VLA systems into warehouses, labs, or homes, that harness is easier to adopt than waiting for a full training-time defense stack.
 
-### Evidence
+### Sources
 - [Tex3D: Objects as Attack Surfaces via Adversarial 3D Textures for Vision-Language-Action Models](../Inbox/2026-04-02--tex3d-objects-as-attack-surfaces-via-adversarial-3d-textures-for-vision-language-action-models.md): Documents the physically grounded 3D texture attack method and the large measured failure-rate increases across OpenVLA, OpenVLA-OFT, and pi0.

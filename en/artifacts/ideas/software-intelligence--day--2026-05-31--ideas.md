@@ -35,7 +35,7 @@ Teams using Claude Code or Cursor can treat token waste as a repo hygiene issue.
 
 The most useful part is the code map. It indexes source files and exported symbols so an agent can search one compact file before opening source. The README example claims 142 files and 906 top-level symbols in the map, a `CLAUDE.md` capped at 800 startup tokens, and a measured drop from 12,340 to 7,180 input tokens per day. Those numbers are project claims, so the practical adoption test is simple: run the setup on one active repo, keep the baseline, and compare input tokens per day after a week of normal agent work.
 
-### Evidence
+### Sources
 - [Agent-stack – one command to make any repo token-efficient for Claude Code](../Inbox/2026-05-31--agent-stack-one-command-to-make-any-repo-token-efficient-for-claude-code.md): Summarizes generated repo files, code map, usage logging, and the README token reduction claim.
 - [Agent-stack – one command to make any repo token-efficient for Claude Code](../Inbox/2026-05-31--agent-stack-one-command-to-make-any-repo-token-efficient-for-claude-code.md): Shows the setup output with 20 generated files, wired hooks, verified setup, and generated code map.
 - [Agent-stack – one command to make any repo token-efficient for Claude Code](../Inbox/2026-05-31--agent-stack-one-command-to-make-any-repo-token-efficient-for-claude-code.md): Describes the code map and the agent behavior of grepping the index before opening source files.
@@ -45,7 +45,7 @@ Agent teams with repeated multi-step work can move the control flow into workflo
 
 This is a fit for tasks where the sequence matters: release checks, support triage, file-generation jobs, or codebase audits that must stop early under known conditions. The README shows an 11-step example with an `end_id` argument controlling early termination, plus a `/workflow add` command that drafts, previews, writes, and registers a workflow without a restart. The missing check is measurement: teams should log task completion, branch accuracy, latency, and token use before calling it safer than a plain agent prompt.
 
-### Evidence
+### Sources
 - [New AI Agent Architecture to fix LLM deviations and token costs](../Inbox/2026-05-31--new-ai-agent-architecture-to-fix-llm-deviations-and-token-costs.md): Summarizes BotCircuits’ deterministic workflow engine, JSON workflow files, branch conditions, and lack of benchmark results.
 - [New AI Agent Architecture to fix LLM deviations and token costs](../Inbox/2026-05-31--new-ai-agent-architecture-to-fix-llm-deviations-and-token-costs.md): Shows workflows stored under `.botcircuits/workflows/` and registered as callable tools.
 - [New AI Agent Architecture to fix LLM deviations and token costs](../Inbox/2026-05-31--new-ai-agent-architecture-to-fix-llm-deviations-and-token-costs.md): Shows workflow creation, preview, file writing, live registration, and direct workflow runs.
@@ -55,7 +55,7 @@ Teams accepting LLM-generated code need review steps for names, boundaries, inva
 
 A practical change is to add a short generated-code section to pull request review: list any new domain terms, map them to existing bounded contexts or explain the new boundary, identify invariants in tests, and ask the author to remove names that only mirror the prompt. This gives the model better future context and gives reviewers a concrete way to catch cognitive debt before it spreads through the codebase.
 
-### Evidence
+### Sources
 - [What Is Code](../Inbox/2026-05-31--what-is-code.md): Summarizes the essay’s claim that LLM-assisted work depends on shared domain meaning, stable abstractions, and tests.
 - [What Is Code](../Inbox/2026-05-31--what-is-code.md): Describes concepts, names, boundaries, relationships, and shared vocabulary as the visible conceptual model.
 - [What Is Code](../Inbox/2026-05-31--what-is-code.md): Connects domain vocabulary to code structures such as types, interfaces, invariants, and workflows.

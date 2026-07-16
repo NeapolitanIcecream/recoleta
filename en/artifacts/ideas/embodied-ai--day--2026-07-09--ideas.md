@@ -35,7 +35,7 @@ Robot teams can wrap a frozen VLA with a planner that assigns free-space motion,
 
 Harness VLA reached 82.4% success on LIBERO-Pro, compared with 50.0% for direct use of the same frozen baseline. TFP provides complementary evidence for storing progress inside the policy: its event-sensitive memory raised real-robot object-swap success from 3/20 to 15/20. A focused pilot can use one multi-stage task with object-position changes and intermittent occlusion, then compare direct execution with the wrapper on completion rate, unnecessary repeated actions, recovery rate, and added latency.
 
-### Evidence
+### Sources
 - [Harness VLA: Steering Frozen VLAs into Reliable Manipulation Primitives via Memory-Guided Agents](../Inbox/2026-07-09--harness-vla-steering-frozen-vlas-into-reliable-manipulation-primitives-via-memory-guided-agents.md): Documents the fixed primitive library, retryable VLA calls, task memory, and the LIBERO-Pro improvement over direct frozen-policy execution.
 - [TFP: Temporally Conditioned Memory-Fusion Policies for Visuomotor Learning](../Inbox/2026-07-09--tfp-temporally-conditioned-memory-fusion-policies-for-visuomotor-learning.md): Documents continuous-time task-progress memory and the real-robot gains on object swapping and counting pick-and-place.
 
@@ -44,7 +44,7 @@ Operators correcting a generative robot policy can supply training data for a sm
 
 FlowDAgger improved mean success across 12 MetaWorld tasks from 0.53 to 0.78 after 50 rollouts and trained its small noise policy in about 8 GB of VRAM. Its Hammer test also exposes the required safety check: adapted-task success rose from 0.40 to 0.84, while performance across five held-out tasks declined from 0.96 to 0.88. An initial deployment test should therefore pair one known failure case with a held-out skill suite and reject updates that cross a preset regression limit.
 
-### Evidence
+### Sources
 - [FlowDAgger: Human-in-the-Loop Adaptation of Generative Robot Policies in Latent Space](../Inbox/2026-07-09--flowdagger-human-in-the-loop-adaptation-of-generative-robot-policies-in-latent-space.md): Provides the action-inversion method, 50-rollout results, compute requirement, and held-out skill regression measurements.
 - [FlowDAgger: Human-in-the-Loop Adaptation of Generative Robot Policies in Latent Space](../Inbox/2026-07-09--flowdagger-human-in-the-loop-adaptation-of-generative-robot-policies-in-latent-space.md): Explains how corrective actions are mapped into latent noise vectors for a small policy without changing base-policy weights.
 
@@ -53,6 +53,6 @@ Robot policy evaluations should include insertion, pushing, tool sliding, articu
 
 DexVerse evaluated four representative policies on the same 19-task, 950-episode subset. The best mean success was 0.34, shared by 3D Diffusion Policy and pi0.5; every method scored zero on PushT, while InsertPen, SlideUtilityKnife, and OpenLaptop stayed at or near zero. A practical first pass can reproduce this 19-task subset for the target policy and require nonzero success on each critical interaction class before a hardware trial.
 
-### Evidence
+### Sources
 - [DexVerse: A Modular Benchmark for Multi-Task, Multi-Embodiment Dexterous Manipulation](../Inbox/2026-07-09--dexverse-a-modular-benchmark-for-multi-task-multi-embodiment-dexterous-manipulation.md): Reports the common 19-task evaluation, the 0.34 best mean success, and near-zero results on force- and alignment-sensitive tasks.
 - [DexVerse: A Modular Benchmark for Multi-Task, Multi-Embodiment Dexterous Manipulation](../Inbox/2026-07-09--dexverse-a-modular-benchmark-for-multi-task-multi-embodiment-dexterous-manipulation.md): Describes the benchmark's task coverage, embodiments, synchronized observations, and demonstration set.

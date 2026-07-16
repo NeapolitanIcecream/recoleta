@@ -35,7 +35,7 @@ Lynx teams now have enough roadmap detail to justify a release-management layer 
 
 The evidence here is specific: Lynx says it moved from v3.2 through v3.6 over the past year, v3.7 closes the current bi-monthly cycle, and monthly releases start in mid-2026. It also says release notes, upgrade guides, core API stability, and long-term maintainability across versions are active work items. That combination points to a practical support gap. A simple first check is to try the workflow on one existing Lynx app and measure whether the generated checklist catches version-specific changes that a developer would otherwise gather by hand.
 
-### Evidence
+### Sources
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): The roadmap commits to monthly releases and explicitly names release notes, upgrade guides, API stability, and version maintainability.
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): The summary frames release discipline and upgrade hygiene as a core operational priority for teams already shipping on Lynx.
 
@@ -44,7 +44,7 @@ A documentation layer for code-generation tools is now a concrete build target a
 
 The roadmap names stable and well-structured APIs, LLM-friendly documentation on the lynx-website, Agent Skills, tooling, and examples as planned work. It also mentions generative UI as an exploration area. That is enough to support a narrow adoption workflow: take a small set of common tasks such as navigation, UI components, and device API access, package them as retrieval-ready docs plus executable examples, and grade agent outputs against build success and API correctness. The cheap validation step is a fixed prompt suite run against the current docs and the revised docs to see whether build success improves.
 
-### Evidence
+### Sources
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): The roadmap explicitly calls for stable APIs, LLM-friendly documentation, Agent Skills, tooling, examples, and generative UI exploration.
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): Sparkling, lynx-ui, and device APIs provide concrete task domains for testing whether generated code is correct and runnable.
 
@@ -53,6 +53,6 @@ Desktop support around Lynx now looks concrete enough for an internal pilot work
 
 The roadmap says Lynx now officially supports Android, iOS, Web, and OpenHarmony, has the open-source Clay rendering engine for macOS and Windows, and plans deeper desktop integration through Lynxtron for Lynx plus Electron. It also points to Sparkling for scaffolding and native navigation, more production-ready UI components, more device APIs, and stronger profiling and diagnostics in Lynx DevTool. A cheap test is a bounded pilot: port one internal settings or account-management surface to the starter kit and compare packaging, debugging, and UI reuse effort against the existing Electron path.
 
-### Evidence
+### Sources
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): The roadmap states official support for Android, iOS, Web, and OpenHarmony, plus Clay for macOS and Windows and Lynxtron for Electron-based desktop development.
 - [Lynx Roadmap 2026](../Inbox/2026-04-13--lynx-roadmap-2026.md): Sparkling, lynx-ui, device APIs, profiling, diagnostics, and Lynx DevTool describe the missing pieces needed for a desktop starter workflow.

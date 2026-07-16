@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # 用于机器人学习的动作-状态对齐
 
-## Summary
+## 摘要
 这一天的机器人学习工作指向三件具体事：保留动作标签的合成演示，用于跨机器人迁移；能放进控制时安全预算的行为切换检测；以及终于把视频、指令、执行状态和探头位姿对齐起来的结肠镜数据采集，用于闭环训练。共同点是让观测、动作和安全相关状态之间的耦合更紧，给出的数字也足够具体，能直接支持小范围构建和评估方式调整。
 
 ## 面向跨本体双臂迁移的带动作标签合成演示流程
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 下一步可以做一个内部增强任务，聚焦单一任务家族，比如抓取放置或容器搬运，把仿真轨迹、渲染出的控制视频、生成的逼真视频和原始动作序列一起存成一条训练记录。一个直接的检验标准是：用源机器人数据加上生成的目标风格演示训练策略后，新的本体或相机设置所需的目标遥操作量是否下降。
 
-### Evidence
+### 资料来源
 - [CRAFT: Video Diffusion for Bimanual Robot Data Generation](../Inbox/2026-04-04--craft-video-diffusion-for-bimanual-robot-data-generation.md): Summary gives the method, the action-label preservation, and the cross-embodiment results in simulation and real tests.
 - [CRAFT: Video Diffusion for Bimanual Robot Data Generation](../Inbox/2026-04-04--craft-video-diffusion-for-bimanual-robot-data-generation.md): Abstract confirms the unified augmentation pipeline across viewpoints, lighting, background, and embodiment while keeping action labels via simulator-generated trajectories.
 
@@ -44,7 +44,7 @@ language_code: zh-CN
 
 接下来该改的是评估方式：协作操作控制器要用较窄的切换窗口和切换后的碰撞次数来测，而不是只看宽容窗口下的平均检测分数。一个可行的试点是把一个小型信念跟踪器放到现有共享操作策略旁边，在切换概率高时触发保守回退或重新规划模式，并记录切换后的碰撞和近距离时间。做交接、协同搬运或共享装配的团队可以在不重训底层控制器的情况下测试这一点。
 
-### Evidence
+### 资料来源
 - [Belief Dynamics for Detecting Behavioral Shifts in Safe Collaborative Manipulation](../Inbox/2026-04-04--belief-dynamics-for-detecting-behavioral-shifts-in-safe-collaborative-manipulation.md): Summary reports the 992K belief module on a frozen 7B VLA, the ±3-step detection result, the collision reduction, and the 7.4 ms overhead.
 - [Belief Dynamics for Detecting Behavioral Shifts in Safe Collaborative Manipulation](../Inbox/2026-04-04--belief-dynamics-for-detecting-behavioral-shifts-in-safe-collaborative-manipulation.md): Abstract states the shared-workspace safety problem and the need for reliable regime-switch detection during task execution.
 
@@ -55,6 +55,6 @@ language_code: zh-CN
 
 一个实用的下一步是做一个失败恢复基准，基于腔道丢失、壁面接触和皱褶卡入这些 episode，配一个预测下一步控制指令的基线策略，再配一个只在救援片段上训练的恢复策略。近期最适合这套资源的，是那些已经有结肠镜视频、但还缺少同步动作和状态日志来做闭环实验的研究团队。
 
-### Evidence
+### 资料来源
 - [OpenRC: An Open-Source Robotic Colonoscopy Framework for Multimodal Data Acquisition and Autonomy Research](../Inbox/2026-04-04--openrc-an-open-source-robotic-colonoscopy-framework-for-multimodal-data-acquisition-and-autonomy-research.md): Summary gives the platform scope, hardware cost, synchronized modalities, dataset size, failure and recovery counts, and alignment residuals.
 - [OpenRC: An Open-Source Robotic Colonoscopy Framework for Multimodal Data Acquisition and Autonomy Research](../Inbox/2026-04-04--openrc-an-open-source-robotic-colonoscopy-framework-for-multimodal-data-acquisition-and-autonomy-research.md): Abstract confirms the closed-loop research goal and the simultaneous recording of video, commands, actuation state, and distal tip pose.

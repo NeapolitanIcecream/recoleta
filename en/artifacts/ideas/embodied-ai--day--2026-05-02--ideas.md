@@ -37,7 +37,7 @@ This is a concrete deployment change for long-horizon manipulation, where one ba
 
 A useful first test is to log action-chunk disagreement on existing robot rollouts, set an offline percentile threshold, and replay only the high-disagreement steps through candidate sampling. The decision to adopt should depend on whether success improves without pushing the controller below its required frequency.
 
-### Evidence
+### Sources
 - [VLA-ATTC: Adaptive Test-Time Compute for VLA Models with Relative Action Critic Model](../Inbox/2026-05-02--vla-attc-adaptive-test-time-compute-for-vla-models-with-relative-action-critic-model.md): Summarizes the uncertainty gate, Relative Action Critic, success gains on LIBERO-LONG and Agilex Piper tasks, and the reported 20.8 Hz control rate.
 - [VLA-ATTC: Adaptive Test-Time Compute for VLA Models with Relative Action Critic Model](../Inbox/2026-05-02--vla-attc-adaptive-test-time-compute-for-vla-models-with-relative-action-critic-model.md): Describes the need to quantify situational difficulty, limit multi-action sampling overhead, and trigger test-time deliberation only on uncertain steps.
 
@@ -48,7 +48,7 @@ The user-visible pain is simple: a robot that misses a grasp or grabs the wrong 
 
 The practical build is a labeled disturbed-rollout set: inject gripper, pose, and semantic errors into successful trajectories, add recovery waypoints, and train the monitor alongside the action model. Teams should inspect false negatives first, since missed error states are the failures most likely to let a bad rollout continue.
 
-### Evidence
+### Sources
 - [Sentinel-VLA: A Metacognitive VLA Model with Active Status Monitoring for Dynamic Reasoning and Error Recovery](../Inbox/2026-05-02--sentinel-vla-a-metacognitive-vla-model-with-active-status-monitoring-for-dynamic-reasoning-and-error-recovery.md): Summarizes the Status Monitor, thought memory, EC-Gen disturbed trajectory generation, success results, latency, and error-detection rates.
 - [Sentinel-VLA: A Metacognitive VLA Model with Active Status Monitoring for Dynamic Reasoning and Error Recovery](../Inbox/2026-05-02--sentinel-vla-a-metacognitive-vla-model-with-active-status-monitoring-for-dynamic-reasoning-and-error-recovery.md): Names the operational failure mode: VLA policies can keep acting after runtime errors such as grasping an empty kettle.
 
@@ -59,6 +59,6 @@ A benchmark table should include ordinary task success, disturbed-task success, 
 
 This change is cheap for labs already collecting robot rollouts. Add trace logging for uncertainty scores, status labels, trigger decisions, selected action chunks, and wall-clock inference time. The useful comparison is between a fast one-pass policy and the same policy with execution-time judgment under the same timing budget.
 
-### Evidence
+### Sources
 - [VLA-ATTC: Adaptive Test-Time Compute for VLA Models with Relative Action Critic Model](../Inbox/2026-05-02--vla-attc-adaptive-test-time-compute-for-vla-models-with-relative-action-critic-model.md): Reports adaptive deliberation, success improvements, and the 20.8 Hz control frequency for VLA-ATTC.
 - [Sentinel-VLA: A Metacognitive VLA Model with Active Status Monitoring for Dynamic Reasoning and Error Recovery](../Inbox/2026-05-02--sentinel-vla-a-metacognitive-vla-model-with-active-status-monitoring-for-dynamic-reasoning-and-error-recovery.md): Reports disturbed-task success, status monitoring, error-detection rates, and 13 ms/action latency for Sentinel-VLA.

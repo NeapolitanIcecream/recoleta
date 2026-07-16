@@ -37,7 +37,7 @@ The practical use case is a lab that has demonstrations on one dual-arm setup an
 
 A concrete next build is an internal augmentation job for one narrow task family such as pick-place or container handling, with the simulator trajectory, rendered control video, generated photorealistic video, and original action sequence stored together as one training record. The cheap check is whether a policy trained on source-robot data plus generated target-style demonstrations cuts the amount of target teleoperation needed for one new embodiment or camera setup.
 
-### Evidence
+### Sources
 - [CRAFT: Video Diffusion for Bimanual Robot Data Generation](../Inbox/2026-04-04--craft-video-diffusion-for-bimanual-robot-data-generation.md): Summary gives the method, the action-label preservation, and the cross-embodiment results in simulation and real tests.
 - [CRAFT: Video Diffusion for Bimanual Robot Data Generation](../Inbox/2026-04-04--craft-video-diffusion-for-bimanual-robot-data-generation.md): Abstract confirms the unified augmentation pipeline across viewpoints, lighting, background, and embodiment while keeping action labels via simulator-generated trajectories.
 
@@ -48,7 +48,7 @@ The operational problem is plain: a robot that continues on an old assumption af
 
 The immediate workflow change is to evaluate collaborative manipulation controllers with a narrow switch window and post-switch collision counts, not only average detection scores under loose tolerances. A concrete pilot would put a small belief tracker beside an existing shared manipulation policy, trigger a conservative fallback or replanning mode on high switch probability, and log collision and close-range time after the switch. Teams working on handover, co-carry, or shared assembly can test this without retraining the base controller.
 
-### Evidence
+### Sources
 - [Belief Dynamics for Detecting Behavioral Shifts in Safe Collaborative Manipulation](../Inbox/2026-04-04--belief-dynamics-for-detecting-behavioral-shifts-in-safe-collaborative-manipulation.md): Summary reports the 992K belief module on a frozen 7B VLA, the ±3-step detection result, the collision reduction, and the 7.4 ms overhead.
 - [Belief Dynamics for Detecting Behavioral Shifts in Safe Collaborative Manipulation](../Inbox/2026-04-04--belief-dynamics-for-detecting-behavioral-shifts-in-safe-collaborative-manipulation.md): Abstract states the shared-workspace safety problem and the need for reliable regime-switch detection during task execution.
 
@@ -59,6 +59,6 @@ That changes the first useful build for labs working on robotic colonoscopy. A d
 
 A practical next step is a failure-recovery benchmark built from lumen loss, wall contact, and fold engagement episodes, with one baseline policy that predicts the next control command and one recovery policy that is only trained on rescue segments. The useful near-term audience is research teams that already have colonoscopy video but lack synchronized action and state logs for closed-loop experiments.
 
-### Evidence
+### Sources
 - [OpenRC: An Open-Source Robotic Colonoscopy Framework for Multimodal Data Acquisition and Autonomy Research](../Inbox/2026-04-04--openrc-an-open-source-robotic-colonoscopy-framework-for-multimodal-data-acquisition-and-autonomy-research.md): Summary gives the platform scope, hardware cost, synchronized modalities, dataset size, failure and recovery counts, and alignment residuals.
 - [OpenRC: An Open-Source Robotic Colonoscopy Framework for Multimodal Data Acquisition and Autonomy Research](../Inbox/2026-04-04--openrc-an-open-source-robotic-colonoscopy-framework-for-multimodal-data-acquisition-and-autonomy-research.md): Abstract confirms the closed-loop research goal and the simultaneous recording of video, commands, actuation state, and distal tip pose.

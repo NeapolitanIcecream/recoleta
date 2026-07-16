@@ -35,7 +35,7 @@ Robot teams running real VLA rollouts should add a monitor that reads recent sta
 
 A cheap first test is offline replay on the lab’s own success and failure logs. Compute the three Tri-Info signals in a sliding window, train the small temporal classifier, and measure how often the alarm fires early enough for a stop, retry, or human review. If the monitor only works after a failure is already visible, it should stay out of the robot-control path.
 
-### Evidence
+### Sources
 - [Tri-Info: Generalizable, Interpretable Failure Prediction for VLA Models via Information Theory](../Inbox/2026-06-18--tri-info-generalizable-interpretable-failure-prediction-for-vla-models-via-information-theory.md): Tri-Info defines the entropy and mutual-information signals, maps them to interpretable rollout failure modes, and reports real-world transfer accuracy.
 - [ENPIRE: Agentic Robot Policy Self-Improvement in the Real World](../Inbox/2026-06-18--enpire-agentic-robot-policy-self-improvement-in-the-real-world.md): ENPIRE describes real-robot reset, rollout, verification, and code-edit loops where unattended policy improvement needs automated safety and outcome checks.
 
@@ -44,7 +44,7 @@ Teams fine-tuning π0, GR00T-N1.5, or SmolVLA can add a calibration step before 
 
 This is a practical workflow change for labs blocked by GPU hours or edge latency. The first adoption check is simple: prune one task model, keep the same data and training recipe, and compare validation success, wall-clock training time, and robot-side control latency against the full model. The method is most useful if success stays flat or improves while latency moves below the control-loop budget.
 
-### Evidence
+### Sources
 - [Finetuning Vision-Language-Action Models Requires Fewer Layers Than You Think](../Inbox/2026-06-18--finetuning-vision-language-action-models-requires-fewer-layers-than-you-think.md): CLP gives the pruning procedure and reports model-size, trainable-parameter, training-time, latency, and success-rate results across π0, GR00T-N1.5, and SmolVLA.
 - [Finetuning Vision-Language-Action Models Requires Fewer Layers Than You Think](../Inbox/2026-06-18--finetuning-vision-language-action-models-requires-fewer-layers-than-you-think.md): The paper abstract confirms the single-pass CKA pruning approach and its validation across simulation and real-world manipulation tasks.
 
@@ -53,6 +53,6 @@ Manipulation teams facing failures on new object shapes can build a targeted dat
 
 The first useful trial is narrow: choose a small set of failed objects, generate augmented episodes from existing successful runs, fine-tune the same VLA, and re-run the failed-object evaluation. Pose6DAug reports 22.8% average success on RoboCasa365 Counter-to-Cabinet failure episodes with GR00T-1.5, compared with 16.4% for VACE, 15.8% for MimicGen, and 0.0% for the base policy.
 
-### Evidence
+### Sources
 - [Pose6DAug: Physically Plausible Multi-view Object Swapping for Robot Data Augmentation](../Inbox/2026-06-18--pose6daug-physically-plausible-multi-view-object-swapping-for-robot-data-augmentation.md): Pose6DAug details the 6D pose-preserving object-swap workflow and reports success gains on failure episodes and hard unseen objects.
 - [Pose6DAug: Physically Plausible Multi-view Object Swapping for Robot Data Augmentation](../Inbox/2026-06-18--pose6daug-physically-plausible-multi-view-object-swapping-for-robot-data-augmentation.md): The abstract frames the data-collection bottleneck for novel objects and describes turning successful episodes into targeted demonstrations without new teleoperation data.

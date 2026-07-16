@@ -37,7 +37,7 @@ Factory VLA pilots need per-episode failure labels tied to production quality ch
 
 A manufacturing automation team could add these labels to every rollout review, then collect recovery episodes against the largest bucket after each evaluation round. The same review can track constrained and unconstrained trials separately, because the Siemens team first simplified the task and then removed constraints over later rounds. A cheap pilot is one packaging cell, one VLA policy, 30-bin-emptying style evaluations, and a rule that the next data collection round targets the top two failure categories.
 
-### Evidence
+### Sources
 - [A Factory-Floor Deployment Case Study of VLA Pipelines for Industrial Packaging Task: Workflow, Failures, and Lessons](../Inbox/2026-05-25--a-factory-floor-deployment-case-study-of-vla-pipelines-for-industrial-packaging-task-workflow-failures-and-lessons.md): Reports the Siemens factory packaging task, 2,535 episodes, iterative fine-tuning workflow, constrained-to-unconstrained rollout plan, and failure breakdown.
 - [A Factory-Floor Deployment Case Study of VLA Pipelines for Industrial Packaging Task: Workflow, Failures, and Lessons](../Inbox/2026-05-25--a-factory-floor-deployment-case-study-of-vla-pipelines-for-industrial-packaging-task-workflow-failures-and-lessons.md): Confirms the factory task setup and the repeated loop of data collection, curation, fine-tuning, evaluation, and targeted recovery data collection.
 
@@ -46,7 +46,7 @@ Robot teams adapting a pretrained VLA to a new manipulation task can test a smal
 
 The practical trial is narrow: run the zero-shot policy, add sparse binary rewards and rule-based success detectors, collect online rollouts with operator corrections, then run 30 human-judged evaluation trials. EXPO-FT reports 30/30 final successes on each of 8 real-world manipulation tasks after an average of 19.1 minutes of online robot data. That result is a reason to test an edit-policy loop on precision manipulation jobs where full task data collection would take days.
 
-### Evidence
+### Sources
 - [EXPO-FT: Sample-Efficient Reinforcement Learning Finetuning for Vision-Language-Action Models](../Inbox/2026-05-25--expo-ft-sample-efficient-reinforcement-learning-finetuning-for-vision-language-action-models.md): Describes EXPO-FT’s pretrained VLA edit policy, action-chunk RL, operator corrections, sparse rewards, and reported 30/30 success after 19.1 minutes of online data.
 - [EXPO-FT: Sample-Efficient Reinforcement Learning Finetuning for Vision-Language-Action Models](../Inbox/2026-05-25--expo-ft-sample-efficient-reinforcement-learning-finetuning-for-vision-language-action-models.md): Confirms the paper’s claim of perfect task performance across evaluated manipulation tasks within an average of 19.1 minutes of online robot data.
 
@@ -55,6 +55,6 @@ A VLA deployment checklist should include an image-perturbation test that measur
 
 A practical audit can run PGD and Square attacks on a held-out set, compare clean and attacked actions across short horizons, and compute the paper’s encoder-specific ceiling or head-agnostic robustness ratio. The paper says these diagnostics can be computed from at most 200 samples and reports zero bound violations across 320 validation cells covering OpenVLA, LIBERO suites, attack types, horizons up to 10, and two action-head designs. This gives robot integrators a small pre-flight test for camera-facing policies before floor trials with people nearby.
 
-### Evidence
+### Sources
 - [Capability and Robustness Cannot Both Be Free: An Information-Theoretic Bound for Vision-Language-Action Models](../Inbox/2026-05-25--capability-and-robustness-cannot-both-be-free-an-information-theoretic-bound-for-vision-language-action-models.md): Summarizes the capability and adversarial reliability bound, the OpenVLA PGD drop, the 320-cell validation, and diagnostics computable from at most 200 samples.
 - [Capability and Robustness Cannot Both Be Free: An Information-Theoretic Bound for Vision-Language-Action Models](../Inbox/2026-05-25--capability-and-robustness-cannot-both-be-free-an-information-theoretic-bound-for-vision-language-action-models.md): Confirms the paper’s reported zero violations and the proposed pre-flight encoder ceiling, defense-forensics probe, and head-agnostic robustness ratio.

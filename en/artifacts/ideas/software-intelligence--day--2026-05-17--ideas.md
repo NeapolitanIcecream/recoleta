@@ -37,7 +37,7 @@ Coding-agent pilots need a release gate that starts the generated app, drives th
 
 A practical build is a harness around existing agent runs: normalize Docker startup, encode product requirements as dependency-ordered checks, use Playwright for UI behavior, and label blocked checks separately from direct failures. A team can trial it on ten recent agent-generated prototypes or internal tools. If the failed checks cluster around setup, integration, state handling, and visible behavior, the harness gives engineering managers a concrete acceptance signal before agent output enters normal code review.
 
-### Evidence
+### Sources
 - [SaaSBench: Exploring the Boundaries of Coding Agents in Long-Horizon Enterprise SaaS Engineering](../Inbox/2026-05-17--saasbench-exploring-the-boundaries-of-coding-agents-in-long-horizon-enterprise-saas-engineering.md): SaaSBench reports low Pass@1 and identifies setup, configuration, integration, premature stopping, and debugging loops as the dominant failure points.
 - [WebGameBench: Requirement-to-Application Evaluation for Coding Agents via Browser-Native Games](../Inbox/2026-05-17--webgamebench-requirement-to-application-evaluation-for-coding-agents-via-browser-native-games.md): WebGameBench evaluates delivered browser apps with Playwright-driven runtime checks and reports a large gap between usable and excellent delivery.
 
@@ -46,7 +46,7 @@ Security teams can wrap vulnerability-repair agents in a loop that compares cras
 
 MemRepair points to the support layer this loop needs in a real repository: store prior fixes, security patterns, and failed-patch-to-success trajectories, then verify each candidate patch with vulnerability and regression tests. A product security team can start with recent fixed CVEs and store sanitizer reports, stack traces, probe logs, accepted patch summaries, failed patch summaries, CWE, language, and project identifiers. The verifier should accept only patches that compile and pass both the original crash case and the regression suite.
 
-### Evidence
+### Sources
 - [ContraFix: Agentic Vulnerability Repair via Differential Runtime Evidence and Skill Reuse](../Inbox/2026-05-17--contrafix-agentic-vulnerability-repair-via-differential-runtime-evidence-and-skill-reuse.md): ContraFix uses paired crashing and safe executions, runtime probes, repair specifications, and verified patching; its ablation credits contrastive runtime analysis with a large gain.
 - [MemRepair: Hierarchical Memory for Agentic Repository-Level Vulnerability Repair](../Inbox/2026-05-17--memrepair-hierarchical-memory-for-agentic-repository-level-vulnerability-repair.md): MemRepair describes persistent repair memory and a Locator, Patcher, Verifier loop that runs vulnerability and regression tests before accepting edits.
 
@@ -55,6 +55,6 @@ Teams training agents to use internal MCP servers can generate tasks after succe
 
 An internal version can start with stateless staging tools that have clear JSON schemas and no user-specific authentication. Each successful trajectory should store tool names, arguments, outputs, and data-flow edges. Cached responses can power offline evaluation and reinforcement learning without repeated live calls against changing services. A small check is enough to test fit: select twenty internal tools, explore multi-step calls, and measure how often cached outputs can support checkable tasks with exact field-level answers.
 
-### Evidence
+### Sources
 - [Firefly: Illuminating Large-Scale Verified Tool-Call Data Generation from Real APIs](../Inbox/2026-05-17--firefly-illuminating-large-scale-verified-tool-call-data-generation-from-real-apis.md): FireFly builds verified tool-call data by executing real MCP APIs first, caching outputs, and generating tasks backward from observed results.
 - [Firefly: Illuminating Large-Scale Verified Tool-Call Data Generation from Real APIs](../Inbox/2026-05-17--firefly-illuminating-large-scale-verified-tool-call-data-generation-from-real-apis.md): The paper states that FireFly produced 5,144 verified tasks across 240 servers and 993 tools and used cached execution for reproducible offline training.

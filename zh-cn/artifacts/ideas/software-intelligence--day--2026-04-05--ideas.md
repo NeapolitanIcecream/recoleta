@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # 软件代理控制门
 
-## Summary
+## 摘要
 软件代理工作里的控制面现在变得更具体了，尤其是在工单、编译器和评审门给系统划出硬边界的地方。最清楚的近期落地方案是：用于有边界维护工作的 Jira 关联执行循环、利用编译器反馈提升编译成功率的 GnuCOBOL 修复服务，以及在提示词驱动的系统变更被当成普通代码修改通过之前将其拦下的架构评审门。
 
 ## 带验证门和隔离工作树的 Jira 工单执行循环
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 首批落地目标可以是带有明确验证的重复工单家族，例如依赖更新、低风险修复或待办去重。一个成本较低的测试方法是运营层面的：在一个有边界的队列上运行两周，统计重复工单创建数、终态完成率、验证器通过率，以及被推给人工复核的条目占比。这里的证据在控制和可追踪性上更强，在更广泛的软件交付覆盖面上更弱，所以产品一开始应尽量贴近现有工单流程，避免开放式任务接入。
 
-### Evidence
+### 资料来源
 - [Closed-Loop Autonomous Software Development via Jira-Integrated Backlog Orchestration: A Case Study in Deterministic Control and Safety-Constrained Automation](../Inbox/2026-04-05--closed-loop-autonomous-software-development-via-jira-integrated-backlog-orchestration-a-case-study-in-deterministic-control-and-safety-constrained-automation.md): 基于 Jira 的确定性控制循环、置信度阈值、验证门和观测到的终态结果，支持一个具体的工单自动化流程。
 - [Closed-Loop Autonomous Software Development via Jira-Integrated Backlog Orchestration: A Case Study in Deterministic Control and Safety-Constrained Automation](../Inbox/2026-04-05--closed-loop-autonomous-software-development-via-jira-integrated-backlog-orchestration-a-case-study-in-deterministic-control-and-safety-constrained-automation.md): 摘要内容确认了受约束的 AI 动作、运行次数、对抗性审查发现，以及持续运行产物。
 
@@ -40,7 +40,7 @@ language_code: zh-CN
 
 最有前景的短期用途不是完整应用生成，而是有针对性的工作，例如把变更请求翻译成候选补丁、补齐重复样板代码，或者起草已经有测试夹具的独立批处理作业更新。报告中的提升在编译成功率上很大，GPT-4o 从 41.8% 提升到 95.89%，pass@1 也有提升。一个有用的评估计划很简单：抽取一组固定的维护工单，对比一次性生成和编译器引导修订，记录编译成功率、测试通过率，以及仍需要人工修复的错误类别。这个错误分类也能直接作为产品输入，因为程序结构使用错误和内置函数误用是反复出现的失败模式。
 
-### Evidence
+### 资料来源
 - [COBOLAssist: Analyzing and Fixing Compilation Errors for LLM-Powered COBOL Code Generation](../Inbox/2026-04-05--cobolassist-analyzing-and-fixing-compilation-errors-for-llm-powered-cobol-code-generation.md): 摘要报告了 COBOL 修复循环、错误分类，以及在编译器反馈后的大幅编译成功率提升。
 - [COBOLAssist: Analyzing and Fixing Compilation Errors for LLM-Powered COBOL Code Generation](../Inbox/2026-04-05--cobolassist-analyzing-and-fixing-compilation-errors-for-llm-powered-cobol-code-generation.md): 摘要确认了在迭代编译引导修复下，GPT-4o-mini 和 GPT-4o 的改进。
 
@@ -49,7 +49,7 @@ language_code: zh-CN
 
 可落地的方案是在 CI 或评审工具里加一个架构差异门。记录提示词、生成的文件图、依赖新增、基础设施组件，以及引用到的图表或 ADR。然后在构建引入状态存储、编排循环、外部工具或新的接口契约时，要求进行结构化评审。对于图表输入，把模型限制在抽取和标注任务上，让评审者可以快速核对，不要让它对行为型或关系密集型图表做最终判断。最便宜的验证方式，是把这个门跑在一周的代理生成拉取请求上，统计它有多少次拦住了原本会被当成普通代码修改通过的、未经评审的架构变更。
 
-### Evidence
+### 资料来源
 - [Architecture Without Architects: How AI Coding Agents Shape Software Architecture](../Inbox/2026-04-05--architecture-without-architects-how-ai-coding-agents-shape-software-architecture.md): 摘要报告了由提示词驱动的架构分化，以及各变体中的具体组件增加。
 - [Benchmarking and Evaluating VLMs for Software Architecture Diagram Understanding](../Inbox/2026-04-05--benchmarking-and-evaluating-vlms-for-software-architecture-diagram-understanding.md): 摘要报告了 SADU 基准在架构图上的准确率上限和失败模式。
 - [Benchmarking and Evaluating VLMs for Software Architecture Diagram Understanding](../Inbox/2026-04-05--benchmarking-and-evaluating-vlms-for-software-architecture-diagram-understanding.md): 摘要确认了当前 VLM 性能与设计阶段软件工程需求之间的差距。

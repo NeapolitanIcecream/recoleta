@@ -32,14 +32,14 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s strongest signal is operational proof for AI coding systems. Papers measure how agents fail in live sessions, gate low-risk review in production, and test generated code against specs or domain invariants. RADAR, TRAILS, and Agora set the emphasis: ship only what can be checked, bounded, or reproduced.
 
-## Clusters
+## Findings
 
 ### Developer control and production review
 Coding agents are now judged inside real developer workflows, not only on finished patches. One large study of 20,574 IDE and command-line sessions found 16,118 evidence-grounded misalignment episodes. Constraint violations were the largest symptom category at 38.33%, and only 9.33% of episodes showed visible resolution in the logs. Most visible fixes required explicit developer pushback.
 
 RADAR shows the production side of the same issue. Meta routes low-risk diffs through source eligibility rules, a Diff Risk Score, large language model review, and deterministic checks before landing. The system reviewed more than 535K diffs and landed more than 331K, with lower revert and production-incident rates than non-RADAR diffs in the reported deployment.
 
-#### Evidence
+#### Sources
 - [How Coding Agents Fail Their Users: A Large-Scale Analysis of Developer-Agent Misalignment in 20,574 Real-World Sessions](../Inbox/2026-05-28--how-coding-agents-fail-their-users-a-large-scale-analysis-of-developer-agent-misalignment-in-20574-real-world-sessions.md): Large-scale real-world session analysis with misalignment categories, costs, and resolution rates.
 - [Automating Low-Risk Code Review at Meta: RADAR, Risk Calibration, and Review Efficiency](../Inbox/2026-05-28--automating-low-risk-code-review-at-meta-radar-risk-calibration-and-review-efficiency.md): Production deployment of risk-calibrated automated code review at Meta.
 
@@ -48,7 +48,7 @@ Several papers treat correctness as a behavior claim that needs concrete checks.
 
 Projectional decoding adds checks during generation. It keeps a partial graph model beside the token stream and masks tokens that violate semantic constraints. On CLEVR domain-specific language programs, semantic validity reaches 73.33% to 79.67% across Qwen3 models. CODEFUSE-DeBench adds a caution for reverse engineering: recompilation alone is a weak proxy, since the best decompiler plus repair model reached 22.3% exact-plus-partial behavioral overlap and only 1.2% exact stdout match.
 
-#### Evidence
+#### Sources
 - [Inferring Code Correctness from Specification](../Inbox/2026-05-28--inferring-code-correctness-from-specification.md): TRAILS evaluates generated code by executing inputs and judging outputs against specifications.
 - [Projectional Decoding: Towards Semantic-Aware LLM Generation](../Inbox/2026-05-28--projectional-decoding-towards-semantic-aware-llm-generation.md): Projectional decoding enforces semantic constraints during generation and reports CLEVR DSL validity gains.
 - [CODEFUSE-DEBENCH: An Empirical Study on Readability, Recompilability, and Functionality](../Inbox/2026-05-28--codefuse-debench-an-empirical-study-on-readability-recompilability-and-functionality.md): DeBench measures readability, recompilability, and behavioral functionality for decompiled code.
@@ -58,7 +58,7 @@ Security work in this period focuses on two practical failure modes: small promp
 
 EvoRepair addresses repair repetition by storing scored repair experience across vulnerability attempts. Its loop retrieves related CVE or CWE experience, patches in Docker, summarizes the trajectory, and updates an experience bank. Using GPT-5-mini, it reports 93.47% on PATCHEVAL and 87.00% on SEC-bench, ahead of 12 automated vulnerability repair baselines in the paper’s comparison.
 
-#### Evidence
+#### Sources
 - [Minimal Prompt Perturbations Lead to Code Vulnerabilities: Prompt Fragility and Hidden-State Signals in Coding LLMs](../Inbox/2026-05-28--minimal-prompt-perturbations-lead-to-code-vulnerabilities-prompt-fragility-and-hidden-state-signals-in-coding-llms.md): Prompt perturbation study showing security flips and hidden-state vulnerability prediction results.
 - [EvoRepair: Enhancing Vulnerability Repair Agents Through Experience-Based Self-Evolution](../Inbox/2026-05-28--evorepair-enhancing-vulnerability-repair-agents-through-experience-based-self-evolution.md): Experience-based vulnerability repair agent with PATCHEVAL and SEC-bench results.
 
@@ -67,5 +67,5 @@ Agora shows that protocol bug finding needs agents with explicit state and domai
 
 On Raft, EPaxos, HotStuff, and BullShark implementations, Agora reports 15 previously unknown protocol-level safety bugs. ReAct-style baselines using GPT-5.2, Gemini 3.0 Pro Preview, Claude Sonnet 4.5, and Qwen3 Coder found 22 implementation bugs in total, but no protocol-level logic bugs in the reported tests.
 
-#### Evidence
+#### Sources
 - [Agora: Toward Autonomous Bug Detection in Production-Level Consensus Protocols with LLM Agents](../Inbox/2026-05-28--agora-toward-autonomous-bug-detection-in-production-level-consensus-protocols-with-llm-agents.md): Agora’s multi-agent protocol testing method and reported consensus-bug findings.

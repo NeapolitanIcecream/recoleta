@@ -35,7 +35,7 @@ Coding agents need a hardened write tool before they need more autonomy. The cle
 
 The user is any team running edit-test-commit loops through an agent and seeing silent write failures, repeated retries, or lost drafts when a session drops. The immediate product surface is narrow: safe_write, append_chunk, finalize_chunks, persist_draft, and handoff_state with typed JSON errors that tell the agent whether to retry, redact, split content, or stop. A cheap validation check is to replay known bad cases such as blocked payload patterns, oversized file outputs, and interrupted sessions, then measure repeated calls, time to recovery, and whether the agent preserves the draft without human cleanup.
 
-### Evidence
+### Sources
 - [Resilient Write: A Six-Layer Durable Write Surface for LLM Coding Agents](../Inbox/2026-04-12--resilient-write-a-six-layer-durable-write-surface-for-llm-coding-agents.md): Resilient Write describes the six-layer write surface and reports concrete gains in recovery time, data loss, and self-correction.
 - [Resilient Write: A Six-Layer Durable Write Surface for LLM Coding Agents](../Inbox/2026-04-12--resilient-write-a-six-layer-durable-write-surface-for-llm-coding-agents.md): The paper gives a concrete failure case with silent rejection, draft loss, retry thrashing, and no structured diagnosis.
 
@@ -44,7 +44,7 @@ Security repair pipelines can add an execution gate before patch generation. Ver
 
 This fits teams that already run SAST or model-based triage and are spending review time on patches for issues that were never exploitable. The concrete build is a verifier service that accepts a finding plus repository snapshot, creates a containerized reproduction attempt, records execution traces, and returns a typed verdict for the patching stage. The first deployment target is internal AppSec tooling for Java, Python, and C++ repositories where repair throughput matters more than maximum detector recall. A cheap check is to sample recent findings, run the verifier before patch generation, and compare human review time, false repair rate, and reopened tickets.
 
-### Evidence
+### Sources
 - [Verify Before You Fix: Agentic Execution Grounding for Trustworthy Cross-Language Code Analysis](../Inbox/2026-04-12--verify-before-you-fix-agentic-execution-grounding-for-trustworthy-cross-language-code-analysis.md): Verify Before You Fix reports end-to-end metrics for execution-grounded validation before repair across three languages.
 - [Verify Before You Fix: Agentic Execution Grounding for Trustworthy Cross-Language Code Analysis](../Inbox/2026-04-12--verify-before-you-fix-agentic-execution-grounding-for-trustworthy-cross-language-code-analysis.md): The abstract states the strict invariant that no repair action is taken without execution-based confirmation of exploitability.
 
@@ -53,6 +53,6 @@ Dynamic specification inference can use generated counterexample tests as a revi
 
 The first users are teams that maintain contract-heavy Java libraries, verification tooling, or test-generation workflows and are blocked by noisy inferred assertions. The main operational value is lower manual review volume before those assertions feed documentation, regression checks, or repair systems. A cheap check is to run the loop on a small set of methods with known weak test coverage and count how many inferred postconditions disappear after compiling and adding the generated counterexamples.
 
-### Evidence
+### Sources
 - [Improving Dynamic Specification Inference with LLM-Generated Counterexamples](../Inbox/2026-04-12--improving-dynamic-specification-inference-with-llm-generated-counterexamples.md): The paper summarizes the counterexample-test loop and gives precision and invalid-assertion reductions on 43 Java methods.
 - [Improving Dynamic Specification Inference with LLM-Generated Counterexamples](../Inbox/2026-04-12--improving-dynamic-specification-inference-with-llm-generated-counterexamples.md): The paper states that incorporating LLM-generated counterexamples improves precision by up to 7% without affecting recall.

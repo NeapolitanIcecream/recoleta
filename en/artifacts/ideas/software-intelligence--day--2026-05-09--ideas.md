@@ -41,7 +41,7 @@ Semantic Voting gives the clearest case for this as an adoption change. Across 1
 
 A practical first test is to run this selector on recent internal coding-assistant tasks where multiple candidates were already produced. Track pass rate, sandbox cost, and cases where no all-success cluster appears. DSDE can add a risk score when the top candidate’s behavior cluster is far from the alternatives, giving reviewers a reference-free signal before full validation.
 
-### Evidence
+### Sources
 - [Semantic Voting: Execution-Grounded Consensus for LLM Code Generation](../Inbox/2026-05-09--semantic-voting-execution-grounded-consensus-for-llm-code-generation.md): Semantic Voting reports execution fingerprints, sketch-based generated inputs, and 19 to 52 percentage-point gains over output-pattern majority voting.
 - [Sketch-and-Verify: Structured Inference-Time Scaling via Program Sketching](../Inbox/2026-05-09--sketch-and-verify-structured-inference-time-scaling-via-program-sketching.md): Sketch-and-Verify reports structured algorithmic sketches and hard-problem gains for Gemini 3.1 Flash Lite at matched candidate counts.
 - [Using Semantic Distance to Estimate Uncertainty in LLM-Based Code Generation](../Inbox/2026-05-09--using-semantic-distance-to-estimate-uncertainty-in-llm-based-code-generation.md): DSDE estimates pass@1 failure risk by comparing sampled programs on shared fuzzed inputs without model internals or LLM-as-judge calls.
@@ -53,7 +53,7 @@ PROBE shows why this belongs beside the agent as an operational side channel. In
 
 The adoption blocker is the vague failed-run artifact: a final benchmark failure or incident label rarely tells the next run what to change. Teams running repo repair agents, service mitigation agents, or enterprise workflow agents can start by logging spans for failed tasks and measuring whether retry prompts tied to a specific failure anchor recover more cases than generic reruns.
 
-### Evidence
+### Sources
 - [Debugging the Debuggers: Failure-Anchored Structured Recovery for Software Engineering Agents](../Inbox/2026-05-09--debugging-the-debuggers-failure-anchored-structured-recovery-for-software-engineering-agents.md): PROBE describes span-level telemetry, anchor-first diagnosis, gated retry guidance, and recovery results across 257 unresolved cases.
 - [Debugging the Debuggers: Failure-Anchored Structured Recovery for Software Engineering Agents](../Inbox/2026-05-09--debugging-the-debuggers-failure-anchored-structured-recovery-for-software-engineering-agents.md): The paper reports 65.37% Top-1 diagnosis accuracy, 21.79% recovery, and a non-intrusive Microsoft IcM prototype.
 
@@ -64,6 +64,6 @@ SkillGuard is a concrete template for this maintenance layer. DriftBench include
 
 This is most useful for long-lived skills that call external services, install packages, configure infrastructure, or depend on authentication flows. The first deployment can run in report-only mode on a skill library, compare alerts against recent skill failures, and check whether localized drift reports reduce repair time.
 
-### Evidence
+### Sources
 - [Skill Drift Is Contract Violation: Proactive Maintenance for LLM Agent Skill Libraries](../Inbox/2026-05-09--skill-drift-is-contract-violation-proactive-maintenance-for-llm-agent-skill-libraries.md): SkillGuard extracts operational environment contracts from skill documents, validates them, and reports precision, recall, false-positive, and repair results.
 - [Skill Drift Is Contract Violation: Proactive Maintenance for LLM Agent Skill Libraries](../Inbox/2026-05-09--skill-drift-is-contract-violation-proactive-maintenance-for-llm-agent-skill-libraries.md): The abstract states the practical problem of silent skill decay and the reported false-positive and one-round repair improvements.

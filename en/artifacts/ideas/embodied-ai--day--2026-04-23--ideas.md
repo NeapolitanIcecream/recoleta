@@ -37,7 +37,7 @@ Robot teams working on long household or warehouse sequences can now build a sup
 
 A practical first version does not need a new foundation model. Take an existing short-horizon VLA or diffusion policy, add a planner that rewrites the remaining subtasks after each observation, and render a trace overlay into the executor input. The cheap check is a replay set of multi-step tasks with injected small failures such as off-center grasps or moved objects. Measure whether the system resumes the intended sequence without a manual reset. This is credible now because LoHo-Manip reports gains on long-horizon reasoning and trajectory prediction benchmarks, including 63.1 on RoboVQA and 56.7 on EgoPlan2, with a receding-horizon planner explicitly designed to preserve failed steps in memory until they are completed.
 
-### Evidence
+### Sources
 - [Long-Horizon Manipulation via Trace-Conditioned VLA Planning](../Inbox/2026-04-23--long-horizon-manipulation-via-trace-conditioned-vla-planning.md): Summary gives the main mechanism: receding-horizon replanning, done-and-remaining memory, and 2D trace prompting, plus benchmark gains.
 - [Long-Horizon Manipulation via Trace-Conditioned VLA Planning](../Inbox/2026-04-23--long-horizon-manipulation-via-trace-conditioned-vla-planning.md): Abstract text confirms the remaining-plan and visual-trace design for long-horizon execution.
 - [Long-Horizon Manipulation via Trace-Conditioned VLA Planning](../Inbox/2026-04-23--long-horizon-manipulation-via-trace-conditioned-vla-planning.md): Introduction states the operational pain directly: compounding errors, progress tracking, and recovery during long sequences.
@@ -47,7 +47,7 @@ Post-training generalist robot policies can move into a simulator-first correcti
 
 The user pressure is cost. Real-world correction loops require resets, scene setup, and operator supervision for every bad rollout. Hi-WM shows a world model can carry part of that loop if it is aligned closely enough to the action space and edge cases. On three real robot tasks, the paper reports average success gains of 37.9 points over the base policy and 19.0 over a world-model closed-loop baseline, with Pearson r = 0.953 between world-model evaluation and real performance. That supports a narrow deployment path: use the simulator to decide which failure states deserve human correction data, then retrain and spot-check on hardware. A cheap validation is one task with frequent late-stage failures, such as deformable object routing, comparing operator minutes per successful correction collected in simulation versus on the robot.
 
-### Evidence
+### Sources
 - [Hi-WM: Human-in-the-World-Model for Scalable Robot Post-Training](../Inbox/2026-04-23--hi-wm-human-in-the-world-model-for-scalable-robot-post-training.md): Summary states the simulator-first intervention workflow, cost problem, and main real-world gains.
 - [Hi-WM: Human-in-the-World-Model for Scalable Robot Post-Training](../Inbox/2026-04-23--hi-wm-human-in-the-world-model-for-scalable-robot-post-training.md): Abstract text describes physical-world correction cost and the world model as a reusable corrective substrate.
 - [Hi-WM: Human-in-the-World-Model for Scalable Robot Post-Training](../Inbox/2026-04-23--hi-wm-human-in-the-world-model-for-scalable-robot-post-training.md): Introduction explains deployment economics as the bottleneck for corrective post-training.
@@ -57,7 +57,7 @@ Robotics eval stacks for household manipulation need an execution-safety review 
 
 This is useful for teams selecting checkpoints and reporting progress. Final-state scores can hide the run quality that matters for deployment and for debugging. The BEHAVIOR1K audit reviewed 500 recordings and found grasp failure was the most common error, with collisions also frequent. When safety penalties are applied, average RLC score drops from Q = 0.256 to sQ = 0.239, and Comet drops from 0.192 to 0.173. A simple product test is to rescore a recent batch of benchmark videos and rank checkpoints by both completion and safety-adjusted score. If the ordering changes, the review path is already paying for itself.
 
-### Evidence
+### Sources
 - [How VLAs (Really) Work In Open-World Environments](../Inbox/2026-04-23--how-vlas-really-work-in-open-world-environments.md): Summary provides the argument for safety-aware metrics, the 500-run audit, and score drops under sQ.
 - [How VLAs (Really) Work In Open-World Environments](../Inbox/2026-04-23--how-vlas-really-work-in-open-world-environments.md): Abstract text explains why final-state-only scoring misses execution safety in long-horizon chores.
 - [How VLAs (Really) Work In Open-World Environments](../Inbox/2026-04-23--how-vlas-really-work-in-open-world-environments.md): Main text details the progress-agnostic scoring problem and why it obscures deployment-relevant behavior.

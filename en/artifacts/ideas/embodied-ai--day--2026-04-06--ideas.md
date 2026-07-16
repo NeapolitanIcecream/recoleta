@@ -37,7 +37,7 @@ A practical robot stack now looks more modular at the control boundary: use a vi
 
 The concrete build here is a gated handoff layer between a trajectory proposer and the action policy you already trust near objects. Teams working on dexterous pick-and-place, cluttered tabletop work, or mobile manipulation with awkward viewpoints can test this without retraining a full end-to-end planner. Start with one class of failures where the current policy chooses the wrong approach under distractors or partial visibility. Log when the robot should stay on the planned path and when it should switch to the reactive controller, then measure whether the handoff improves task completion without adding unsafe contact. The main adoption blocker is not model quality alone; it is the switching logic and the interface between the planner's coarse future and the controller's action chunk format.
 
-### Evidence
+### Sources
 - [Veo-Act: How Far Can Frontier Video Models Advance Generalizable Robot Manipulation?](../Inbox/2026-04-06--veo-act-how-far-can-frontier-video-models-advance-generalizable-robot-manipulation.md): Reports the planner-plus-VLA architecture and the main success-rate gains across simulated and real manipulation tasks.
 - [Veo-Act: How Far Can Frontier Video Models Advance Generalizable Robot Manipulation?](../Inbox/2026-04-06--veo-act-how-far-can-frontier-video-models-advance-generalizable-robot-manipulation.md): Confirms the paper's claim that video prediction helps with high-level motion while low-level control remains insufficient on its own.
 
@@ -46,7 +46,7 @@ Event cameras now look like a concrete support layer for VLA deployment in place
 
 That points to a specific product and integration job for robot teams: a perception upgrade kit for existing VLA policies that adds synchronized RGB-event capture, event-window preprocessing, and a narrow fusion module without rewriting the policy stack. Warehouses, back rooms, home environments, and fast wrist-mounted manipulation are the first obvious users because those settings combine dim light, motion blur, and limited time to tune task-specific vision. A cheap check is to reproduce one current failure mode under controlled lux and exposure settings before doing any large data collection. If the robot already fails when frames clip or smear, this sensor path is easier to justify than another round of image enhancement, because the paper's gains come from information captured at sensing time, not post hoc cleanup.
 
-### Evidence
+### Sources
 - [E-VLA: Event-Augmented Vision-Language-Action Model for Dark and Blurred Scenes](../Inbox/2026-04-06--e-vla-event-augmented-vision-language-action-model-for-dark-and-blurred-scenes.md): Provides the low-light manipulation results, dataset details, and the overlay-versus-adapter comparison.
 - [E-VLA: Event-Augmented Vision-Language-Action Model for Dark and Blurred Scenes](../Inbox/2026-04-06--e-vla-event-augmented-vision-language-action-model-for-dark-and-blurred-scenes.md): Confirms the reported gains at 20 lux and under severe motion blur in the paper text.
 
@@ -55,6 +55,6 @@ VLA research infrastructure is getting concrete enough to support a shared ablat
 
 The evidence here is more about missing workflow support than headline performance. StarVLA claims support for seven integrated benchmarks and combines VLM backbones, world-model backbones, multimodal co-training, cross-embodiment training, and multi-benchmark co-training under one codebase. The excerpt does not include full benchmark deltas, so the safer near-term move is operational: use this style of interface to cut reproduction time and make ablations easier to trust. A simple validation step is to port two existing in-house policies with different action decoders into one runner and check how much manual benchmark glue disappears.
 
-### Evidence
+### Sources
 - [StarVLA: A Lego-like Codebase for Vision-Language-Action Model Developing](../Inbox/2026-04-06--starvla-a-lego-like-codebase-for-vision-language-action-model-developing.md): Summarizes the modular backbone-plus-action-head design and the unified evaluation stack.
 - [StarVLA: A Lego-like Codebase for Vision-Language-Action Model Developing](../Inbox/2026-04-06--starvla-a-lego-like-codebase-for-vision-language-action-model-developing.md): Confirms the integrated benchmarks, reproducible recipes, and sim-to-real evaluation interface in the paper text.

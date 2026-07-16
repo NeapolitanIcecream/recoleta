@@ -35,7 +35,7 @@ AI teams running large coding-agent demos should publish a compact evidence pack
 
 This is a buildable evaluation layer. An internal release gate could require the bundle before a demo is used in a launch post or sales proof. External readers would still need judgment, but they could inspect whether the result came from a general agent run, task-specific scaffolding, repeated restarts, or unreported prompt work.
 
-### Evidence
+### Sources
 - [Did Google's AI agents build an operating system for $916?](../Inbox/2026-05-22--did-google-s-ai-agents-build-an-operating-system-for-916.md): Summarizes the missing artifacts: prompt, code, logs, retry counts, copying checks, and cost reporting for Google’s operating-system agent claim.
 - [Did Google's AI agents build an operating system for $916?](../Inbox/2026-05-22--did-google-s-ai-agents-build-an-operating-system-for-916.md): Describes specialized scaffolding, subagents, restart infrastructure, anti-cheating measures, and unclear human-intervention reporting.
 - [Did Google's AI agents build an operating system for $916?](../Inbox/2026-05-22--did-google-s-ai-agents-build-an-operating-system-for-916.md): States that Google did not release the long prompt, generated code, or logs, and did not run similarity or log analysis for copied code.
@@ -46,7 +46,7 @@ Engineering teams that allow AI-written code should add a named-owner section to
 
 The same rule works for labs and courses using Claude Code or similar tools. The robotics account shows productive use on LaTeX, Python, Kalman filter work, and ROS migration, while the author still had to redirect the tool on a package.xml issue and rejected weak research ideas. A simple policy is enough for many teams: AI use is allowed, and a skilled person signs for licensing, accuracy, tests, and future maintenance.
 
-### Evidence
+### Sources
 - [When Code Is Cheap, Does Quality Still Matter?](../Inbox/2026-05-22--when-code-is-cheap-does-quality-still-matter.md): Defines the quality bar for generated code as human ability to explain, review, refactor, delete, and operate it.
 - [When Code Is Cheap, Does Quality Still Matter?](../Inbox/2026-05-22--when-code-is-cheap-does-quality-still-matter.md): Explains that LLMs make output cheaper while understanding, change, review, debugging, and operations remain costly.
 - [The First Hit Is Free](../Inbox/2026-05-22--the-first-hit-is-free.md): Summarizes the human-ownership policy for AI-assisted research, teaching, and robotics work.
@@ -57,7 +57,7 @@ Developer-tool teams should add token accounting where agent work already happen
 
 The tokenflex.ing post shows demand for visibility, even though its headline usage claim lacks a reproducible measurement method. Planet Maiko points to a practical place to put this control: a local workbench with agent chat, in-app diff review, GitHub and Linear integrations, local RAG, and cost-aware model routing. A small team could test this by ingesting Claude Code or Cursor logs for two weeks and comparing model spend against merged work and reverted changes.
 
-### Evidence
+### Sources
 - [I used $30,983 of AI tokens last month in Claude Code on $200/mo plan](../Inbox/2026-05-22--i-used-30983-of-ai-tokens-last-month-in-claude-code-on-200-mo-plan.md): Identifies token visibility as the main problem and notes demand for outcome metrics such as tokens per shipped feature or merged pull request.
 - [I used $30,983 of AI tokens last month in Claude Code on $200/mo plan](../Inbox/2026-05-22--i-used-30983-of-ai-tokens-last-month-in-claude-code-on-200-mo-plan.md): Shows the user-facing claim that developers often learn actual token use only after looking, and lists workflow changes that reduced Claude Code spend.
 - [I used $30,983 of AI tokens last month in Claude Code on $200/mo plan](../Inbox/2026-05-22--i-used-30983-of-ai-tokens-last-month-in-claude-code-on-200-mo-plan.md): Recommends splitting larger tasks, using grep for simple operations, routing model use, and tracking tokens per shipped feature.

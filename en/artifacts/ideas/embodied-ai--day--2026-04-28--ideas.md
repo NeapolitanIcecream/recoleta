@@ -37,7 +37,7 @@ GS-Playground gives this workflow a concrete shape. Its Real2Sim pipeline turns 
 
 A useful first build is a scene intake script for a manipulation lab: accept a captured object set, create the visual and collision assets, prune the Gaussians, then run a small set of pushes, stacks, or grasps while checking image quality, rigid-body attachment, contact stability, and GPU memory. Scenes that fail these checks can be fixed before they consume RL training time.
 
-### Evidence
+### Sources
 - [GS-Playground: A High-Throughput Photorealistic Simulator for Vision-Informed Robot Learning](../Inbox/2026-04-28--gs-playground-a-high-throughput-photorealistic-simulator-for-vision-informed-robot-learning.md): Summarizes GS-Playground's batched 3DGS renderer, Real2Sim pipeline, rigid-body Gaussian binding, rendering throughput, pruning result, and contact-oriented physics details.
 - [GS-Playground: A High-Throughput Photorealistic Simulator for Vision-Informed Robot Learning](../Inbox/2026-04-28--gs-playground-a-high-throughput-photorealistic-simulator-for-vision-informed-robot-learning.md): Describes the bottleneck in high-resolution rendering, out-of-memory failures, and the manual work of creating simulation-ready assets.
 - [GS-Playground: A High-Throughput Photorealistic Simulator for Vision-Informed Robot Learning](../Inbox/2026-04-28--gs-playground-a-high-throughput-photorealistic-simulator-for-vision-informed-robot-learning.md): States that the workflow converts real-world scenes into functional digital twins with visual realism and physical consistency.
@@ -49,7 +49,7 @@ HANDFUL shows why this matters for table-clearing and workspace-organization tas
 
 A practical adoption change is to treat first grasps as candidates for a task sequence, then keep only the ones that support the next action. HANDFUL’s curriculum kept similar final success while reducing second-stage training from 90 million to 54 million steps, which gives teams a concrete training-budget check for this workflow.
 
-### Evidence
+### Sources
 - [HANDFUL: Sequential Grasp-Conditioned Dexterous Manipulation with Resource Awareness](../Inbox/2026-04-28--handful-sequential-grasp-conditioned-dexterous-manipulation-with-resource-awareness.md): Summarizes the two-step task setup, finger-level contact rewards and penalties, curriculum, simulation success rates, and ablation results.
 - [HANDFUL: Sequential Grasp-Conditioned Dexterous Manipulation with Resource Awareness](../Inbox/2026-04-28--handful-sequential-grasp-conditioned-dexterous-manipulation-with-resource-awareness.md): Explains the failure mode where stable grasps occupy fingers or contact regions needed for later actions.
 - [HANDFUL: Sequential Grasp-Conditioned Dexterous Manipulation with Resource Awareness](../Inbox/2026-04-28--handful-sequential-grasp-conditioned-dexterous-manipulation-with-resource-awareness.md): Describes preserving unused fingers and contact regions, selecting grasps for downstream subtasks, and the LEAP Hand benchmark tasks.

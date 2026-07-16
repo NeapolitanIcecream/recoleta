@@ -39,7 +39,7 @@ This fits teams that have Python ADK agents but lack a client team ready to wire
 
 A cheap test is to run the skill against two different ADK sample agents and check whether the second run needs fewer manual fixes. The acceptance bar should include a web build, one mobile target, a streaming response path, and a tool-call display path, because those are where the reported failures clustered.
 
-### Evidence
+### Sources
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): Summarizes the repeatable Antigravity workflow, staged deliverables, two-agent review loop, 13 iterations, and recurring ADK frontend fixes.
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): Names the `flutter_frontend_for_adk` skill and the planning documents produced before code generation.
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): Lists the later concrete fixes, including platform network permissions, markdown, lints, web networking, scrolling, and partial ADK events.
@@ -51,7 +51,7 @@ The buildable version is a repository template for Antigravity skills that enfor
 
 This is useful for developer enablement teams that maintain internal agent templates. It gives them a way to capture platform rules and project conventions as the work proceeds, including small but expensive misses such as ignored `frontend/lib` files or missing macOS and iOS entitlements.
 
-### Evidence
+### Sources
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): Describes installing existing Google Cloud and Flutter skills, then establishing an iterative loop with coder and author agents.
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): Shows the concrete update to add review pauses and fix gitignore behavior, followed by clearing files and rerunning.
 - [Learning faster with Antigravity](../Inbox/2026-07-01--learning-faster-with-antigravity.md): Describes the skill as a record of what the developer learned and reports 13 iterations to reach a shareable version.
@@ -63,7 +63,7 @@ Replay logic needed a second support layer. Challenge Mode used ghosts of past h
 
 A practical adoption test is to require every agent-built game prototype to ship with debug overlays for collision and physics state plus deterministic replay checks before adding more content. That gives the human reviewer evidence when the generated code behaves incorrectly, especially in places where visual output looks plausible until late in the run.
 
-### Evidence
+### Sources
 - [Vibe once, run anywhere with Antigravity and Flutter](../Inbox/2026-06-29--vibe-once-run-anywhere-with-antigravity-and-flutter.md): Reports the initial Flutter and Flame game, the later prompt volume, and the need to refactor and add tests for understandable code.
 - [Vibe once, run anywhere with Antigravity and Flutter](../Inbox/2026-06-29--vibe-once-run-anywhere-with-antigravity-and-flutter.md): Describes the debug mode with overlays for terrain data, relative tilt, and collision hitboxes, and introduces the replay desync bug.
 - [Vibe once, run anywhere with Antigravity and Flutter](../Inbox/2026-06-29--vibe-once-run-anywhere-with-antigravity-and-flutter.md): Explains the millisecond scheduling drift and the fix using full physical state checkpoints at thruster events.

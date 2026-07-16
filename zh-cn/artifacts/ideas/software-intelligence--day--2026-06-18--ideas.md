@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # 编码代理发布控制
 
-## Summary
+## 摘要
 仓库维护者现在可以把代理指令、拉取请求创建和模型选择当作可测试的软件工作来处理。实际做法包括：在失败探针后修订的紧凑仓库指导、由基线对照测试和权限门禁阻断的 issue 代理拉取请求，以及覆盖生产所用语言和项目规模的评估套件。
 
 ## 面向 AGENTS.md 文件的合成 bug 修复探针
@@ -35,7 +35,7 @@ Probe-and-Refine 给出了一个具体模式：每轮 10 个合成 bug 修复探
 
 一个低成本的初版可以是在代理已经打开草稿的重点仓库上运行夜间任务。跟踪代理是否生成了可评估补丁、运行了哪些命令，以及哪些指导行被使用或被事实否定。输出要短到每次运行都能读完；凡是修改发布、安全或数据迁移步骤的指导编辑，都需要人工审查。
 
-### Evidence
+### 资料来源
 - [Probe-and-Refine Tuning of Repository Guidance for Coding Agents](../Inbox/2026-06-18--probe-and-refine-tuning-of-repository-guidance-for-coding-agents.md): 展示了 probe-and-refine 方法、33.0% 对比 28.3% 和 25.5% 的解决率结果，以及精炼指导主要提高可评估补丁产出的发现。
 - [Phoenix: Safe GitHub Issue Resolution via Multi-Agent LLMs](../Inbox/2026-06-18--phoenix-safe-github-issue-resolution-via-multi-agent-llms.md): 报告称，对真实 issue 拉取请求的人工检查发现了许多通用改动或写到虚构路径的改动，这是更好的仓库指导可以针对的失败模式。
 
@@ -46,7 +46,7 @@ Phoenix 是一个有用的参考设计，因为它通过区分既有失败和补
 
 权限选择也需要在同一通道中单独检查。ToolPrivBench 发现，在低权限工具已经足够时，11 个被评估模型中有 6 个的过度权限工具使用率超过 30%。Eve 展示了让这些门禁更容易上线的生产基础设施：持久会话、沙箱、人工审批、追踪和基于文件的评估。生产仓库可以先要求每个代理 PR 记录三项内容：基线测试哈希、补丁后测试哈希，以及任何高权限工具或审批事件。
 
-### Evidence
+### 资料来源
 - [Phoenix: Safe GitHub Issue Resolution via Multi-Agent LLMs](../Inbox/2026-06-18--phoenix-safe-github-issue-resolution-via-multi-agent-llms.md): 描述了 Phoenix 的基线对比补丁测试门禁、安全控制、拉取请求工作流，以及成功运行中没有 PASS_TO_PASS 回归的报告结果。
 - [When Lower Privileges Suffice: Investigating Over-Privileged Tool Selection in LLM Agents](../Inbox/2026-06-18--when-lower-privileges-suffice-investigating-over-privileged-tool-selection-in-llm-agents.md): 显示代理经常在低权限工具已经足够时选择更高权限工具，并给出了 11 个模型的 OPUR 结果。
 - [Eve](../Inbox/2026-06-18--eve.md): 列出了生产级代理运行时功能，例如持久工作流、沙箱、审批、追踪和评估。
@@ -59,6 +59,6 @@ Multi-LCB 给出了跨语言模板。它把 LiveCodeBench 扩展到 12 种语言
 
 JAMER 增加了项目规模测试。它的 Godot 基准从超过 240,000 个候选仓库中过滤出 8,133 个行为有效项目，并检查编译、启动稳定性、结构完整性和运行时行为。代码补全的运行时通过率从小项目的 80.4% 降到大项目的 5.7%。一个实用的采用测试可以很小：从团队自己的语言中选 20 个任务，再选 5 个大型多文件任务；在选定代理通过开发者也要面对的同一套 CI 和运行时检查之前，阻止全面推广。
 
-### Evidence
+### 资料来源
 - [Multi-LCB: Extending LiveCodeBench to Multiple Programming Languages](../Inbox/2026-06-18--multi-lcb-extending-livecodebench-to-multiple-programming-languages.md): 展示了 Multi-LCB 对 LiveCodeBench 的 12 语言扩展，以及报告中的语言特定分数差距。
 - [JAMER: Project-Level Code Framework Dataset and Benchmark on Professional Game Engines](../Inbox/2026-06-18--jamer-project-level-code-framework-dataset-and-benchmark-on-professional-game-engines.md): 展示了 JAMER 的 Godot 项目级评估、行为有效仓库过滤，以及运行时通过率从小项目到大项目的下降。

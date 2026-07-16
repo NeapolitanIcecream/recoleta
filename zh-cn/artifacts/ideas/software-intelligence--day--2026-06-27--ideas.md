@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # 有边界的编码智能体 rollout
 
-## Summary
+## 摘要
 在团队为现有工程工作加入窄权限和可衡量的成本检查时，编码智能体的采用最有实际价值。最明确的变化包括：为前端智能体提供只读浏览器截图、为生产 AI 路径设置 token 预算，以及为大型生成代码提交增加代码评审检查。
 
 ## 用于 localhost UI 检查的只读截图访问
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 这适合智能体已经能编辑代码、但无法验证视觉状态的工作，例如 CSS 修改、空状态、响应式布局和只在浏览器中出现的错误。安全边界很具体：该工具通过 Chrome 扩展和本地 WebSocket 守护进程暴露截图捕获能力，而点击、输入、脚本注入和浏览器操作都不在接口范围内。团队可以检查一个实用指标：在启动批准之外不增加新权限提示的情况下，智能体能否在 PR 中附上截图证据，并关闭更多前端问题。
 
-### Evidence
+### 资料来源
 - [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-claude-code-see-the-browser.md): 摘要说明了目标工作流、只读安全模型、CLI 命令，以及缺少基准数据这一点。
 - [Show HN: Peek-CLI: let coding agents see your browser](../Inbox/2026-06-27--show-hn-peek-cli-let-claude-code-see-the-browser.md): 来源文本描述了 Chrome 扩展、WebSocket 守护进程、`peeked` 命令、启动时连接步骤，以及智能体只能截图的说法。
 
@@ -40,7 +40,7 @@ language_code: zh-CN
 
 成本问题很具体，因为引用的预测称，当前推理价格可能低于真实计算成本；估算范围从每 $1 计算成本收取 $0.60-$0.70，到悲观补贴情形下低于 $0.10。同一来源认为，即使单个开发者工具账单可以被接受，生产 AI 工作流也需要成本控制。一个低成本的初步测试是为一条高流量路径记录 token 和模型选择，然后把常规案例路由到更便宜的模型，或在正则表达式和确定性检查已经能解决任务时改用简单代码。
 
-### Evidence
+### 资料来源
 - [Predictions for the Future of AI](../Inbox/2026-06-27--predictions-for-the-future-of-ai.md): 来源给出了推理定价的估算补贴范围，并讨论了可能的重新定价。
 - [Predictions for the Future of AI](../Inbox/2026-06-27--predictions-for-the-future-of-ai.md): 来源区分了单个开发者账单和已部署、依赖 AI 的生产工作流中的 token 经济性。
 - [Predictions for the Future of AI](../Inbox/2026-06-27--predictions-for-the-future-of-ai.md): 来源称，许多 LLM 周期花在了正则表达式等简单代码可以处理的任务上。
@@ -50,6 +50,6 @@ language_code: zh-CN
 
 触发条件是补丁形态，而非作者身份：异常庞大的新代码、不熟悉的生成式架构，或声称由自主流程构建的成果，都应接受额外审查。引用的文章估计，优秀工程师使用普通编码助手的平均生产力提升约为 20-30%，并警告一个 50,000 行的生成项目可能包含约 48,000 行重复开源功能且引入额外 bug 的代码。一个实用检查是抽样查看生成文件是否在实现已知库行为，并判断改用受维护的依赖、删除相关代码是否能降低风险。
 
-### Evidence
+### 资料来源
 - [Predictions for the Future of AI](../Inbox/2026-06-27--predictions-for-the-future-of-ai.md): 来源给出了 20-30% 的生产力提升估计，并批评 10x 和 100x 的说法。
 - [Predictions for the Future of AI](../Inbox/2026-06-27--predictions-for-the-future-of-ai.md): 来源描述了大型生成代码重复开源包且带有 bug 的情况，并质疑自主浏览器演示作为实用软件产出的价值。

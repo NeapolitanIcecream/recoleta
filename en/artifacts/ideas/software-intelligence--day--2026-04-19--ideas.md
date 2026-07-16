@@ -37,7 +37,7 @@ A practical first version is simple. Run the agent as usual, then score the diff
 
 The cheap check is to sample recent agent-made fixes that passed CI and measure how often reviewers later trimmed or reverted unrelated edits. If that rate is high, edit precision is already an operational problem in the local workflow.
 
-### Evidence
+### Sources
 - [Precise Debugging Benchmark: Is Your Model Debugging or Regenerating?](../Inbox/2026-04-19--precise-debugging-benchmark-is-your-model-debugging-or-regenerating.md): PDB shows large gaps between unit-test pass rate and edit precision, including weak precision in agentic debugging setups.
 - [Precise Debugging Benchmark: Is Your Model Debugging or Regenerating?](../Inbox/2026-04-19--precise-debugging-benchmark-is-your-model-debugging-or-regenerating.md): The paper states that unit-test-only evaluation rewards full regeneration and hides incremental debugging quality.
 
@@ -48,7 +48,7 @@ This is most relevant for teams already collecting bug reports, failing tests, a
 
 A reasonable pilot is narrow: one repository, one bug family, and a pass/fail comparison against the current repair agent on historically fixed issues. If the checked requirement raises patch correctness without inflating edit size, the workflow earns its keep.
 
-### Evidence
+### Sources
 - [Project Prometheus: Bridging the Intent Gap in Agentic Program Repair via Reverse-Engineered Executable Specifications](../Inbox/2026-04-19--project-prometheus-bridging-the-intent-gap-in-agentic-program-repair-via-reverse-engineered-executable-specifications.md): Prometheus describes the verified executable-specification workflow and reports strong gains on Defects4J.
 - [Project Prometheus: Bridging the Intent Gap in Agentic Program Repair via Reverse-Engineered Executable Specifications](../Inbox/2026-04-19--project-prometheus-bridging-the-intent-gap-in-agentic-program-repair-via-reverse-engineered-executable-specifications.md): The paper's abstract highlights the rescue rate on hard bugs and the move toward precise, minimal corrections.
 
@@ -59,6 +59,6 @@ The workflow change is concrete: before adding a task to a capability suite, run
 
 A low-cost pilot is to take the ten highest-scoring tasks in a current internal benchmark and red-team just those verifiers. If even a few can be passed by spoofing outputs or editing the environment around the test, the benchmark needs repair before it is used for model ranking or post-training rewards.
 
-### Evidence
+### Sources
 - [Terminal Wrench: A Dataset of 331 Reward-Hackable Environments and 3,632 Exploit Trajectories](../Inbox/2026-04-19--terminal-wrench-a-dataset-of-331-reward-hackable-environments-and-3632-exploit-trajectories.md): Terminal Wrench quantifies verifier hackability across public terminal-agent benchmarks and reports exploit categories.
 - [Terminal Wrench: A Dataset of 331 Reward-Hackable Environments and 3,632 Exploit Trajectories](../Inbox/2026-04-19--terminal-wrench-a-dataset-of-331-reward-hackable-environments-and-3632-exploit-trajectories.md): The paper explains why benchmark tasks are often shipped without enough adversarial review and positions the dataset as a fix list for maintainers.

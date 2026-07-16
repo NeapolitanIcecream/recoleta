@@ -39,7 +39,7 @@ The pain is operational. High-DoF teleoperation data includes operator variation
 
 A cheap first test is to rescore an existing teleoperation set, train the same policy with and without quality weights, and compare physical rollouts on tasks that need finger articulation, such as cap twisting, pen use, book retrieval, or dough handling. Dexora’s reported gap on dexterous tasks, 66.7% average success versus 51.7% for GR00T N1 and 6.7% for Diffusion Policy, gives this workflow enough signal to try on smaller local rigs.
 
-### Evidence
+### Sources
 - [Dexora: Open-source VLA for High-DoF Bimanual Dexterity](../Inbox/2026-05-18--dexora-open-source-vla-for-high-dof-bimanual-dexterity.md): Dexora combines a 36-DoF dual-arm dual-hand robot, matched MuJoCo twin, 100K simulated trajectories, 10K real teleoperated episodes, and quality-weighted diffusion policy training.
 - [Dexora: Open-source VLA for High-DoF Bimanual Dexterity](../Inbox/2026-05-18--dexora-open-source-vla-for-high-dof-bimanual-dexterity.md): The paper abstract describes the hybrid teleoperation interface, synthetic and real datasets, and the offline discriminator for down-weighting low-quality demonstrations.
 
@@ -50,7 +50,7 @@ The practical build is small. Take the team’s normal validation clips or simul
 
 The acceptance test should include the policy’s normal clean score, its worst corruption cases, and at least one real robot trial with induced camera degradation. StableVLA reports LIBERO severity-5 gains such as Object at 70.2% versus 29.3% and Long at 45.3% versus 26.2%, plus a real Pack Doll result of 50% success versus 20% for VLA-Adapter-0.5B.
 
-### Evidence
+### Sources
 - [StableVLA: Towards Robust Vision-Language-Action Models without Extra Data](../Inbox/2026-05-18--stablevla-towards-robust-vision-language-action-models-without-extra-data.md): StableVLA identifies visual corruptions as a deployment failure mode and reports large LIBERO, CALVIN, and real-robot gains without extra robot data or corruption-specific augmentation.
 - [StableVLA: Towards Robust Vision-Language-Action Models without Extra Data](../Inbox/2026-05-18--stablevla-towards-robust-vision-language-action-models-without-extra-data.md): The abstract states that IB-Adapter filters noisy visual inputs, adds fewer than 10M parameters, and improves over the baseline without extra data or augmentation.
 
@@ -61,6 +61,6 @@ This is easy to add to compact tabletop domains. Define legal end states, object
 
 WorldArena 2.0 shows why this extra score is needed for contact-rich models. Wan2.2 has the best tactile prediction quality on UniVTAC, with 21.26 PSNR and 0.746 SSIM, yet averages 50% task success across Insert HDMI and Lift Bottle. A useful evaluation harness should pair tactile or video quality with physical rollout success, because clean reconstruction can still fail as control evidence.
 
-### Evidence
+### Sources
 - [DexHoldem: Playing Texas Hold'em with Dexterous Embodied System](../Inbox/2026-05-18--dexholdem-playing-texas-hold-em-with-dexterous-embodied-system.md): DexHoldem uses a physical rollout rubric that separates scene-preserving success from disruptive completion and reports large gaps between task completion and scene-preserving success.
 - [WorldArena 2.0: Extending Embodied World Model Benchmarking on Modality, Functionality and Platform](../Inbox/2026-05-18--worldarena-2-0-extending-embodied-world-model-benchmarking-on-modality-functionality-and-platform.md): WorldArena 2.0 adds visuotactile evaluation and shows that high tactile reconstruction scores do not reliably predict task success.

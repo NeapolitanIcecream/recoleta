@@ -37,7 +37,7 @@ Manipulation teams should add a contact-region evaluation slice to VLA policy te
 
 STARRY gives a concrete design to copy and test. It predicts future depth and end-effector positions, unprojects predicted depth into 3D, computes token distances to the predicted end effector, and uses those distances to bias action-to-video attention. The paper reports 93.82% clean and 93.30% randomized average success on 50 RoboTwin 2.0 bimanual tasks, plus 70.8% average success in real ARX R5 bimanual experiments using 50 demonstrations per task and 20 evaluation rollouts per method. The biggest value is the failure analysis it enables: when a policy misses a handle or collides near an opening, the team can inspect the predicted depth, end-effector path, and attention weights before collecting more demonstrations.
 
-### Evidence
+### Sources
 - [STARRY: Spatial-Temporal Action-Centric World Modeling for Robotic Manipulation](../Inbox/2026-04-29--starry-spatial-temporal-action-centric-world-modeling-for-robotic-manipulation.md): Describes STARRY’s future depth and end-effector geometry, GASAM attention weighting, benchmark results, and real ARX R5 evaluation.
 - [STARRY: Spatial-Temporal Action-Centric World Modeling for Robotic Manipulation](../Inbox/2026-04-29--starry-spatial-temporal-action-centric-world-modeling-for-robotic-manipulation.md): Names contact-sensitive manipulation examples and the failure modes caused by local geometry errors.
 
@@ -46,7 +46,7 @@ Teams adapting video diffusion models for robot control should run a latency tes
 
 X-WAM is a useful reference implementation. It fine-tunes Wan2.2-TI2V-5B on multi-view robot data, predicts 8 future RGB frames, 8 future states, and 32 future actions, and adds a depth branch without doubling the token sequence. Its Asynchronous Noise Sampling trains video and action noise levels from a coupled distribution so inference can use fewer denoising steps for actions. Reported results include 79.2% average success on RoboCasa across 24 tasks and 90.7% on RoboTwin 2.0 Randomized. A lab can reproduce the most relevant part without matching the full scale: measure milliseconds per action, success rate, and geometric prediction quality as the action denoising budget is reduced.
 
-### Evidence
+### Sources
 - [Unified 4D World Action Modeling from Video Priors with Asynchronous Denoising](../Inbox/2026-04-29--unified-4d-world-action-modeling-from-video-priors-with-asynchronous-denoising.md): Describes X-WAM’s multi-view RGB-D, state, and action prediction setup, asynchronous denoising, training scale, and benchmark results.
 - [Unified 4D World Action Modeling from Video Priors with Asynchronous Denoising](../Inbox/2026-04-29--unified-4d-world-action-modeling-from-video-priors-with-asynchronous-denoising.md): States that X-WAM predicts multi-view RGB-D futures and uses Asynchronous Noise Sampling for efficient action execution.
 
@@ -55,6 +55,6 @@ Simulation teams using generated 3D assets should add an import gate before asse
 
 The 3D generation survey names the adoption blocker clearly: visual quality does not guarantee physical validity. It defines simulation readiness around geometry, physical parameterization, kinematic executability, and simulator compatibility, and connects generated content to engines and formats including MuJoCo, Isaac Sim, Habitat, AI2-THOR, OmniGibson, PyBullet, ManiSkill3, Genesis, URDF, MJCF, and USD. That turns asset generation into a testable workflow issue for robotics groups. A small validator script and simulator smoke test will catch many failures before policy training consumes bad scenes.
 
-### Evidence
+### Sources
 - [3D Generation for Embodied AI and Robotic Simulation: A Survey](../Inbox/2026-04-29--3d-generation-for-embodied-ai-and-robotic-simulation-a-survey.md): Defines simulation-ready 3D generation requirements, including geometry, physical parameters, kinematics, and simulator compatibility.
 - [3D Generation for Embodied AI and Robotic Simulation: A Survey](../Inbox/2026-04-29--3d-generation-for-embodied-ai-and-robotic-simulation-a-survey.md): Names URDF, MJCF, joint configurations, mass distributions, and friction coefficients as necessary for useful generated assets.

@@ -37,7 +37,7 @@ Teams that want coding agents to touch internal databases, SSH hosts, HTTP APIs,
 
 A practical pilot would put one agent workflow and one human remote-dev workflow on the same sandbox setup, then audit whether every internal request is tied to a workspace identity and policy decision. The useful test is narrow: can the agent run a real maintenance task against an internal service with no secret copied into the container, while security teams still get OpenTelemetry logs for each request. Cordium also claims VolumeSnapshot templates reduce cold startup time for heavy environments, so the pilot should measure startup latency alongside access-control coverage.
 
-### Evidence
+### Sources
 - [Show HN: Cordium – FOSS identity-based sandbox platform with zero-trust access](../Inbox/2026-06-14--show-hn-cordium-foss-identity-based-sandbox-platform-with-zero-trust-access.md): Cordium summary describes rootless Kubernetes workspaces for developers, AI agents, and CI jobs, with identity-based secretless access and OpenTelemetry audit logs.
 - [Show HN: Cordium – FOSS identity-based sandbox platform with zero-trust access](../Inbox/2026-06-14--show-hn-cordium-foss-identity-based-sandbox-platform-with-zero-trust-access.md): Cordium content states that workspaces can access databases, SSH servers, HTTP APIs, Kubernetes clusters, and mTLS services without credentials reaching the workspace.
 
@@ -46,7 +46,7 @@ Coding agents repeat work when decisions, API facts, and prior conclusions live 
 
 The same tool also gives a measurement pattern for cost. On one real-API task using the same model, Raidho reports $0.05 for a deterministic procedure, $0.116 for a context-first hybrid, and $0.301 for a pure tool loop. Its auto-distillation result is narrower: repeated multi-step work over small data dropped 9.6x per repeat, while a data-heavy audit saved almost nothing because file content dominated the bill. A team can test this on recurring repository tasks such as dependency audits, release-note checks, or API migration scans, then keep memory and distilled procedures only where the measured savings survive a few repeated runs.
 
-### Evidence
+### Sources
 - [Show HN: Coding agent with algebraic memory (VSA) instead of RAG](../Inbox/2026-06-14--show-hn-coding-agent-with-algebraic-memory-vsa-instead-of-rag.md): Raidho summary describes separate reasoning, execution, durable memory, auto-distillation, and reported cost comparisons.
 - [Show HN: Coding agent with algebraic memory (VSA) instead of RAG](../Inbox/2026-06-14--show-hn-coding-agent-with-algebraic-memory-vsa-instead-of-rag.md): Raidho content explains per-project durable memory using subject-relation-object facts and VSA-based recall.
 - [Show HN: Coding agent with algebraic memory (VSA) instead of RAG](../Inbox/2026-06-14--show-hn-coding-agent-with-algebraic-memory-vsa-instead-of-rag.md): Raidho content reports the 9.6x repeated-task cost drop and the case where data-heavy work saved almost nothing.
@@ -56,7 +56,7 @@ Agent-written code can satisfy the requested change while missing codebase invar
 
 A concrete adoption step is to add proof-oriented checks to the review path for high-invariant modules. The first targets do not need full verification of an application. They can be stronger type constraints, property-based tests, small modular specifications, or proof obligations around interfaces where the invariants are already known. Agents can draft the specification and repair code against feedback from those checks before a human reviewer looks at the patch. The useful measure is reviewer time and defect escape rate on a limited set of modules, since the Jane Street piece gives a strategic argument and an old cost baseline, not a new benchmark.
 
-### Evidence
+### Sources
 - [Formal Methods and the Future of Programming](../Inbox/2026-06-14--formal-methods-and-the-future-of-programming.md): Jane Street summary argues that formal methods can reduce review burden for agent-generated code and give agents better feedback.
 - [Formal Methods and the Future of Programming](../Inbox/2026-06-14--formal-methods-and-the-future-of-programming.md): Jane Street content cites the seL4 verification cost baseline of 25 person-years for 8,700 lines of C.
 - [Formal Methods and the Future of Programming](../Inbox/2026-06-14--formal-methods-and-the-future-of-programming.md): Jane Street content describes agent-generated code missing codebase invariants and creating verification work for reviewers.

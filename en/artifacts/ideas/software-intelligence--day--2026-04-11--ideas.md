@@ -35,7 +35,7 @@ Repository maintainers can add an architecture descriptor as a first-class file 
 
 The near-term user is the team already running Claude Code, Cursor, or similar tools on a medium-sized codebase where agents spend too many turns on grep, file search, and module reading. The cheap check is simple: compare explore/edit ratios and tool-call counts on a fixed set of code localization and patch tasks before and after adding the descriptor. The format question looks secondary for model performance. The paper reports similar comprehension across S-expression, JSON, YAML, and Markdown, while JSON had the lowest silent corruption in error injection tests and S-expressions caught structural completeness errors more reliably. That points to an adoption path where teams pick the format that best fits their tooling and validation needs, then enforce it with schema checks in CI.
 
-### Evidence
+### Sources
 - [Formal Architecture Descriptors as Navigation Primitives for AI Coding Agents](../Inbox/2026-04-11--formal-architecture-descriptors-as-navigation-primitives-for-ai-coding-agents.md): Architecture descriptors reduced navigation steps and an auto-generated descriptor improved task accuracy.
 - [Formal Architecture Descriptors as Navigation Primitives for AI Coding Agents](../Inbox/2026-04-11--formal-architecture-descriptors-as-navigation-primitives-for-ai-coding-agents.md): The paper frames codebase exploration overhead as the operational pain for coding agents.
 
@@ -44,7 +44,7 @@ Agent builders now have enough evidence to move long-session memory control out 
 
 The reported gains are large enough to support a build decision. Across four workload families and six token budgets, ClawVM reduced mean policy-controllable faults from 67.8 in a retrieval baseline and 1.5 in a compaction-plus-retrieval baseline to zero when the minimum-fidelity set fit in budget. On 12 real traces and 30 task replays, it also reported zero policy-controllable faults and 100% success at the tightest budget, with median policy overhead under 50 microseconds per turn. A practical first deployment would target coding agents that keep plans, constraints, evidence, and user preferences across long sessions. The first test is whether typed memory pages cut duplicate tool calls, lost-plan incidents, and reset failures on your own traces without pushing latency high enough for users to notice.
 
-### Evidence
+### Sources
 - [ClawVM: Harness-Managed Virtual Memory for Stateful Tool-Using LLM Agents](../Inbox/2026-04-11--clawvm-harness-managed-virtual-memory-for-stateful-tool-using-llm-agents.md): ClawVM reports zero policy-controllable faults under fit-to-budget conditions and describes the typed-page memory policy.
 - [ClawVM: Harness-Managed Virtual Memory for Stateful Tool-Using LLM Agents](../Inbox/2026-04-11--clawvm-harness-managed-virtual-memory-for-stateful-tool-using-llm-agents.md): The abstract states that harness-managed residency and durability are the enforcement point for long-running tool-using agents.
 
@@ -53,6 +53,6 @@ Database teams working on Apache DataFusion can trial an LLM-assisted physical-p
 
 The main case study moved a `d_year=2001` filter earlier in the plan, cutting a sales table from 15.1 million rows to 2.9 million before later joins. That run reported a 4.78x speedup, hash-table build time dropping from 10.16 seconds to 0.41 seconds, and build memory falling from 3.3 GB to 411 MB. Median gains on generated TPC-H and TPC-DS workloads were smaller, around 1.1x to 1.2x, so this fits best as a targeted tuning pass for complex OLAP queries where cardinality estimation is weak. A cheap validation path is to run the patch loop offline on a saved set of bad plans, require semantic equivalence through execution, and log which operator edits recur often enough to harden into native optimizer rules.
 
-### Evidence
+### Sources
 - [AI for Systems: Using LLMs to Optimize Database Query Execution](../Inbox/2026-04-11--ai-for-systems-using-llms-to-optimize-database-query-execution.md): The summary gives the JSON Patch mechanism and the measured speed and memory improvements in Apache DataFusion.
 - [AI for Systems: Using LLMs to Optimize Database Query Execution](../Inbox/2026-04-11--ai-for-systems-using-llms-to-optimize-database-query-execution.md): The content describes DBPlanBench exposing compact physical plans to the LLM because native plans are too large to reason over directly.

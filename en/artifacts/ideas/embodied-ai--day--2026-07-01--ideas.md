@@ -43,7 +43,7 @@ Robot teams can add a pre-release regression stage that runs each candidate VLA 
 
 A practical first version can start with the team’s own held-out tasks: replay policy actions through a learned video model, score progress per rollout, and compare the resulting rank order with a small weekly batch of real robot trials. The system should log world-model artifacts separately, since RoboWorld’s own design uses wrist-view checks to detect generated-video failures. The value is release triage: catching policy regressions across objects, camera views, and task variants before using scarce robot time.
 
-### Evidence
+### Sources
 - [RoboWorld: Fast and Reliable Neural Simulators for Generalist Robot Policy Evaluation](../Inbox/2026-07-01--roboworld-fast-and-reliable-neural-simulators-for-generalist-robot-policy-evaluation.md): RoboWorld reports closed-loop generated rollouts, task-progress VLM scoring, 4,186 rollouts, and strong agreement with RoboArena real-world policy rankings.
 - [RoboWorld: Fast and Reliable Neural Simulators for Generalist Robot Policy Evaluation](../Inbox/2026-07-01--roboworld-fast-and-reliable-neural-simulators-for-generalist-robot-policy-evaluation.md): The paper describes long-horizon world-model artifacts, slow inference, and the task-progress-aware VLM judge used in the evaluation pipeline.
 
@@ -52,7 +52,7 @@ Factories running multiple robots should test a shared GPU pool with per-task se
 
 The adoption test is straightforward for a pilot cell with several robots or replayed robot observations. Profile each model component, set latency and call-rate targets that affect task progress, and compare SLO-qualified action throughput against the current one-GPU-per-robot or one-server-per-robot setup. ROSA reports up to 12.06× higher SLO-qualified factory productivity than dedicated serving baselines on eight H200 GPUs with up to 64 virtual robots, and up to 2.44× over shared-server baselines without its scheduler. The main workflow change is treating model inference as a fleet scheduling problem tied to robot action rate, retry rules, and safe fallback behavior.
 
-### Evidence
+### Sources
 - [ROSA: A Robotics Foundation Model Serving System for Robot Factories](../Inbox/2026-07-01--rosa-a-robotics-foundation-model-serving-system-for-robot-factories.md): ROSA specifies shared GPU-pool serving, task files with SLOs and fallback actions, and reported productivity gains over dedicated and shared-server baselines.
 - [ROSA: A Robotics Foundation Model Serving System for Robot Factories](../Inbox/2026-07-01--rosa-a-robotics-foundation-model-serving-system-for-robot-factories.md): The paper’s abstract describes shared GPU-pool serving and multi-model robotics pipelines for factory deployments.
 
@@ -61,6 +61,6 @@ Teams using flow-matching VLA policies can add a safety check inside decoding th
 
 This is a testable safety layer for cluttered manipulation tasks where single-step filters react too late. A cheap check is to replay failed or near-collision episodes through the policy, record predicted clearances over the whole action chunk, and measure collision avoidance, task success, and extra execution time. On SafeLIBERO, the method reports 82.81% collision avoidance and 81.62% task success, compared with 18.69% and 50.88% for unguided π0.5. It also runs slower, with 299.97 average execution time steps versus 278.24 for unguided π0.5, so deployment should set task-specific limits on when the solver is allowed to intervene.
 
-### Evidence
+### Sources
 - [Neuro-Symbolic Safety Guidance for Vision-Language-Action Models via Constrained Flow Matching](../Inbox/2026-07-01--neuro-symbolic-safety-guidance-for-vision-language-action-models-via-constrained-flow-matching.md): The paper reports trajectory-level constrained flow matching, SafeLIBERO collision avoidance and task success gains, and slower execution.
 - [Neuro-Symbolic Safety Guidance for Vision-Language-Action Models via Constrained Flow Matching](../Inbox/2026-07-01--neuro-symbolic-safety-guidance-for-vision-language-action-models-via-constrained-flow-matching.md): The paper explains why post-hoc single-action correction can miss trajectory-level violations in VLA decoding.

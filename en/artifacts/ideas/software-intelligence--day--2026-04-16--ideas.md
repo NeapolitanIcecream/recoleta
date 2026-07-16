@@ -35,7 +35,7 @@ Repository-scale coding agents now justify a separate trajectory compression lay
 
 That points to a buildable product change for teams already running multiple coding-agent attempts on the same ticket: store each run as a compact diagnosis-and-fix summary, rank summaries before ranking patches, and feed the best few summaries into a clean retry in a reset environment. The user is the engineering org that already pays for parallel attempts and wants better pass rates without simply increasing sample count. A cheap validation check is to run this layer on a fixed internal bug set with the current agent, compare patch success and average steps against plain best-of-N sampling, and inspect whether summary quality predicts final success strongly enough to justify the extra orchestration.
 
-### Evidence
+### Sources
 - [Scaling Test-Time Compute for Agentic Coding](../Inbox/2026-04-16--scaling-test-time-compute-for-agentic-coding.md): Structured summaries, RTV, and refinement are the core mechanism, with benchmark gains on SWE-Bench Verified and Terminal-Bench v2.0.
 - [Scaling Test-Time Compute for Agentic Coding](../Inbox/2026-04-16--scaling-test-time-compute-for-agentic-coding.md): The paper text confirms the headline gains for Claude-4.5-Opus and Gemini-3.1-Pro in the full PDR+RTV setup.
 
@@ -44,7 +44,7 @@ Coding agents that use self-consistency now have enough evidence for a runtime b
 
 This is concrete enough for an adoption change in teams that already run open-weight coding agents locally and keep a paid frontier model as backup. The missing support layer is not another agent loop. It is a controller attached to the run scheduler: read partial traces, score likely failure, kill low-value branches, and replay selected contexts on the stronger model before the full budget is spent. The first users are cost-sensitive internal developer tools teams. A cheap check is to log the first half of trajectories from an existing bug-fix agent, train a simple predictor on eventual success, and compare three policies on the same task set: finish everything on the small model, always escalate, or escalate only when the predictor flags likely failure.
 
-### Evidence
+### Sources
 - [Atropos: Improving Cost-Benefit Trade-off of LLM-based Agents under Self-Consistency with Early Termination and Model Hotswap](../Inbox/2026-04-16--atropos-improving-cost-benefit-trade-off-of-llm-based-agents-under-self-consistency-with-early-termination-and-model-hotswap.md): The summary gives the midpoint prediction quality, salvage rate, and cost-performance trade-off across three software engineering agents.
 - [Atropos: Improving Cost-Benefit Trade-off of LLM-based Agents under Self-Consistency with Early Termination and Model Hotswap](../Inbox/2026-04-16--atropos-improving-cost-benefit-trade-off-of-llm-based-agents-under-self-consistency-with-early-termination-and-model-hotswap.md): The abstract text confirms midpoint prediction at 0.85 accuracy, hotswap rescue up to 27.57%, and 23.9% cost for 74.35% of closed-model performance.
 
@@ -53,6 +53,6 @@ Teams evaluating coding agents for production operations now need a benchmark la
 
 The practical change is an evaluation workflow, not a model claim. Any company testing agents for SRE, internal tooling, or production maintenance should add a control suite that pairs ordinary work tickets with misuse side tasks in the same environment, then measure both task completion and detection under an explicit alert budget. The first users are platform and security teams deciding whether an agent can touch live systems. A cheap check is to take one internal staging environment, define a small set of legitimate ops tasks plus a few realistic misuse tasks that use the same credentials and network paths, and score both the agent and the monitor together rather than reviewing them separately.
 
-### Evidence
+### Sources
 - [LinuxArena: A Control Setting for AI Agents in Live Production Software Environments](../Inbox/2026-04-16--linuxarena-a-control-setting-for-ai-agents-in-live-production-software-environments.md): The summary provides the benchmark design, task counts, overlap between useful work and sabotage, and the monitor-evasion result.
 - [LinuxArena: A Control Setting for AI Agents in Live Production Software Environments](../Inbox/2026-04-16--linuxarena-a-control-setting-for-ai-agents-in-live-production-software-environments.md): The abstract text confirms 20 environments, 1,671 main tasks, 184 side tasks, and about 23% undetected sabotage success against a GPT-5-nano monitor at 1% false positive rate.

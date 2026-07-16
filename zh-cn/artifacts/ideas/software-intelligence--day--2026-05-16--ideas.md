@@ -27,7 +27,7 @@ language_code: zh-CN
 
 # 受控的代码代理运作
 
-## Summary
+## 摘要
 代码代理已经适合在工程工作流里做更窄的运行测试：固定预算的验收运行、安装前的包名检查，以及与 token 支出挂钩的受限代码编辑试点。共同点是对代理的动作、产出和成本做可测的控制。
 
 ## Repository acceptance runs for code agents with time limits and hidden checks
@@ -37,7 +37,7 @@ language_code: zh-CN
 
 一个可操作的内部版本可以先从一个团队的 10 到 20 个重复性工作开始：依赖升级、修复失败测试、小型特性开关、数据管道补丁，或模型训练改进。验收规则要足够简单，能直接放进 CI。若代理只通过可见检查、做了大范围修改，或为了完成小任务花费过多，团队应在进入生产评审队列前就看到这一点。
 
-### Evidence
+### 资料来源
 - [1GC-7RC: One Graphic Card -- Seven Research Challenges! How Good Are AI Agents at Doing Your Job?](../Inbox/2026-05-16--1gc-7rc-one-graphic-card-seven-research-challenges-how-good-are-ai-agents-at-doing-your-job.md): 1GC-7RC describes fixed-budget ML coding-agent tasks with locked preparation, no internet, one A100 GPU, deterministic metrics, and repeated runs.
 - [AgentKernelArena: Generalization-Aware Benchmarking of GPU Kernel Optimization Agents](../Inbox/2026-05-16--agentkernelarena-generalization-aware-benchmarking-of-gpu-kernel-optimization-agents.md): AgentKernelArena uses an isolated workspace and gated compilation, correctness, timing, and unseen-shape evaluation for GPU-kernel agents.
 - [TOBench: A Task-Oriented Omni-Modal Benchmark for Real-World Tool-Using Agents](../Inbox/2026-05-16--tobench-a-task-oriented-omni-modal-benchmark-for-real-world-tool-using-agents.md): TOBench provides executable tool-use tasks with task-specific verifiers and reports a large gap between current agents and humans.
@@ -49,7 +49,7 @@ language_code: zh-CN
 
 这可以作为一个很小的 CI 或 pre-commit 增补，失败条件也很清楚：先阻止未知包名，直到人工确认注册表条目、所有者、注册时长，以及加入它的理由。
 
-### Evidence
+### 资料来源
 - [The Range Shrinks, the Threat Remains: Re-evaluating LLM Package Hallucinations on the 2026 Frontier-Model Cohort](../Inbox/2026-05-16--the-range-shrinks-the-threat-remains-re-evaluating-llm-package-hallucinations-on-the-2026-frontier-model-cohort.md): The package-hallucination study reports 4.62% to 6.10% hallucination rates across five code-capable models and identifies 127 nonexistent names shared by all five.
 - [The Range Shrinks, the Threat Remains: Re-evaluating LLM Package Hallucinations on the 2026 Frontier-Model Cohort](../Inbox/2026-05-16--the-range-shrinks-the-threat-remains-re-evaluating-llm-package-hallucinations-on-the-2026-frontier-model-cohort.md): The paper frames nonexistent package suggestions in install commands and imports as a slopsquatting attack surface for PyPI and npm.
 
@@ -60,7 +60,7 @@ language_code: zh-CN
 
 这个测试要保持范围收紧：选一个仓库，把常见补丁任务转到受限操作上，看看代理是否还会通读整个文件并产出大范围补丁。如果 token 支出下降，而且审查失败没有增加，团队就得到了一条可以直接用于代理会话的编辑策略。
 
-### Evidence
+### 资料来源
 - [Token spend breaks budgets – what next?](../Inbox/2026-05-16--token-spend-breaks-budgets-what-next.md): The token-spend report gives concrete examples of fast-growing coding-agent costs and savings from changing default models.
 - [Ane: CLI editor that uses LSPs to let agents explore/edit code with fewer tokens](../Inbox/2026-05-16--ane-cli-editor-that-uses-lsps-to-let-agents-explore-edit-code-with-fewer-tokens.md): The ane summary describes LSP-backed headless commands for narrow reads and edits, with unified diffs for agent use.
 - [Ane: CLI editor that uses LSPs to let agents explore/edit code with fewer tokens](../Inbox/2026-05-16--ane-cli-editor-that-uses-lsps-to-let-agents-explore-edit-code-with-fewer-tokens.md): The source text describes ane exec, language-server integration, minimal token usage, and support for Rust, Go, TypeScript/JavaScript, and Python.

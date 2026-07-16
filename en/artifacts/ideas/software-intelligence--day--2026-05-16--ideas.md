@@ -41,7 +41,7 @@ The recent benchmarks point to the same operating pattern. 1GC-7RC gives agents 
 
 A practical internal version can start with 10 to 20 recurring jobs from one team: dependency upgrades, failing-test fixes, small feature flags, data-pipeline patches, or model-training improvements. The acceptance rule should be simple enough to run in CI. If an agent passes only the visible checks, makes broad edits, or spends heavily to finish small tasks, the team learns that before it reaches production review queues.
 
-### Evidence
+### Sources
 - [1GC-7RC: One Graphic Card -- Seven Research Challenges! How Good Are AI Agents at Doing Your Job?](../Inbox/2026-05-16--1gc-7rc-one-graphic-card-seven-research-challenges-how-good-are-ai-agents-at-doing-your-job.md): 1GC-7RC describes fixed-budget ML coding-agent tasks with locked preparation, no internet, one A100 GPU, deterministic metrics, and repeated runs.
 - [AgentKernelArena: Generalization-Aware Benchmarking of GPU Kernel Optimization Agents](../Inbox/2026-05-16--agentkernelarena-generalization-aware-benchmarking-of-gpu-kernel-optimization-agents.md): AgentKernelArena uses an isolated workspace and gated compilation, correctness, timing, and unseen-shape evaluation for GPU-kernel agents.
 - [TOBench: A Task-Oriented Omni-Modal Benchmark for Real-World Tool-Using Agents](../Inbox/2026-05-16--tobench-a-task-oriented-omni-modal-benchmark-for-real-world-tool-using-agents.md): TOBench provides executable tool-use tasks with task-specific verifiers and reports a large gap between current agents and humans.
@@ -53,7 +53,7 @@ The reason is concrete supply-chain exposure. A replication across Claude Sonnet
 
 This is a small CI or pre-commit addition with a clear failure mode: block unknown package names until a human confirms the registry entry, owner, age, and reason for adding it.
 
-### Evidence
+### Sources
 - [The Range Shrinks, the Threat Remains: Re-evaluating LLM Package Hallucinations on the 2026 Frontier-Model Cohort](../Inbox/2026-05-16--the-range-shrinks-the-threat-remains-re-evaluating-llm-package-hallucinations-on-the-2026-frontier-model-cohort.md): The package-hallucination study reports 4.62% to 6.10% hallucination rates across five code-capable models and identifies 127 nonexistent names shared by all five.
 - [The Range Shrinks, the Threat Remains: Re-evaluating LLM Package Hallucinations on the 2026 Frontier-Model Cohort](../Inbox/2026-05-16--the-range-shrinks-the-threat-remains-re-evaluating-llm-package-hallucinations-on-the-2026-frontier-model-cohort.md): The paper frames nonexistent package suggestions in install commands and imports as a slopsquatting attack surface for PyPI and npm.
 
@@ -64,7 +64,7 @@ The cost pressure is already visible. The Pragmatic Engineer report cites compan
 
 The useful test is narrow: pick one repository, route common patch tasks through scoped operations, and measure whether agents stop reading whole files and producing broad patches. If token spend falls without increasing review failures, the team has a concrete editing policy to adopt for agent sessions.
 
-### Evidence
+### Sources
 - [Token spend breaks budgets – what next?](../Inbox/2026-05-16--token-spend-breaks-budgets-what-next.md): The token-spend report gives concrete examples of fast-growing coding-agent costs and savings from changing default models.
 - [Ane: CLI editor that uses LSPs to let agents explore/edit code with fewer tokens](../Inbox/2026-05-16--ane-cli-editor-that-uses-lsps-to-let-agents-explore-edit-code-with-fewer-tokens.md): The ane summary describes LSP-backed headless commands for narrow reads and edits, with unified diffs for agent use.
 - [Ane: CLI editor that uses LSPs to let agents explore/edit code with fewer tokens](../Inbox/2026-05-16--ane-cli-editor-that-uses-lsps-to-let-agents-explore-edit-code-with-fewer-tokens.md): The source text describes ane exec, language-server integration, minimal token usage, and support for Rust, Go, TypeScript/JavaScript, and Python.

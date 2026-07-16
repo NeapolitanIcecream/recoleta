@@ -36,14 +36,14 @@ pass_kind: trend_synthesis
 ## Overview
 The period is dominated by robotics work around Vision-Language-Action (VLA) policies. The strongest pattern is practical control pressure: AHEAD predicts future visual tokens for moving objects, Dex-BEV adds 3D alignment, and RoboSemanticBench shows that grasping skill can hide weak semantic choice.
 
-## Clusters
+## Findings
 
 ### Predictive world models for moving scenes and data growth
 Several papers treat prediction as the missing control layer for robot policies. AHEAD wraps a frozen 7B OpenVLA model with a 4.9M-parameter latent world model that forecasts task-relevant future visual tokens. Its reported gains are largest when object motion creates a timing problem: 79% to 97% success across 20 dynamic simulation scenarios, and 19/30 projectile catches on a physical xArm 7 where every listed baseline scores 0/30.
 
 RoboDream uses generation for a different bottleneck: demonstration supply. It anchors video diffusion to rendered robot-only motion, then adds objects and scenes. Mixed real and generated training data reaches 62.5% average real-world success across four manipulation tasks, compared with 36.3% for the Real-50 baseline. Scaling mixed data reaches 72.5% to 73.75% in the reported setting.
 
-#### Evidence
+#### Sources
 - [Intercepting the Future: Latent-Space Predictive World Model for Dynamic VLA Manipulation](../Inbox/2026-06-01--intercepting-the-future-latent-space-predictive-world-model-for-dynamic-vla-manipulation.md): AHEAD method and dynamic manipulation results.
 - [RoboDream: Compositional World Models for Scalable Robot Data Synthesis](../Inbox/2026-06-01--robodream-compositional-world-models-for-scalable-robot-data-synthesis.md): RoboDream data synthesis method and real-world policy results.
 
@@ -52,7 +52,7 @@ Dexterity-BEV and Lie Diffuser Actor both make pose geometry explicit in the pol
 
 Lie Diffuser Actor keeps diffusion pose generation on SE(3), the rigid-body pose group, by adding noise in tangent space and mapping samples back with the exponential map. On CALVIN ABCD→D, it raises average task length to 3.584 versus 3.288 for 3D Diffuser Actor, and improves OpenVLA-OFT LIBERO Long success from 92.20% to 94.13% in a cross-architecture test.
 
-#### Evidence
+#### Sources
 - [Dexterity-BEV: Aligning 3D World and Actions for Generalizable Robot Policies Learning](../Inbox/2026-06-01--dexterity-bev-aligning-3d-world-and-actions-for-generalizable-robot-policies-learning.md): Dex-BEV 3D alignment method and LIBERO/RoboTwin results.
 - [The Lie We Tell: Correcting the Euclidean Fallacy in Vision Language Action Policies via Score Matching on Tangent Space](../Inbox/2026-06-01--the-lie-we-tell-correcting-the-euclidean-fallacy-in-vision-language-action-policies-via-score-matching-on-tangent-space.md): Lie Diffuser Actor SE(3) diffusion method and benchmark results.
 
@@ -61,7 +61,7 @@ RoboSemanticBench separates grasping from semantic target choice. It turns math,
 
 FATE-VLA searches for failure-prone manipulation scenes using adaptive test generation. On GR00T-N1.6, the best variant raises the discovered failure rate to 65.3%, compared with 35.6% under random testing. On EO-1, failure discovery reaches 60.0%, compared with 36.7% under random testing. These results make the evaluation target more specific: find clustered failures across object, pose, and instruction conditions.
 
-#### Evidence
+#### Sources
 - [RoboSemanticBench: Diagnosing Semantic Grounding in Action Prediction for VLA Models](../Inbox/2026-06-01--robosemanticbench-diagnosing-semantic-grounding-in-action-prediction-for-vla-models.md): RoboSemanticBench benchmark design and semantic grounding scores.
 - [FATE-VLA:Failue-aware test generation for vision-language-action models](../Inbox/2026-06-01--fate-vla-failue-aware-test-generation-for-vision-language-action-models.md): FATE-VLA adaptive failure discovery method and results.
 
@@ -70,6 +70,6 @@ Two papers focus on making policy improvement less wasteful. EG-GRPO trains an a
 
 CSIL++ improves pi-0.5 on sparse simulated manipulation tasks with a learned coherent reward derived from demonstrations. The ensemble variant reaches at least 90% success on five of six tasks, including Threading at 0.92 versus 0.14 for the pi-0.5 baseline. The evidence is simulation-only in the available excerpt, but the gains show a clear route for improving large behavior models with fewer hand-written rewards.
 
-#### Evidence
+#### Sources
 - [Towards Precise Intent-Aligned VLA Aerial Navigation via Expert-Guided GRPO](../Inbox/2026-06-01--towards-precise-intent-aligned-vla-aerial-navigation-via-expert-guided-grpo.md): EG-GRPO training setup and aerial navigation results.
 - [Coherent Off-Policy Improvement of Large Behavior Models with Learned Rewards](../Inbox/2026-06-01--coherent-off-policy-improvement-of-large-behavior-models-with-learned-rewards.md): CSIL++ learned reward method and simulated manipulation results.

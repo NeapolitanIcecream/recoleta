@@ -39,7 +39,7 @@ A coding-agent repair loop can give the model a ranked set of likely faulty line
 
 The workflow fits teams already collecting failed agent patches in CI. Store the failing program, test output, token probabilities if available, ranked suspicious lines, generated candidates, and test outcomes. Add a small behavior check for proposed edits: Neural Change Prediction reports that mutation-output pairs can train a model to predict the likely effect of a code change, with fine-tuned GPT-4.1 reaching 95% accuracy for output-change prediction on single Python mutations. A pilot can replay recent failed generations and compare execution-only repair against line-ranked candidate search on pass rate and review minutes per accepted fix.
 
-### Evidence
+### Sources
 - [FLARE: Fine-Grained Diagnostic Feedback for LLM Code Refinement](../Inbox/2026-06-02--flare-fine-grained-diagnostic-feedback-for-llm-code-refinement.md): FLARE reports line-level suspiciousness, top-k repair search, Pass@1 gains, and localization accuracy.
 - [FLARE: Fine-Grained Diagnostic Feedback for LLM Code Refinement](../Inbox/2026-06-02--flare-fine-grained-diagnostic-feedback-for-llm-code-refinement.md): The paper abstract states that top-k suspicious-region search improves iterative LLM code refinement.
 - [Neural Change Prediction: Relating Software Changes to Their Effects and Vice Versa](../Inbox/2026-06-02--neural-change-prediction-relating-software-changes-to-their-effects-and-vice-versa.md): Neural Change Prediction reports training on mutation-output pairs and high accuracy for predicting behavior effects of code changes.
@@ -49,7 +49,7 @@ Multi-agent coding runs should expose task dependencies before implementation st
 
 This is most useful for teams letting agents open pull requests from larger tickets. The adoption change is to add a human planning checkpoint before agents code, then require a scored code gate after each task. The human role is specific: approve task splits, resolve ambiguous requirements, and review risky design choices. A broader synthesis cites 456,535 agent-authored pull requests across 61,453 repositories, while also reporting lower merge rates and fewer structural changes for agent-authored pull requests. That pattern supports adding gates around agent work where mergeability and design fit matter.
 
-### Evidence
+### Sources
 - [SPOQ: Specialist Orchestrated Queuing for Multi-Agent Software Engineering](../Inbox/2026-06-02--spoq-specialist-orchestrated-queuing-for-multi-agent-software-engineering.md): SPOQ describes DAG task decomposition, parallel waves, validation gates, human participation, and reported speed and pass-rate results.
 - [SPOQ: Specialist Orchestrated Queuing for Multi-Agent Software Engineering](../Inbox/2026-06-02--spoq-specialist-orchestrated-queuing-for-multi-agent-software-engineering.md): The abstract details 1.4x speedup on a 2-slot backend, dual validation gains, and deployment-scale results.
 - [Human-AI Collaboration and the Transformation of Software Engineering Work](../Inbox/2026-06-02--human-ai-collaboration-and-the-transformation-of-software-engineering-work.md): The synthesis cites large-scale agent-authored pull request evidence and identifies human specification, verification, and governance needs.
@@ -59,7 +59,7 @@ Terminal-agent training data should be selected by whether the trace shows usefu
 
 A training team can turn this into a trace gate. Log file inspections, commands, test runs, error messages, and the path or state each command depends on. Score each successful trajectory for Targeted Observation Ratio, keep high-TOR traces at fixed data budgets, and flag traces where an action has no visible supporting observation. EvoTrainer points in the same operational direction for long-horizon software agents: its trainer reads rollouts, logs, configs, code diffs, and metrics, then updates diagnostics when current evidence cannot explain outcomes. The cheap validation is an SFT run on matched successful traces split by TOR and measured on Terminal-Bench-style tasks.
 
-### Evidence
+### Sources
 - [What Makes Interaction Trajectories Effective for Training Terminal Agents?](../Inbox/2026-06-02--what-makes-interaction-trajectories-effective-for-training-terminal-agents.md): The terminal-agent study defines Targeted Observation Ratio and reports stronger student performance from traces with inspect-act-verify behavior.
 - [What Makes Interaction Trajectories Effective for Training Terminal Agents?](../Inbox/2026-06-02--what-makes-interaction-trajectories-effective-for-training-terminal-agents.md): The abstract describes environment-grounded supervision and data efficiency from Terminal-Lego trajectories.
 - [EvoTrainer: Co-Evolving LLM Policies and Training Harnesses for Autonomous Agentic Reinforcement Learning](../Inbox/2026-06-02--evotrainer-co-evolving-llm-policies-and-training-harnesses-for-autonomous-agentic-reinforcement-learning.md): EvoTrainer describes training-side diagnostics over rollouts, logs, configs, and code diffs for agentic RL decisions.

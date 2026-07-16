@@ -37,7 +37,7 @@ Latency should be measured at the replanning boundary, not only as model through
 
 The cheap adoption test is a replay or bench run that logs three numbers per task: full-path latency, draft-prefix acceptance rate, and success after phase-aware fallback. The paper reports LIBERO task-level latency falling from 58.0 ms for Torch-π0 to 19.1 ms for FLASH+Triton-π0, with average success moving from 94.1% to 93.8%. It also reports conveyor-belt sorting success up to 15 m/min where compared methods fail. That is enough evidence for robotics teams with moving objects, short pick windows, or stale open-loop chunks to prototype a verification gate before changing task policies.
 
-### Evidence
+### Sources
 - [Realtime-VLA FLASH: Speculative Inference Framework for Diffusion-based VLAs](../Inbox/2026-05-13--realtime-vla-flash-speculative-inference-framework-for-diffusion-based-vlas.md): Documents the draft model, parallel verification, phase-aware fallback, LIBERO latency and success numbers, and conveyor-belt result.
 
 ## Critical-timestep sampling and loss weighting in VLA training pipelines
@@ -45,7 +45,7 @@ Robot demonstration pipelines should expose manipulation-critical timesteps as a
 
 This is a data and loss change, so it can be tested before any backbone change. FrameSkip keeps 20% of unique trajectory frames in its main setting and raises macro-average success across RoboCasa-GR1, SimplerEnv, and LIBERO from 66.50% to 76.15%. AttenA+ applies velocity-based weights to existing losses and raises OpenVLA-OFT on Libero from 97.10% to 98.60%, with the largest reported split gain on long-horizon tasks. A useful pilot would compare the current sampler against a pruned sampler that preserves contact, closure, release, and top action-change frames, then add velocity-weighted loss only if failures still cluster around last-centimeter motions.
 
-### Evidence
+### Sources
 - [FrameSkip: Learning from Fewer but More Informative Frames in VLA Training](../Inbox/2026-05-13--frameskip-learning-from-fewer-but-more-informative-frames-in-vla-training.md): Gives the frame scoring method, 20% retention setting, unchanged model path, and benchmark gains.
 - [AttenA+: Rectifying Action Inequality in Robotic Foundation Models](../Inbox/2026-05-13--attena-rectifying-action-inequality-in-robotic-foundation-models.md): Gives the velocity-based loss weighting method and Libero/RoboTwin success gains.
 
@@ -54,5 +54,5 @@ OOD visual testing for VLA manipulation can be tied to action distributions duri
 
 This is useful for teams seeing failures from lighting, table texture, camera viewpoint, clutter, or distractors after a policy works in a clean setup. The deployment policy keeps the same inference architecture because the auxiliary losses are training-only. On ManiSkill3 pick-and-place, OpenVLA average OOD success improves from 77.90% with PPO to 87.00% with PAIR-VLA across table texture, lighting, target pose, and clutter tests. π0.5 improves from 46.25% to 62.87%. A small validation suite with 128 episodes per visual condition would show whether the same failure pattern exists in a lab’s own scenes.
 
-### Evidence
+### Sources
 - [What to Ignore, What to React: Visually Robust RL Fine-Tuning of VLA Models](../Inbox/2026-05-13--what-to-ignore-what-to-react-visually-robust-rl-fine-tuning-of-vla-models.md): Documents task-preserving and task-altering visual pairs, KL losses during PPO, unchanged inference architecture, and OOD success gains.

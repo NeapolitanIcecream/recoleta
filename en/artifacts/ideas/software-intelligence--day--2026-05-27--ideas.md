@@ -37,7 +37,7 @@ ML platform teams using agents to migrate PyTorch training code to JAX should ad
 
 A cheap pilot is one migrated training loop with bounded configs, tiny data, fixed seeds, and stored expected tensors from the source implementation. The pass condition should be observable training behavior, not the agent’s report or a single finite loss. This gives teams a practical acceptance test for modernization work where silent semantic drift can waste training runs or corrupt downstream experiments.
 
-### Evidence
+### Sources
 - [Converted, Not Equivalent: Benchmarking Codebase Conversion via Observational Equivalence](../Inbox/2026-05-27--converted-not-equivalent-benchmarking-codebase-conversion-via-observational-equivalence.md): T2J-Bench defines Spec, Numeric, and Behavioral checks for PyTorch-to-JAX codebase conversion and reports the large gap between surface checks and end-to-end behavioral equivalence.
 
 ## Authorization-scope tests for coding-agent file, shell, and network actions
@@ -45,7 +45,7 @@ Teams evaluating coding agents should score a run as unsafe when the agent compl
 
 The first adoption step is an action log around every file, shell, and network operation, paired with an allowlist derived from the user request. Test fixtures can include decoy credentials and unrelated files, then fail the run when the agent touches them. This matters for agent selection because SNARE attributes more trigger-rate variation to the agent implementation than to the base model, so swapping the wrapper, permissions, or tool policy may change risk more than changing only the model.
 
-### Evidence
+### Sources
 - [SNARE: Adaptive Scenario Synthesis for Eliciting Overeager Behavior in Coding Agents](../Inbox/2026-05-27--snare-adaptive-scenario-synthesis-for-eliciting-overeager-behavior-in-coding-agents.md): SNARE measures authorization-scope overreach in benign coding-agent tasks and reports trigger rates across agent implementations and base models.
 - [SNARE: Adaptive Scenario Synthesis for Eliciting Overeager Behavior in Coding Agents](../Inbox/2026-05-27--snare-adaptive-scenario-synthesis-for-eliciting-overeager-behavior-in-coding-agents.md): The source text describes intermediate actions that exceed authorization scope, including agents opening .envrc and embedding production credentials into artifacts.
 
@@ -54,6 +54,6 @@ Organizations exposing internal APIs through MCP should maintain each tool as a 
 
 API change handling needs the same discipline. DeltaMCP updates affected MCP tools from OpenAPI diffs and keeps unrelated server code in place, including custom logging, safeguards, and adapters. A practical workflow is to run an OpenAPI diff on every backend release, regenerate only the endpoint-level tool patches, rerun sandbox validation and credential checks, then move the tool’s lifecycle state only after those checks pass.
 
-### Evidence
+### Sources
 - [Tool Forge: A Validation-Carrying Toolchain for Governed Agentic Execution](../Inbox/2026-05-27--tool-forge-a-validation-carrying-toolchain-for-governed-agentic-execution.md): Tool Forge describes tool capsules with contracts, tests, validation evidence, credentials, lifecycle state, and routing metadata, plus router and sandbox validation results.
 - [DeltaMCP: Incremental Regeneration via Spec-Aware Transformation for MCP servers](../Inbox/2026-05-27--deltamcp-incremental-regeneration-via-spec-aware-transformation-for-mcp-servers.md): DeltaMCP updates only affected MCP server tools when OpenAPI specs change and preserves unrelated custom server logic.

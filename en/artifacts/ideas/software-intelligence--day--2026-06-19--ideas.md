@@ -37,7 +37,7 @@ Production agent teams can add a deterministic replay step to incident response 
 
 The first useful build is an adapter for one production agent that exports tool calls, customer or account state changes, and timestamps into a replayable log. Teams should test it on a small set of past incidents where the current database state hid what the agent saw at decision time. The public claim to copy is the deterministic audit path: no LLM calls, no embeddings, and the same inputs producing the same verdict. The missing measurement is whether the replay catches real stale-state failures faster than the team’s current trace and log review.
 
-### Evidence
+### Sources
 - [Show HN: StaleTrace – A temporal ledger that catches stale-state agent bugs](../Inbox/2026-06-19--show-hn-staletrace-a-temporal-ledger-that-catches-stale-state-agent-bugs.md): Summarizes StaleTrace’s temporal ledger design, input types, deterministic audit claim, and lack of benchmark results.
 - [Show HN: StaleTrace – A temporal ledger that catches stale-state agent bugs](../Inbox/2026-06-19--show-hn-staletrace-a-temporal-ledger-that-catches-stale-state-agent-bugs.md): Shows the product flow: feed tool calls and recorded facts, replay validity windows, surface stale or conflicting state, and generate an incident report.
 
@@ -46,7 +46,7 @@ Security teams can trial an agentic static audit as a release gate for code path
 
 A practical test is a two-week audit on significant releases before merge. Route only findings with code evidence into developer triage, then measure confirmed issue rate, duplicate rate, fix time, and overlap with the latest pentest or manual review. Aikido reports early users finding a median of about 25 issues per codebase and claims 70–80% coverage of what a full pentest surfaces at about one-tenth the cost, but the excerpt gives no public dataset or reproducible protocol. Treat the vendor numbers as a reason to run a controlled release-gate trial, with false positives and fix acceptance measured locally.
 
-### Evidence
+### Sources
 - [Aikido Code Audit](../Inbox/2026-06-19--aikido-code-audit.md): Summarizes the product claim, target vulnerability class, reported early-user numbers, and missing public evaluation protocol.
 - [Aikido Code Audit](../Inbox/2026-06-19--aikido-code-audit.md): Describes the intended workflow before significant releases, cross-file reference following, code evidence, and AutoFix pull request.
 - [Aikido Code Audit](../Inbox/2026-06-19--aikido-code-audit.md): Lists source-only coverage examples such as ReDoS, admin-only routes, multiple repos, feature-flagged paths, undeployed changes, and mobile apps.
@@ -56,7 +56,7 @@ Teams with high inference bills for document, email, and spreadsheet assistants 
 
 The build should be small: classify task type and difficulty, choose the model once at session start, log cost, latency, cache hit rate, and user correction rate, and run a blind review on a sample of final outputs. The session lock matters because mid-session model swaps can break prompt caches and change output behavior. The evidence also points to domain-tuned small models as candidates for specialized workloads, including MAI-Code-1-Flash at about 5B active parameters scoring 51.2% on SWE-Bench Pro versus 35.2% for Claude Haiku 4.5 while using up to 60% fewer tokens.
 
-### Evidence
+### Sources
 - [Knowledge workers don't need frontier models](../Inbox/2026-06-19--knowledge-workers-don-t-need-frontier-models.md): Summarizes the routing approach, GDPVal-AA scores, router overhead, session locking, and claimed cost and latency gains.
 - [Knowledge workers don't need frontier models](../Inbox/2026-06-19--knowledge-workers-don-t-need-frontier-models.md): Gives the GDPVal-AA setup, model choices, leaderboard context, and ELO comparison.
 - [Knowledge workers don't need frontier models](../Inbox/2026-06-19--knowledge-workers-don-t-need-frontier-models.md): Reports MAI-Code-1-Flash size, SWE-Bench Pro result, token reduction claim, and use inside GitHub Copilot’s auto-picker.

@@ -35,7 +35,7 @@ Build a contract-first repo generator for greenfield internal tools and small pr
 
 The first users are teams generating new multi-file services, admin tools, game prototypes, or migration scaffolds where cross-file consistency breaks more often than local syntax. A cheap test is simple: take ten greenfield tasks that currently require several rounds of agent repair, add a contract artifact that must be approved or auto-checked before code generation, and measure file-level consistency, rerun count, and elapsed time to a passing repo. The weak point is visible in the same evidence: this helps most when the job can be reduced to explicit interfaces and module boundaries. Tasks with dense policy logic or business-rule conflicts still need another control layer above the contract.
 
-### Evidence
+### Sources
 - [Contract-Coding: Towards Repo-Level Generation via Structured Symbolic Paradigm](../Inbox/2026-04-10--contract-coding-towards-repo-level-generation-via-structured-symbolic-paradigm.md): Repo-level results, benchmark comparisons, and runtime gains support a contract-first build for multi-file generation.
 - [Can Coding Agents Be General Agents?](../Inbox/2026-04-10--can-coding-agents-be-general-agents.md): The Odoo case shows where explicit structure still struggles once policy constraints and interdependent business decisions accumulate.
 
@@ -44,7 +44,7 @@ Add a security scoring layer to code generation and pair it with bounded editing
 
 That is enough to justify a narrow product build for teams shipping internal coding agents into codebases with routine security exposure: web handlers, auth flows, file operations, database access, and dependency glue. Zup's deployment paper gives the tool-side complement. Their internal agent relied on targeted string-replacement edits, layered shell restrictions, audit logging, and approval mode before broader autonomy. A practical rollout is to route high-risk files through a security-hardened model path, keep edits patch-based, and require approval for shell and write actions in the early phase. The cheap check is to replay a few hundred accepted agent tasks with security review labels and compare vulnerability findings, pass rate, and manual rework before expanding access.
 
-### Evidence
+### Sources
 - [DeepGuard: Secure Code Generation via Multi-Layer Semantic Aggregation](../Inbox/2026-04-10--deepguard-secure-code-generation-via-multi-layer-semantic-aggregation.md): Provides the concrete secure-code gain and the mechanism that preserves correctness while improving security.
 - [Building an Internal Coding Agent at Zup: Lessons and Open Questions](../Inbox/2026-04-10--building-an-internal-coding-agent-at-zup-lessons-and-open-questions.md): Shows the surrounding tool controls that make a security-hardened coding agent usable in production.
 
@@ -53,6 +53,6 @@ Put an explicit clarification gate in front of ambiguous coding tasks and score 
 
 The build here is straightforward: add a required blocker check before execution on tickets that touch unclear requirements, hidden policy choices, or incomplete repo context. The agent should surface candidate blockers, ask targeted questions, and pause when those questions remain unanswered. This also needs evaluation beyond pass/fail. Ask-F1, blocker recall, and question precision should sit next to task completion in internal scorecards. The nearby logging study points to the same operational problem from another angle. Agents miss non-functional expectations and humans do the cleanup later: in 58.4% of repositories, humans changed logging more often than agents, agents failed to comply with constructive logging requests 67% of the time, and humans handled 72.5% of post-generation logging repairs. Teams deploying agents into issue-to-PR workflows need a formal clarification step before coding, not only a chat box that the model rarely uses well.
 
-### Evidence
+### Sources
 - [HiL-Bench (Human-in-Loop Benchmark): Do Agents Know When to Ask for Help?](../Inbox/2026-04-10--hil-bench-human-in-loop-benchmark-do-agents-know-when-to-ask-for-help.md): Quantifies how badly agents perform when they must decide when to ask for clarification.
 - [Do AI Coding Agents Log Like Humans? An Empirical Study](../Inbox/2026-04-10--do-ai-coding-agents-log-like-humans-an-empirical-study.md): Shows a related failure in observability requirements where humans repair what agents omit or mis-handle.

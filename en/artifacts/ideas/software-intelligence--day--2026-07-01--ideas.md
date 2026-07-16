@@ -41,7 +41,7 @@ SWE-Doctor is the concrete reference point. It reports 75.7% average resolution 
 
 A team can test this without changing its whole development process. Run the wrapper on a recent set of closed bugs, compare patch acceptance, reviewer rework, and regression failures against the current agent path, and inspect whether the diagnosis packet points reviewers to the same files and runtime facts they used manually.
 
-### Evidence
+### Sources
 - [SWE-Doctor: Guiding Software Engineering Agents with Runtime Diagnosis from Multi-Faceted Bug Reproduction Tests](../Inbox/2026-07-01--swe-doctor-guiding-software-engineering-agents-with-runtime-diagnosis-from-multi-faceted-bug-reproduction-tests.md): Summarizes SWE-Doctor's workflow, preliminary BRT study, and reported SWE-bench results.
 - [SWE-Doctor: Guiding Software Engineering Agents with Runtime Diagnosis from Multi-Faceted Bug Reproduction Tests](../Inbox/2026-07-01--swe-doctor-guiding-software-engineering-agents-with-runtime-diagnosis-from-multi-faceted-bug-reproduction-tests.md): Confirms the multi-faceted BRT and runtime-grounded diagnosis method and the headline resolution rates.
 
@@ -52,7 +52,7 @@ Microsoft’s field study gives a practical measurement template. It tracked Cla
 
 Meta’s internal token controls show the cost pressure behind this workflow. The reported 73.7 trillion employee-consumed tokens in about 30 days led to a centralized AI Gateway dashboard, real-time spending alerts, and planned formal token budgets. A rollout team can start with a small version: weekly team views for token spend, active users, 14-day retention, merged PRs, review rework, and incidents linked to agent-authored changes.
 
-### Evidence
+### Sources
 - [Adoption and Impact of Command-Line AI Coding Agents: A Study of Microsoft's Early 2026 Rollout of Claude Code and GitHub Copilot CLI](../Inbox/2026-07-01--adoption-and-impact-of-command-line-ai-coding-agents-a-study-of-microsoft-s-early-2026-rollout-of-claude-code-and-github-copilot-cli.md): Provides Microsoft telemetry findings on trial, retention, social exposure, and roughly 24% more merged pull requests among adopters.
 - [Meta caps internal AI token spending](../Inbox/2026-07-01--meta-caps-internal-ai-token-spending.md): Describes Meta's token volume, planned AI Gateway dashboard, spending alerts, and token budgets.
 - [Adoption and Impact of Command-Line AI Coding Agents: A Study of Microsoft's Early 2026 Rollout of Claude Code and GitHub Copilot CLI](../Inbox/2026-07-01--adoption-and-impact-of-command-line-ai-coding-agents-a-study-of-microsoft-s-early-2026-rollout-of-claude-code-and-github-copilot-cli.md): Confirms the enterprise concern that token spend can reach millions annually and that pull requests were used as the output measure.
@@ -64,7 +64,7 @@ The Claude Desktop red-team report gives the operational boundary. Pentera Labs 
 
 Toolnexus shows why this boundary will keep expanding. A small Python runtime can load MCP servers, local skills, Python functions, HTTP endpoints, built-in `bash`, `read`, `write`, `edit`, and `apply_patch` tools, plus peer-agent cards through one interface. Teams adopting these runtimes should inventory command-capable tools, separate read-only and write/execute permissions, and log every tool call with the originating account setting, prompt, connector, and local approval event.
 
-### Evidence
+### Sources
 - [Red teamers turned Claude Desktop into a double agent to do their evil bidding](../Inbox/2026-07-01--red-teamers-turned-claude-desktop-into-a-double-agent-to-do-their-evil-bidding.md): Summarizes the Claude Desktop attack path through synced preferences and command-capable local tools.
 - [Red teamers turned Claude Desktop into a double agent to do their evil bidding](../Inbox/2026-07-01--red-teamers-turned-claude-desktop-into-a-double-agent-to-do-their-evil-bidding.md): Confirms the prerequisites of a compromised inbox and Claude Desktop installation, plus cross-device account sync.
 - [Show HN: Toolnexus for Python – MCP, agent skills,a2a for any LLM](../Inbox/2026-07-01--show-hn-toolnexus-for-python-mcp-agent-skills-a2a-for-any-llm.md): Lists the tool surfaces Toolnexus unifies, including MCP, local skills, HTTP endpoints, shell/file tools, metrics, and A2A agents.

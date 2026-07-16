@@ -37,7 +37,7 @@ Security teams should add a workflow check that traces whether attacker-controll
 
 JAW gives a concrete recipe for this check. It combines workflow path analysis, runtime prompt tracing with canary-marked inputs, capability checks, and payload evolution. In real GitHub Actions and n8n templates, it found 4,174 hijackable GitHub workflows and eight hijackable n8n templates, with reported impacts including credential leakage and arbitrary command execution. A first internal version can run on pull requests that change workflow YAML, reusable actions, n8n templates, or agent permissions, then block only the cases where untrusted prompt content and privileged tools meet in the same execution path.
 
-### Evidence
+### Sources
 - [Comment and Control: Hijacking Agentic Workflows via Context-Grounded Evolution](../Inbox/2026-05-11--comment-and-control-hijacking-agentic-workflows-via-context-grounded-evolution.md): JAW reports the workflow analysis method, the 4,174 hijackable GitHub workflows, eight n8n templates, and impacts such as credential leakage and command execution.
 - [Comment and Control: Hijacking Agentic Workflows via Context-Grounded Evolution](../Inbox/2026-05-11--comment-and-control-hijacking-agentic-workflows-via-context-grounded-evolution.md): The paper describes static path-feasibility analysis, dynamic prompt-provenance analysis, and capability analysis for end-to-end exploitation.
 
@@ -46,7 +46,7 @@ Coding-agent runners should record model calls, tool calls, file writes, and env
 
 Shepherd shows that this can be fast enough for live use. On Terminal-Bench 2.0 images up to 5.8 GB, it reports 134–143 ms forks, while full filesystem copy reaches 53,462 ms on the largest image. Replay also reaches about a 95% prompt-cache hit rate on Claude Haiku 4.5 across eight tasks. The same paper reports a live supervisor raising CooperBench pair-coding pass rate from 28.8% to 54.7%. A small adoption test is to wrap one internal coding-agent runner, record every filesystem and tool effect, and measure how often reviewers can repair a failed run by branching before the first wrong state change.
 
-### Evidence
+### Sources
 - [Shepherd: A Runtime Substrate Empowering Meta-Agents with a Formalized Execution Trace](../Inbox/2026-05-11--shepherd-a-runtime-substrate-empowering-meta-agents-with-a-formalized-execution-trace.md): Shepherd records agent execution as a typed Git-like trace and reports fork, replay, and supervision results.
 - [Shepherd: A Runtime Substrate Empowering Meta-Agents with a Formalized Execution Trace](../Inbox/2026-05-11--shepherd-a-runtime-substrate-empowering-meta-agents-with-a-formalized-execution-trace.md): The abstract describes cheap forking and replay of past agent states with prompt-cache reuse.
 
@@ -55,6 +55,6 @@ Teams exposing many tools through MCP should test agents against seeded stateful
 
 ComplexMCP is a useful template because it tests more than 300 tools across seven stateful sandboxes and uses rule-based comparison between the agent’s final nested environment state and the ground truth. The best reported model, Gemini-3-Flash, reaches 55.31% success, while humans using the same interface reach 93.61%. The failure modes are directly actionable for product tests: tool retrieval saturation, skipped environment checks, and failure rationalization after errors. A cheap check is to convert ten high-value customer workflows into seeded MCP tasks and fail releases when a model changes the wrong state or stops after a recoverable tool error.
 
-### Evidence
+### Sources
 - [ComplexMCP: Evaluation of LLM Agents in Dynamic, Interdependent, and Large-Scale Tool Sandbox](../Inbox/2026-05-11--complexmcp-evaluation-of-llm-agents-in-dynamic-interdependent-and-large-scale-tool-sandbox.md): ComplexMCP reports the MCP sandbox design, success rates for Gemini-3-Flash and humans, final-state evaluation, and failure modes.
 - [ComplexMCP: Evaluation of LLM Agents in Dynamic, Interdependent, and Large-Scale Tool Sandbox](../Inbox/2026-05-11--complexmcp-evaluation-of-llm-agents-in-dynamic-interdependent-and-large-scale-tool-sandbox.md): The abstract describes over 300 tools, seven stateful sandboxes, dynamic environment states, and unpredictable API failures.

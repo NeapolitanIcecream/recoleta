@@ -37,7 +37,7 @@ Repository-level coding agents need a retry controller that keeps explicit memor
 
 The practical build is a repository runner that logs each attempt as a durable artifact with test results, install logs, runtime errors, and a compact diagnosis record. Teams evaluating coding agents on internal scaffolding or greenfield service generation can test this cheaply by comparing three conditions on the same task set: single-shot generation, repeated attempts without memory, and repeated attempts with persistent attempt memory plus best-artifact fallback. If the win is real, later attempts should stop erasing earlier partial successes, and the system should recover more executables without paying for the same failures again.
 
-### Evidence
+### Sources
 - [Persistent Cross-Attempt State Optimization for Repository-Level Code Generation](../Inbox/2026-04-04--persistent-cross-attempt-state-optimization-for-repository-level-code-generation.md): LiveCoder reports cross-attempt state, best-repository retention, functional gains, repository reuse, and cost reduction.
 - [Toward Executable Repository-Level Code Generation via Environment Alignment](../Inbox/2026-04-04--toward-executable-repository-level-code-generation-via-environment-alignment.md): EnvGraph shows that execution failures often come from dependency and internal reference alignment, which supports runtime-informed retry control.
 
@@ -46,7 +46,7 @@ C and C++ repair agents can justify a debugger-first workflow for memory-safety 
 
 The near-term product change is a repair harness for security teams that already have fuzzing outputs and PoC crashes but still hand off root-cause analysis to senior engineers. A cheap check is narrow and concrete: take a backlog of reproducible AddressSanitizer or crash-triggered bugs, restrict the agent to runtime inspection plus patch validation, and measure time to first plausible root-cause hypothesis and validated patch rate against a static-code baseline. The evidence here is strongest for low-level memory faults where the crash site and the real defect are far apart.
 
-### Evidence
+### Sources
 - [DebugHarness: Emulating Human Dynamic Debugging for Autonomous Program Repair](../Inbox/2026-04-04--debugharness-emulating-human-dynamic-debugging-for-autonomous-program-repair.md): DebugHarness describes the debugger-driven loop and reports the resolution-rate gains on SEC-bench.
 
 ## Effect-based permission checks for agent file edits
@@ -54,6 +54,6 @@ Permission gates for coding agents need action-level coverage over file edits, n
 
 A usable build is an interposition layer that classifies writes, patches, and generated config changes by resource touched and state change implied, then routes them through the same policy engine used for command execution. The first test does not require a full benchmark suite. Take a handful of ambiguous cleanup or restart tasks in your own repos, run the agent with shell-only permission checks, then add edit-path classification and compare unsafe action escapes at the individual action level. The main adoption blocker is straightforward: teams that trust command gating alone are leaving an uninspected path for equivalent destructive actions.
 
-### Evidence
+### Sources
 - [Measuring the Permission Gate: A Stress-Test Evaluation of Claude Code's Auto Mode](../Inbox/2026-04-04--measuring-the-permission-gate-a-stress-test-evaluation-of-claude-code-s-auto-mode.md): AmPermBench reports the end-to-end false negative rate, the Tier 2 coverage gap, and the artifact-cleanup failure mode through file edits.
 - [Measuring the Permission Gate: A Stress-Test Evaluation of Claude Code's Auto Mode](../Inbox/2026-04-04--measuring-the-permission-gate-a-stress-test-evaluation-of-claude-code-s-auto-mode.md): The paper explains that agents achieve equivalent state changes through file edits that the classifier does not evaluate.

@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Agent Runtime Infrastructure
 
-## Summary
+## 摘要
 这些证据里最清楚的可落地变化，是用于代码导航的结构化文件、代理 harness 里的记忆控制，以及在 Apache DataFusion 中经过执行验证的计划重写。每一项都给出了一种具体的构建或流程改动，并带有可测量的效果；更宽泛的结对编程和基准论文，更适合作为支持性背景，而不是立刻要做的产品方向。
 
 ## Versioned architecture descriptor files for agent code navigation
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 短期内的用户是已经在中等规模代码库里使用 Claude Code、Cursor 或类似工具的团队，代理在 grep、文件搜索和模块阅读上花了太多轮次。低成本验证很直接：在一组固定的代码定位和补丁任务上，对比加入描述符前后的 explore/edit 比例和工具调用次数。格式问题对模型表现来说次要。论文报告了 S-expression、JSON、YAML 和 Markdown 的理解结果相近；在错误注入测试里，JSON 的静默损坏最低，而 S-expression 对结构完整性错误的检测更可靠。这指向一条落地路径：团队选一个最适合自己工具链和校验需求的格式，然后在 CI 里用 schema 检查强制执行。
 
-### Evidence
+### 资料来源
 - [Formal Architecture Descriptors as Navigation Primitives for AI Coding Agents](../Inbox/2026-04-11--formal-architecture-descriptors-as-navigation-primitives-for-ai-coding-agents.md): Architecture descriptors reduced navigation steps and an auto-generated descriptor improved task accuracy.
 - [Formal Architecture Descriptors as Navigation Primitives for AI Coding Agents](../Inbox/2026-04-11--formal-architecture-descriptors-as-navigation-primitives-for-ai-coding-agents.md): The paper frames codebase exploration overhead as the operational pain for coding agents.
 
@@ -40,7 +40,7 @@ language_code: zh-CN
 
 论文报告的收益已经足够支持一个实现决策。在四类工作负载和六个 token 预算下，当最低保真集合能装进预算时，ClawVM 把平均可由策略控制的故障数从检索基线的 67.8、压缩加检索基线的 1.5 降到 0。在 12 条真实轨迹和 30 次任务回放上，它也报告了 0 个可由策略控制的故障，并且在最紧预算下成功率为 100%，中位策略开销低于每轮 50 微秒。一个实用的首个部署目标，是那些需要在长会话里保留计划、约束、证据和用户偏好的编码代理。第一步验证很简单：看带类型的内存页是否能在你的真实轨迹上减少重复工具调用、计划丢失和重置失败，而且不会把延迟推到用户能感知的程度。
 
-### Evidence
+### 资料来源
 - [ClawVM: Harness-Managed Virtual Memory for Stateful Tool-Using LLM Agents](../Inbox/2026-04-11--clawvm-harness-managed-virtual-memory-for-stateful-tool-using-llm-agents.md): ClawVM reports zero policy-controllable faults under fit-to-budget conditions and describes the typed-page memory policy.
 - [ClawVM: Harness-Managed Virtual Memory for Stateful Tool-Using LLM Agents](../Inbox/2026-04-11--clawvm-harness-managed-virtual-memory-for-stateful-tool-using-llm-agents.md): The abstract states that harness-managed residency and durability are the enforcement point for long-running tool-using agents.
 
@@ -49,6 +49,6 @@ language_code: zh-CN
 
 主案例研究把一个 `d_year=2001` 过滤条件提前到计划前面，在后续 join 之前把销售事实表从 1510 万行削到 290 万行。那次运行报告了 4.78x 的提速，哈希表构建时间从 10.16 秒降到 0.41 秒，构建内存从 3.3 GB 降到 411 MB。在生成的 TPC-H 和 TPC-DS 工作负载上，中位收益更小，大约是 1.1x 到 1.2x，所以它最适合复杂 OLAP 查询里的定向调优，前提是基数估计不准。一个低成本的验证路径是：在离线状态下，把补丁循环跑在一组已保存的坏计划上，通过执行要求语义等价，并记录哪些算子编辑反复出现，足够多时再把它们固化成原生优化器规则。
 
-### Evidence
+### 资料来源
 - [AI for Systems: Using LLMs to Optimize Database Query Execution](../Inbox/2026-04-11--ai-for-systems-using-llms-to-optimize-database-query-execution.md): The summary gives the JSON Patch mechanism and the measured speed and memory improvements in Apache DataFusion.
 - [AI for Systems: Using LLMs to Optimize Database Query Execution](../Inbox/2026-04-11--ai-for-systems-using-llms-to-optimize-database-query-execution.md): The content describes DBPlanBench exposing compact physical plans to the LLM because native plans are too large to reason over directly.

@@ -37,7 +37,7 @@ Teams adopting coding agents for repository work need a regression harness built
 
 A concrete build is an internal replay suite that starts with issue tracker tickets, Slack incident reports, and support escalations for one coding agent deployment. The first version does not need model-based fuzzing. It can cover a narrow set of recurring workflow breaks such as editing the wrong file, leaving partial changes after rollback, claiming success with stale workspace state, or running the wrong command sequence. Run that suite on every agent upgrade, every tool-permission change, and every scaffold change. For teams already exposing agents to production repositories, this is a cheaper gate than waiting for user reports to pile up in live use.
 
-### Evidence
+### Sources
 - [ABTest: Behavior-Driven Testing for AI Coding Agents](../Inbox/2026-04-03--abtest-behavior-driven-testing-for-ai-coding-agents.md): ABTest converts 400 confirmed failure reports into 647 executable repository-grounded cases and confirms 642 new anomalies across major coding agents.
 - [ABTest: Behavior-Driven Testing for AI Coding Agents](../Inbox/2026-04-03--abtest-behavior-driven-testing-for-ai-coding-agents.md): The paper describes practical workflow failures such as wrong-file edits and unintended side effects during real repository interaction.
 
@@ -46,7 +46,7 @@ Evaluation stacks for coding agents now need multi-PR sequences with persistent 
 
 A concrete workflow change is to add one stateful track beside existing single-task benchmarks. Start with a small chain of historical pull requests from one active repository, preserve workspace state across steps, and score both functional correctness and post-change maintainability signals such as static analysis warnings or complexity growth. This kind of test is useful for platform teams deciding whether an agent can handle backlog work over several days, and for buyers comparing agents whose leaderboard scores come from clean resets that remove the consequences of earlier mistakes.
 
-### Evidence
+### Sources
 - [Beyond Isolated Tasks: A Framework for Evaluating Coding Agents on Sequential Software Evolution](../Inbox/2026-04-03--beyond-isolated-tasks-a-framework-for-evaluating-coding-agents-on-sequential-software-evolution.md): SWE-STEPS reports that isolated PR evaluation can overstate success by up to 20 points and gives concrete drops under continuous evaluation.
 - [Beyond Isolated Tasks: A Framework for Evaluating Coding Agents on Sequential Software Evolution](../Inbox/2026-04-03--beyond-isolated-tasks-a-framework-for-evaluating-coding-agents-on-sequential-software-evolution.md): The paper states that previous inefficient or buggy code causes spillover effects and degrades repository health through higher complexity and technical debt.
 
@@ -55,6 +55,6 @@ Organizations loading third-party skills into coding agents need a skill-ingesti
 
 A concrete build is a quarantine step for skills and MCP-style extensions: parse SKILL.md and related docs, extract executable snippets and config fragments, flag network destinations and shell commands, and require a clean isolated run before the skill can touch a developer workstation or CI secret scope. Teams can start with marketplace imports and high-permission internal skills. The immediate value is reducing a class of attacks that enters through examples and templates developers often treat as harmless reference text.
 
-### Evidence
+### Sources
 - [Supply-Chain Poisoning Attacks Against LLM Coding Agent Skill Ecosystems](../Inbox/2026-04-03--supply-chain-poisoning-attacks-against-llm-coding-agent-skill-ecosystems.md): The paper documents documentation-driven poisoning of coding-agent skills with measured bypass rates across frameworks and models.
 - [Supply-Chain Poisoning Attacks Against LLM Coding Agent Skill Ecosystems](../Inbox/2026-04-03--supply-chain-poisoning-attacks-against-llm-coding-agent-skill-ecosystems.md): The abstract states that skill documentation functions as operational directives with system-level privilege implications for host compromise.

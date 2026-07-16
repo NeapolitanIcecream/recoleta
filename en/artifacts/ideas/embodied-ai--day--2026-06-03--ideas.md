@@ -37,7 +37,7 @@ Teams using Universal Manipulation Interface data can add an ingestion gate that
 
 A cheap adoption test is to run the validation gate on a held-out batch of UMI trajectories, train two small policies with and without the rejected samples, and compare real execution on a few tasks that stress reach limits and wrist-camera occlusion. The same pipeline should log which failures came from visual grounding and which came from kinematics, since those call for different fixes.
 
-### Evidence
+### Sources
 - [VISTA: Vision-Grounded and Physics-Validated Adaptation of UMI data for VLA Training](../Inbox/2026-06-03--vista-vision-grounded-and-physics-validated-adaptation-of-umi-data-for-vla-training.md): VISTA describes fisheye wrist-camera mismatch, robot-infeasible UMI trajectories, an 8M-sample UMI-VQA dataset, and physical-validation scores for completeness, continuity, self-collision risk, and execution fidelity.
 - [VISTA: Vision-Grounded and Physics-Validated Adaptation of UMI data for VLA Training](../Inbox/2026-06-03--vista-vision-grounded-and-physics-validated-adaptation-of-umi-data-for-vla-training.md): The paper abstract states that VISTA scores each valid trajectory before training and reports that physical-validation scores predict deployment success.
 
@@ -46,7 +46,7 @@ Manipulation teams should add a small tactile ablation suite for tasks where cam
 
 The first tasks to include are peg insertion, wiping, bottle turning, and pouring. HapTile reports large gains on some of these tasks, including π0 peg insertion rising from 0% with vision-only input to 90% with raw tactile images, and whiteboard wiping rising from 50% to 100% with tactile marker features. The pouring result is a warning to keep the ablation task-specific: tactile marker features reduced success in the reported baselines. A practical rollout check is to require each new policy to pass the contact suite with per-task modality reporting before it is promoted to broader real-world trials.
 
-### Evidence
+### Sources
 - [HapTile: A Haptic-Informed Vision-Tactile-Language-Action Dataset for Contact-Rich Imitation Learning](../Inbox/2026-06-03--haptile-a-haptic-informed-vision-tactile-language-action-dataset-for-contact-rich-imitation-learning.md): HapTile specifies the dataset fields, teleoperation haptic feedback, benchmark input settings, and task-level results showing both tactile gains and tactile regressions.
 - [HapTile: A Haptic-Informed Vision-Tactile-Language-Action Dataset for Contact-Rich Imitation Learning](../Inbox/2026-06-03--haptile-a-haptic-informed-vision-tactile-language-action-dataset-for-contact-rich-imitation-learning.md): The abstract states that most VLA datasets remain vision-only and that HapTile combines language conditioning, visuotactile observations, action trajectories, and haptic-informed demonstrations.
 
@@ -55,6 +55,6 @@ Quadrotor teams training DreamerV3-style world models can screen candidates with
 
 The caution comes from a real deployment result: the model with the best simulation policy score failed on the real quadrotor, while other models reached the target through narrow gaps. MAD adds a complementary build pattern for agile flight: train the latent model to predict robocentric occupancy and visibility maps from depth and proprioception, then use that latent state in the policy. A minimal validation run can combine both: compare world-model candidates on held-out reconstruction and map prediction, then fly a short gap course with strict abort rules.
 
-### Evidence
+### Sources
 - [Generalization of World Models under Environmental Variability for Vision-based Quadrotor Navigation](../Inbox/2026-06-03--generalization-of-world-models-under-environmental-variability-for-vision-based-quadrotor-navigation.md): The quadrotor generalization study reports cross-environment reconstruction evaluation, real closed-loop tests, and the failure of the strongest simulation policy on the real platform.
 - [MAD: Mapping-Aware World Models for Agile Quadrotor Flight](../Inbox/2026-06-03--mad-mapping-aware-world-models-for-agile-quadrotor-flight.md): MAD describes occupancy and visibility map prediction from depth and proprioception, the learned latent state used for agile flight policies, and real-world forest flight at 5.05 m/s.

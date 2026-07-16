@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # 机器人策略执行与鲁棒性
 
-## Summary
+## 摘要
 本周的 embodied AI 工作指向构建和评估上的三个具体变化。一个是能减少真实机器人 VLA 停顿的运行时执行层。另一个是在演示预算很紧时提升操作训练效果的潜在未来状态接口。第三个是面向指令跟随的释义压力测试，因为当前 VLA 策略在措辞变化时仍会损失大量任务成功率。
 
 ## 用于分块 VLA 机器人策略的异步执行层
@@ -33,7 +33,7 @@ language_code: zh-CN
 
 近期可做的产品不是新的基础模型，而是一个运行时层，面向已经在边缘硬件或移动操作臂上运行分块 VLA 策略的团队。一个低成本验证方法是，先给一条已部署策略加上逐步时间戳，测量动作簇之间的停顿时间，再在一个较窄的任务切片上加入异步观察和单步动作生成，例如 pick-and-place。如果机器人停下来的次数变少，同时任务失败没有上升，这个封装层在任何重新训练计划开始前就已经有价值。
 
-### Evidence
+### 资料来源
 - [StreamingVLA: Streaming Vision-Language-Action Model with Action Flow Matching and Adaptive Early Observation](../Inbox/2026-03-30--streamingvla-streaming-vision-language-action-model-with-action-flow-matching-and-adaptive-early-observation.md): 报告了异步 VLA 执行在延迟和停顿间隔上的具体下降，以及成功率方面的权衡。
 - [StreamingVLA: Streaming Vision-Language-Action Model with Action Flow Matching and Adaptive Early Observation](../Inbox/2026-03-30--streamingvla-streaming-vision-language-action-model-with-action-flow-matching-and-adaptive-early-observation.md): 摘要直接说明了部署问题：观察、生成和执行按顺序进行，会让真实系统出现停顿。
 
@@ -42,7 +42,7 @@ language_code: zh-CN
 
 这说明一个具体的流程变化：把未来状态预测作为高层意图的监督接口，再联合微调控制器，让动作梯度继续影响规划器。做桌面操作或类人机器人 pick-and-place 的团队，不需要重写整个平台就能测试这一点。可以先用真实未来特征训练控制器，再换成预测得到的潜在未来，并在固定演示预算下比较成功率。如果低数据量设置在未见过的物体或物体组合上还能保持效果，这个适配器对数据受限的机器人训练就有直接价值。
 
-### Evidence
+### 资料来源
 - [DIAL: Decoupling Intent and Action via Latent World Modeling for End-to-End VLA](../Inbox/2026-03-31--dial-decoupling-intent-and-action-via-latent-world-modeling-for-end-to-end-vla.md): 概括了潜在意图瓶颈，以及 RoboCasa 上 10× 演示效率提升这一核心结论。
 - [DIAL: Decoupling Intent and Action via Latent World Modeling for End-to-End VLA](../Inbox/2026-03-31--dial-decoupling-intent-and-action-via-latent-world-modeling-for-end-to-end-vla.md): 摘要描述了两阶段训练设置，并把异构人类演示与真实世界 zero-shot 泛化联系起来。
 
@@ -51,6 +51,6 @@ language_code: zh-CN
 
 可直接构建的东西是一个释义回归测试工具，围绕指令模板、同义词替换和间接命令形式来做，并同时用原始成功率和 PRIDE 打分。团队可以在微调后、真实世界演示前运行它。最先需要它的是评估和安全负责人，他们需要知道策略是否只是记住了措辞。一个低成本检查方法是，拿一条高表现策略，在一小组任务里只对物体指代做释义改写，然后在完整任务成功之前比较轨迹类别或第一个航点选择。如果物体名称替换会在早期改变规划，语言鲁棒性就会马上成为落地使用的阻碍。
 
-### Evidence
+### 资料来源
 - [LIBERO-Para: A Diagnostic Benchmark and Metrics for Paraphrase Robustness in VLA Models](../Inbox/2026-03-30--libero-para-a-diagnostic-benchmark-and-metrics-for-paraphrase-robustness-in-vla-models.md): 提供了基准设置、22.8 到 51.9 个百分点的下降区间，以及 PRIDE 指标的设计依据。
 - [LIBERO-Para: A Diagnostic Benchmark and Metrics for Paraphrase Robustness in VLA Models](../Inbox/2026-03-30--libero-para-a-diagnostic-benchmark-and-metrics-for-paraphrase-robustness-in-vla-models.md): 摘要指出，在有限微调下，物体层面的简单同义词替换会带来明显性能下降。

@@ -37,7 +37,7 @@ Engineering teams testing coding agents can add two product metrics to pilot das
 
 A practical version does not require a custom foundation model on day one. An internal pilot can tag agent-assisted pull requests, connect chat or IDE sessions to review outcomes, and sample code survival after a fixed window such as 30 or 60 days. Multi-language repositories also need a pre-change checklist: inspect the repository, verify APIs and tooling, check dependencies and security rules, and label checks the agent could not run. The Polyglot Protocol is useful here as a procedural template, especially because it names repository discovery and validation failures that teams already see in code review.
 
-### Evidence
+### Sources
 - [Customizing an LLM for Enterprise Software Engineering](../Inbox/2026-05-23--customizing-an-llm-for-enterprise-software-engineering.md): GfG reports a 29,000-developer blind A/B study with fewer iterations and higher code survival rates.
 - [The Polyglot Protocol – senior-engineer guardrails for AI coding agents](../Inbox/2026-05-23--the-polyglot-protocol-senior-engineer-guardrails-for-ai-coding-agents.md): The Polyglot Protocol defines repository discovery, API verification, dependency checks, testing, security review, and final validation for coding agents.
 
@@ -46,7 +46,7 @@ Teams using local coding agents need an inventory of package names, maintainers,
 
 The immediate workflow is small enough for a security team or developer-experience team to run this week. List globally installed and project-local AI agent packages, check `~/.npm/_npx/` and `.claude` for leftovers, pin approved package names, and require a maintainer-control review before agents receive shell permissions. For tools installed through npm, the review should include who can publish, whether a fork changed the update path, and how developers can remove stale packages. This is supply-chain review applied to agent tooling, where an update can become a local code-execution path.
 
-### Evidence
+### Sources
 - [The Crypto Coin was the tell – thoughts on GSD, and it's crypto rugpull](../Inbox/2026-05-23--the-crypto-coin-was-the-tell-thoughts-on-gsd-and-it-s-crypto-rugpull.md): The post identifies retained npm publish access for original GSD packages and the risk created by shell-capable local agents.
 - [The Crypto Coin was the tell – thoughts on GSD, and it's crypto rugpull](../Inbox/2026-05-23--the-crypto-coin-was-the-tell-thoughts-on-gsd-and-it-s-crypto-rugpull.md): The post gives concrete cleanup locations and commands, including npm installs, `~/.npm/_npx/`, and `.claude` directories.
 
@@ -55,7 +55,7 @@ Device teams can test AI-authored microcontroller behavior by exposing a narrow 
 
 This fits prototypes where the interaction loop must feel local. The author cites 150 ms as the response limit for an interface to feel instant, which is hard to meet when every button press waits on a cloud model. A useful first test is a small device with a screen and buttons, such as an M5StickS3-style kit, plus two measurements Resident does not yet publish: app load latency and memory use under repeated hot loads. Safety testing should include attempts to reach blocked APIs, especially networking and hardware controls outside the exposed driver surface.
 
-### Evidence
+### Sources
 - [Resident: Vibe coding firmware (our new sandbox library for ESP32 devices)](../Inbox/2026-05-23--resident-vibe-coding-firmware-our-new-sandbox-library-for-esp32-devices.md): Resident is described as an ESP32 Lua sandbox for hot-loading AI-authored apps without compiling or flashing firmware.
 - [Resident: Vibe coding firmware (our new sandbox library for ESP32 devices)](../Inbox/2026-05-23--resident-vibe-coding-firmware-our-new-sandbox-library-for-esp32-devices.md): The source cites 150 ms as the threshold for instant interaction and explains why cloud calls are too slow for live device loops.
 - [Resident: Vibe coding firmware (our new sandbox library for ESP32 devices)](../Inbox/2026-05-23--resident-vibe-coding-firmware-our-new-sandbox-library-for-esp32-devices.md): The source describes the safety concern around unrestricted firmware control and motivates sandboxed device code.

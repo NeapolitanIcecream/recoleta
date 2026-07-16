@@ -34,7 +34,7 @@ pass_kind: trend_synthesis
 ## Overview
 The day’s strongest work treats AI coding as a governed engineering process. AutoMat tests scientific reproducibility, SAGA measures full agent latency, and RECAP records real prompt-to-edit traces. The common demand is concrete evidence before trusting generated code or agent workflows.
 
-## Clusters
+## Findings
 
 ### Agent output needs specs, traces, and reproducibility checks
 Several papers put the inspection layer around AI coding work under pressure. The specification-governance paper ties AI coding gains to review load, context limits, and testable specs. It cites positive task-level studies, then also reports evidence where experienced developers slowed down on mature codebases and delivery stability fell with higher AI adoption.
@@ -43,7 +43,7 @@ AutoMat gives the hardest empirical warning. The best tested coding-agent settin
 
 RECAP attacks the measurement problem inside the editor. It records Copilot chat, shadow git commits, and fine-grained edits in VS Code. In one course deployment, it captured 2,034 prompts and 8,239 commits, making repeated error loops and AI edit share visible at session level.
 
-#### Evidence
+#### Sources
 - [The Productivity-Reliability Paradox: Specification-Driven Governance for AI-Augmented Software Development](../Inbox/2026-05-01--the-productivity-reliability-paradox-specification-driven-governance-for-ai-augmented-software-development.md): Summarizes specification-driven governance, mixed productivity evidence, and reliability risks.
 - [Can Coding Agents Reproduce Findings in Computational Materials Science?](../Inbox/2026-05-01--can-coding-agents-reproduce-findings-in-computational-materials-science.md): Reports AutoMat's 85-claim reproducibility benchmark and success rates.
 - [RECAP: An End-to-End Platform for Capturing, Replaying, and Analyzing AI-Assisted Programming Interactions](../Inbox/2026-05-01--recap-an-end-to-end-platform-for-capturing-replaying-and-analyzing-ai-assisted-programming-interactions.md): Describes RECAP's prompt-to-edit capture method and deployment measurements.
@@ -53,7 +53,7 @@ The reward story is cautious. The pass-rate reward study tests reinforcement lea
 
 Themis broadens what a code reward model should score. It builds a benchmark with about 8.9k pairwise preferences across eight languages and five criteria: correctness, runtime, memory, maintainability, and security. The paper’s numeric model gains are not in the excerpt, so the grounded contribution is the benchmark, training data, and multi-criteria setup.
 
-#### Evidence
+#### Sources
 - [Exploring Pass-Rate Reward in Reinforcement Learning for Code Generation](../Inbox/2026-05-01--exploring-pass-rate-reward-in-reinforcement-learning-for-code-generation.md): Compares pass-rate and binary rewards across models, algorithms, and pass@k metrics.
 - [Themis: Training Robust Multilingual Code Reward Models for Flexible Multi-Criteria Scoring](../Inbox/2026-05-01--themis-training-robust-multilingual-code-reward-models-for-flexible-multi-criteria-scoring.md): Describes Themis-CodeRewardBench, preference data, languages, and scoring criteria.
 
@@ -62,6 +62,6 @@ SAGA shows that serving an agent is different from serving isolated LLM calls. A
 
 A separate position paper makes a control-layer argument for Bayesian decision rules. It gives no experiments, so its value is conceptual: the orchestration layer can track task uncertainty, agent reliability, cost, and stopping decisions without making the language model itself Bayesian.
 
-#### Evidence
+#### Sources
 - [SAGA: Workflow-Atomic Scheduling for AI Agent Inference on GPU Clusters](../Inbox/2026-05-01--saga-workflow-atomic-scheduling-for-ai-agent-inference-on-gpu-clusters.md): Reports SAGA's workflow-level scheduler, KV-cache reuse, latency gains, and throughput tradeoff.
 - [Position: agentic AI orchestration should be Bayes-consistent](../Inbox/2026-05-01--position-agentic-ai-orchestration-should-be-bayes-consistent.md): Summarizes the Bayes-consistent orchestration proposal and its lack of empirical results.

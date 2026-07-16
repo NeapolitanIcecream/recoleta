@@ -32,14 +32,14 @@ pass_kind: trend_synthesis
 ## Overview
 The strongest signal is that agents need inspectable execution and stricter task evidence. DuST uses execution-labeled candidate code as training data, Shepherd records live agent state for branching, and ComplexMCP shows tool agents still lag humans on stateful software work.
 
-## Clusters
+## Findings
 
 ### Execution feedback as training signal
 DuST treats generated code samples as a source of pairwise supervision. The base model samples 64 candidate programs per problem, a sandbox labels each candidate as passing or failing, and mixed groups train the same model to rank correct programs above incorrect ones using Group Relative Policy Optimization (GRPO). The reward only scores ranking quality, yet generation improves.
 
 On LiveCodeBench v6, Qwen3-30B-Thinking rises from 65.4% to 68.5% pass@1. Its judgment score rises from 70.1 to 76.3 NDCG, and Best-of-4 accuracy rises from 68.7% to 72.6%. The result gives a concrete recipe for reusing test-time scaling data after inference.
 
-#### Evidence
+#### Sources
 - [Primal Generation, Dual Judgment: Self-Training from Test-Time Scaling](../Inbox/2026-05-11--primal-generation-dual-judgment-self-training-from-test-time-scaling.md): Summary gives DuST data construction, GRPO ranking objective, and LiveCodeBench gains.
 
 ### Traceable runtime state for meta-agents
@@ -47,7 +47,7 @@ Shepherd makes an agent execution a typed object that another agent can inspect,
 
 The reported systems numbers are practical enough to matter for agent search. On Terminal-Bench 2.0 images up to 5.8 GB, Shepherd forks in 134–143 ms. Full filesystem copy reaches 53,462 ms on the largest image. Replay also reaches about a 95% prompt-cache hit rate on Claude Haiku 4.5 across eight tasks.
 
-#### Evidence
+#### Sources
 - [Shepherd: A Runtime Substrate Empowering Meta-Agents with a Formalized Execution Trace](../Inbox/2026-05-11--shepherd-a-runtime-substrate-empowering-meta-agents-with-a-formalized-execution-trace.md): Summary describes Shepherd's typed trace, fork/replay operations, and performance results.
 
 ### Stateful tool and CAD benchmarks expose narrow competence
@@ -55,7 +55,7 @@ ComplexMCP tests agents through the Model Context Protocol (MCP) with more than 
 
 BenchCAD applies a similar pressure to multimodal design work. It contains 17,900 execution-verified CadQuery programs across 106 industrial part families. The benchmark separates image-to-code generation, visual question answering, code question answering, and edit tasks. Models read CAD code better than they infer the same details from renders: top Code QA is about 0.838, while Vision QA peaks at 0.587.
 
-#### Evidence
+#### Sources
 - [ComplexMCP: Evaluation of LLM Agents in Dynamic, Interdependent, and Large-Scale Tool Sandbox](../Inbox/2026-05-11--complexmcp-evaluation-of-llm-agents-in-dynamic-interdependent-and-large-scale-tool-sandbox.md): Summary reports MCP tool scale, stateful sandboxes, human and model success rates, and failure modes.
 - [BenchCAD: A Comprehensive, Industry-Standard Benchmark for Programmatic CAD](../Inbox/2026-05-11--benchcad-a-comprehensive-industry-standard-benchmark-for-programmatic-cad.md): Summary reports BenchCAD dataset size, tasks, and QA results.
 
@@ -64,6 +64,6 @@ JAW shows that agent workflows can be hijacked when attacker-controlled content 
 
 The context problem also appears inside coding agents. An In-Context Autoencoder (ICAE) compresses observations into continuous memory tokens and lets agents run longer trajectories, but detail loss hurts real issue resolution. On SWE-bench Verified, the compressed system solves 7 of 500 issues, below the uncompressed Qwen3-8B baseline at 19 and far below the supervised fine-tuned model at 86.
 
-#### Evidence
+#### Sources
 - [Comment and Control: Hijacking Agentic Workflows via Context-Grounded Evolution](../Inbox/2026-05-11--comment-and-control-hijacking-agentic-workflows-via-context-grounded-evolution.md): Summary gives JAW method, affected workflow types, counts, and reported impacts.
 - [On Problems of Implicit Context Compression for Software Engineering Agents](../Inbox/2026-05-11--on-problems-of-implicit-context-compression-for-software-engineering-agents.md): Summary reports ICAE setup and SWE-bench Verified resolution drop.

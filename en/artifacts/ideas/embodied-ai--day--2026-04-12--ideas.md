@@ -35,7 +35,7 @@ Robotics teams working on bin, tray, and fixture placement can build a small goa
 
 A practical first version does not need a new foundation model. It can start with a vision-language module that returns one target slot, render a colored marker into each camera view, and keep the low-level prompt fixed to a simple placement instruction. The cheap check is a head-to-head test on unseen tray layouts with tightly spaced slots: compare the same action policy with and without the explicit overlay, and measure wrong-slot errors separately from motion failures. This is most relevant for precision assembly and factory automation, where the placement target is semantically specified and geometric tolerance is small.
 
-### Evidence
+### Sources
 - [AnySlot: Goal-Conditioned Vision-Language-Action Policies for Zero-Shot Slot-Level Placement](../Inbox/2026-04-12--anyslot-goal-conditioned-vision-language-action-policies-for-zero-shot-slot-level-placement.md): Summary describes the explicit visual goal marker, 3D lifting, multi-view reprojection, and relevance to precision assembly and factory automation.
 - [AnySlot: Goal-Conditioned Vision-Language-Action Policies for Zero-Shot Slot-Level Placement](../Inbox/2026-04-12--anyslot-goal-conditioned-vision-language-action-policies-for-zero-shot-slot-level-placement.md): Paper text states that the explicit goal representation is consumed by a low-level policy and that the interface is tight and interpretable.
 
@@ -44,7 +44,7 @@ Robot evaluation for language-conditioned placement needs a benchmark that separ
 
 That points to a concrete workflow change for teams already reporting broad manipulation success on easier tasks. Add a slot-placement suite with explicit tolerance thresholds and instruction categories that force disambiguation among nearby targets. A small internal version can be built from trays or panel fixtures with repeated compartments, paired with prompts such as relative position, exclusion, and affordance constraints. The main value is diagnostic: it shows whether failures come from language grounding, visual localization, or final alignment.
 
-### Evidence
+### Sources
 - [AnySlot: Goal-Conditioned Vision-Language-Action Policies for Zero-Shot Slot-Level Placement](../Inbox/2026-04-12--anyslot-goal-conditioned-vision-language-action-policies-for-zero-shot-slot-level-placement.md): Summary gives the benchmark geometry, tolerance, task categories, and reported average success plus the visible flat baseline result.
 - [AnySlot: Goal-Conditioned Vision-Language-Action Policies for Zero-Shot Slot-Level Placement](../Inbox/2026-04-12--anyslot-goal-conditioned-vision-language-action-policies-for-zero-shot-slot-level-placement.md): Paper text introduces SlotBench as a zero-shot benchmark covering nine structured reasoning tasks and notes that existing flat and modular pipelines struggle on most categories.
 
@@ -53,6 +53,6 @@ Teams using keypoints or single coordinates for placement targets should test wh
 
 A useful build is a support layer that preserves slot shape and boundary information in the target representation. The simplest version is a rendered goal region or marker anchored to the chosen slot and propagated across views with calibrated geometry. Then compare it against a coordinate-only target on unseen slot shapes, camera poses, and clutter levels. The metric should separate target-selection accuracy from final placement error, because both can fail for different reasons.
 
-### Evidence
+### Sources
 - [AnySlot: Goal-Conditioned Vision-Language-Action Policies for Zero-Shot Slot-Level Placement](../Inbox/2026-04-12--anyslot-goal-conditioned-vision-language-action-policies-for-zero-shot-slot-level-placement.md): Summary says prior modular systems often reduce the target to a single coordinate and lose slot shape and boundary information needed for precise execution.
 - [AnySlot: Goal-Conditioned Vision-Language-Action Policies for Zero-Shot Slot-Level Placement](../Inbox/2026-04-12--anyslot-goal-conditioned-vision-language-action-policies-for-zero-shot-slot-level-placement.md): Paper text states that keypoints or continuous coordinates can be brittle for high-precision localization, and that minor pixel deviations can lead to significant 3D misalignments.

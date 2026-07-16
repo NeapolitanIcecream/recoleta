@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # Code Change Control
 
-## Summary
+## 摘要
 最清楚的短期变化都在执行层面。编码代理产品需要在运行中有明确的 token 控制，仓库规模生成在项目变大后需要按依赖顺序工作流，而维护团队可以为把需求链接到代码、并带上更小上下文和可见证据的追踪层找到理由。
 
 ## Repo-aware token budget controller for coding-agent runs
@@ -35,7 +35,7 @@ language_code: zh-CN
 
 一个低成本测试是回放过去的代理轨迹，测量在重复文件抖动后提前停止，能在不降低通过率的情况下减少多少 token 消耗。如果这个控制器主要拦住的是失败和后期游走，它就值得作为编码代理产品里的默认保护措施。
 
-### Evidence
+### 资料来源
 - [How Do AI Agents Spend Your Money? Analyzing and Predicting Token Consumption in Agentic Coding Tasks](../Inbox/2026-04-24--how-do-ai-agents-spend-your-money-analyzing-and-predicting-token-consumption-in-agentic-coding-tasks.md): Token-cost study reports 3500× and 1200× cost gaps, up to 30× run variance, and poor self-prediction.
 - [How Do AI Agents Spend Your Money? Analyzing and Predicting Token Consumption in Agentic Coding Tasks](../Inbox/2026-04-24--how-do-ai-agents-spend-your-money-analyzing-and-predicting-token-consumption-in-agentic-coding-tasks.md): Paper excerpt ties higher cost to repeated actions and shows input-heavy cost growth.
 
@@ -46,7 +46,7 @@ language_code: zh-CN
 
 一个低成本检查是找一个已经有架构说明或图的内部需求，分别跑两种方式：一次性全仓库生成，和按依赖顺序生成文件。比较测试通过率、破损导入数量和人工修复时间。做内部脚手架、SDK 或 CRUD 密集型服务的团队，可以在不更换整个工具链的情况下试这个。
 
-### Evidence
+### 资料来源
 - [RealBench: A Repo-Level Code Generation Benchmark Aligned with Real-World Software Development Practices](../Inbox/2026-04-24--realbench-a-repo-level-code-generation-benchmark-aligned-with-real-world-software-development-practices.md): RealBench summary provides Pass@1 by repository scale and dependency statistics.
 - [RealBench: A Repo-Level Code Generation Benchmark Aligned with Real-World Software Development Practices](../Inbox/2026-04-24--realbench-a-repo-level-code-generation-benchmark-aligned-with-real-world-software-development-practices.md): Paper excerpt states smaller repos favor whole-repo generation while complex repos favor incremental generation.
 
@@ -57,6 +57,6 @@ language_code: zh-CN
 
 一个低成本检查是从某个服务里抽取已经关闭的工单，隐藏已知修改过的文件，再把工具给出的 top-k 链接建议和真实实现 diff 对比。如果这些链接准确到足以缩短维护人员的搜索时间，这一层追踪能力就值得在更宽的代理流程之前先上。
 
-### Evidence
+### 资料来源
 - [R2Code: A Self-Reflective LLM Framework for Requirements-to-Code Traceability](../Inbox/2026-04-24--r2code-a-self-reflective-llm-framework-for-requirements-to-code-traceability.md): R2Code summary reports F1 gains, adaptive retrieval, and lower token use.
 - [R2Code: A Self-Reflective LLM Framework for Requirements-to-Code Traceability](../Inbox/2026-04-24--r2code-a-self-reflective-llm-framework-for-requirements-to-code-traceability.md): Paper excerpt states 7.4% average F1 gain and up to 41.7% token reduction.

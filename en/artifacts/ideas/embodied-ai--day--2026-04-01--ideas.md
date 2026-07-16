@@ -31,7 +31,7 @@ A contact-gated torque path is a practical upgrade for robot manipulation teams 
 
 The build here is straightforward: add a contact detector on external joint torque, zero out the torque branch during free motion, and log when the fusion weight turns on. That gives teams a concrete test before retraining a larger policy stack. A cheap validation pass is to replay existing robot logs and measure whether failures cluster at the first-contact window, then compare a vision-only policy against a contact-gated variant on the same SKUs with weight or fit variation. Warehousing, light assembly, and appliance handling teams would care first because they already face cases where the object looks similar before contact but behaves differently once the gripper loads it.
 
-### Evidence
+### Sources
 - [Learning When to See and When to Feel: Adaptive Vision-Torque Fusion for Contact-Aware Manipulation](../Inbox/2026-04-01--learning-when-to-see-and-when-to-feel-adaptive-vision-torque-fusion-for-contact-aware-manipulation.md): Summary gives the contact-gated fusion design and the headline 82.0% vs 68.0% vs 30.0% benchmark results.
 - [Learning When to See and When to Feel: Adaptive Vision-Torque Fusion for Contact-Aware Manipulation](../Inbox/2026-04-01--learning-when-to-see-and-when-to-feel-adaptive-vision-torque-fusion-for-contact-aware-manipulation.md): Paper text states why vision misses alignment, insertion depth, and contact state in contact-rich tasks.
 
@@ -40,7 +40,7 @@ Dense safe-region heatmaps are ready for use as a pre-contact check in surgical 
 
 This points to a concrete support layer for teams building semi-autonomous surgical actions: render the predicted heatmap in the console, gate tool motion when the planned contact point leaves the permitted region, and store the heatmap with the action log for review. The ablations help define the product requirements. The language prompt is not optional, because removing the language encoder raised ASSD to 43.135 px. Tool and action conditioning also matter, so a generic anatomy mask is not enough for deployment. A cheap validation check is retrospective: run the model over recorded procedures, compare predicted regions with expert-marked contact sites, and count how often the heatmap would have triggered an early stop before a near-miss or off-target approach.
 
-### Evidence
+### Sources
 - [AffordTissue: Dense Affordance Prediction for Tool-Action Specific Tissue Interaction](../Inbox/2026-04-01--affordtissue-dense-affordance-prediction-for-tool-action-specific-tissue-interaction.md): Summary reports the benchmark metrics and ablations showing the value of language, tool, and action conditioning.
 - [AffordTissue: Dense Affordance Prediction for Tool-Action Specific Tissue Interaction](../Inbox/2026-04-01--affordtissue-dense-affordance-prediction-for-tool-action-specific-tissue-interaction.md): Paper text states that the heatmap can support explicit policy guidance and early safe stop when tools deviate outside predicted safe zones.
 
@@ -49,6 +49,6 @@ Trajectory-persistence testing is a concrete addition to world-model evaluation 
 
 The workflow change is to add persistence checks next to ordinary prediction error metrics before a world model is used inside a planner for robotics or driving. Teams can inject bounded perturbations into inputs or latent states, roll out several steps, and track whether action recommendations drift or recover. The paper’s DreamerV3 evidence is limited to non-zero action drift from checkpoint probing, so the immediate use is an internal red-team harness, not a claim that a production system is unsafe. A cheap first pass is to compare deterministic and stochastic variants of the same model family on the same perturbation suite and record how often the planner’s chosen action changes over the rollout horizon.
 
-### Evidence
+### Sources
 - [Safety, Security, and Cognitive Risks in World Models](../Inbox/2026-04-01--safety-security-and-cognitive-risks-in-world-models.md): Summary defines trajectory persistence and reports the 2.26x amplification ratio, 59.5% reduction under adversarial fine-tuning, and 0.65x stochastic proxy result.
 - [Safety, Security, and Cognitive Risks in World Models](../Inbox/2026-04-01--safety-security-and-cognitive-risks-in-world-models.md): Paper text describes proof-of-concept trajectory-persistent attacks and checkpoint-level probing of DreamerV3 with non-zero action drift.

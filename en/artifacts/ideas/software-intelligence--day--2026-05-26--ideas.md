@@ -41,7 +41,7 @@ EviACT gives a concrete version of this workflow: it maps RED failing-test evide
 
 A low-cost rollout is a wrapper around the existing agent runner and CI system. Run it on recent failed agent patches, compare accepted fixes, build-fail rate, full-regression invocations, and tokens per accepted patch, then decide whether to make the gates mandatory for agent-authored pull requests.
 
-### Evidence
+### Sources
 - [EviACT: An Evidence-to-Action Framework for Agentic Program Repair](../Inbox/2026-05-26--eviact-an-evidence-to-action-framework-for-agentic-program-repair.md): EviACT defines evidence-driven repair stages, compile and test-driven gates, resolve rates, and reported per-bug API cost reductions.
 - [EviACT: An Evidence-to-Action Framework for Agentic Program Repair](../Inbox/2026-05-26--eviact-an-evidence-to-action-framework-for-agentic-program-repair.md): The paper describes the validation-cost problem and the Setup–Localize–Patch–Verify pipeline with retrieval, compile, and target-test gates.
 - [TrajAudit: Automated Failure Diagnosis for Agentic Coding Systems](../Inbox/2026-05-26--trajaudit-automated-failure-diagnosis-for-agentic-coding-systems.md): TrajAudit supplies failure diagnosis for repository-level coding-agent trajectories and reports RootSE scale, localization gains, and token reduction.
@@ -53,7 +53,7 @@ Verus-SpecGym shows why this check matters. A verifier can prove code against th
 
 The adoption path is narrow and useful: start with small pure functions or service-level invariants where product owners can write examples and edge cases. Treat a generated spec as ready for proof work only after it accepts valid behavior and rejects invalid behavior under concrete tests.
 
-### Evidence
+### Sources
 - [Verus-SpecGym: An Agentic Environment for Evaluating Specification Autoformalization](../Inbox/2026-05-26--verus-specgym-an-agentic-environment-for-evaluating-specification-autoformalization.md): Verus-SpecGym defines executable evaluation for generated Verus specifications and reports task count, model scores, and LLM-judge misses.
 - [Verus-SpecGym: An Agentic Environment for Evaluating Specification Autoformalization](../Inbox/2026-05-26--verus-specgym-an-agentic-environment-for-evaluating-specification-autoformalization.md): The paper reports executable Rust evaluation against official Codeforces tests and adversarial hacks, plus failure modes in generated specifications.
 - [Verus-SpecGym: An Agentic Environment for Evaluating Specification Autoformalization](../Inbox/2026-05-26--verus-specgym-an-agentic-environment-for-evaluating-specification-autoformalization.md): The source explains how weak or overly strong specifications can certify wrong behavior or reject correct programs.
@@ -65,7 +65,7 @@ The workflow-testing paper demonstrates this on OpenAI Agents SDK-style systems.
 
 This fits teams that already review tool permissions manually or rely on end-to-end task success. A first check can run in CI after workflow edits and fail only on restricted-tool violations; coverage thresholds for allowed calls and delegation paths can start as reported metrics until the scenarios stabilize.
 
-### Evidence
+### Sources
 - [Testing Agentic Workflows with Structural Coverage Criteria](../Inbox/2026-05-26--testing-agentic-workflows-with-structural-coverage-criteria.md): The paper defines structural coverage criteria for multi-agent workflows and reports coverage and restricted-tool violation results.
 - [Testing Agentic Workflows with Structural Coverage Criteria](../Inbox/2026-05-26--testing-agentic-workflows-with-structural-coverage-criteria.md): The abstract describes deriving coverage obligations over reachable agents, allowed tool edges, restricted tool edges, and delegation edges.
 - [Testing Agentic Workflows with Structural Coverage Criteria](../Inbox/2026-05-26--testing-agentic-workflows-with-structural-coverage-criteria.md): The source explains why safety-, policy-, and compliance-sensitive workflows need traceable tests for tool-access rules and coordination paths.

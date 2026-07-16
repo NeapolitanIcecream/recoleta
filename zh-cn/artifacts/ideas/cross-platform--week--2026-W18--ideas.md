@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Flutter 后端和代理 UI 原型
 
-## Summary
+## 摘要
 Flutter 团队可以先用一次小型后端迁移测试 Firebase Functions 的 Dart 支持，再改动生产技术栈。GenUI 证据支持针对代理驱动的下单或选择界面做窄范围原型，衡量重点放在任务完成和交接质量上。
 
 ## 面向一个 Flutter 团队负责的后端任务的 Firebase Functions 迁移试验
@@ -33,7 +33,7 @@ Flutter 团队可以先用一次小型后端迁移测试 Firebase Functions 的 
 
 这是一次开发者工作流变更，因此第一个有用的衡量指标应当很实际：一次常规的应用加函数变更能减少多少编辑、评审和部署命令。延迟和成本仍需本地测量，因为这篇回顾没有给出生产行为的数据。
 
-### Evidence
+### 资料来源
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): 来源宣布 Firebase Functions 的 Dart 支持进入预览阶段，并表示 Dart Admin SDK 增加了更深入的 Firebase 集成，以减少上下文切换。
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): 摘要说明，该公告没有给出延迟、成本、可靠性或部署指标，因此采用时应先从一次工作流试验开始。
 
@@ -44,6 +44,6 @@ Flutter 团队可以先用一次小型后端迁移测试 Firebase Functions 的 
 
 活动证据显示，Flutter GenUI 出现在演示和会议环节中，包括一个 AI 驱动的咖啡店，以及一个关于代理创建自身 UI 的环节。证据不包含生产性能或发布指标，因此原型应先关注交互质量，再考虑更大范围的推出。
 
-### Evidence
+### 资料来源
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): 这篇回顾描述了 GenLatte，这是一个用 Flutter GenUI 构建的 AI 驱动精品咖啡店，参会者通过一个 GenUI Flutter 应用点饮品。
 - [That’s a wrap: Everything Flutter at Google Cloud Next](../Inbox/2026-04-27--thats-a-wrap-everything-flutter-at-google-cloud-next.md): 来源描述了一个关于 Generative UI 的环节，内容是让代理具备创建自身 UI 的能力，并引用 Toyota 和 Talabat 的客户案例，但没有给出指标。

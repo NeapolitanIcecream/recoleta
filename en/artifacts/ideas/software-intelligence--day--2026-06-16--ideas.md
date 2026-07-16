@@ -39,7 +39,7 @@ The case is concrete because agent tests often create a verification illusion. A
 
 A cheap pilot is to run the classifier only on agent-labeled PRs for two weeks and report three numbers: share of changed test files with no behavior check, share with value or error assertions, and reviewer override rate. The tool does not need to block every weak test. It gives reviewers a targeted warning when a patch adds test files that execute code without checking expected behavior.
 
-### Evidence
+### Sources
 - [All Smoke, No Alarm: Oracle Signals in Agent-Authored Test Code](../Inbox/2026-06-16--all-smoke-no-alarm-oracle-signals-in-agent-authored-test-code.md): The study defines oracle-signal categories, analyzes 86,156 agent-authored test-file patches, and reports that 80.2% contain weak or no explicit oracle signals.
 - [All Smoke, No Alarm: Oracle Signals in Agent-Authored Test Code](../Inbox/2026-06-16--all-smoke-no-alarm-oracle-signals-in-agent-authored-test-code.md): The abstract states that tests lacking explicit assertions execute code without verifying behavior and that test-file presence can overestimate verification strength.
 
@@ -50,7 +50,7 @@ PracRepair shows the fuller version of this workflow for Java APR. It combines s
 
 The adoption path can start inside an existing test runner. Store the evidence bundle as a JSON artifact beside each failed agent attempt, cap refinement at a small number of rounds, and compare fixes with and without trace fields on recurring bug classes. Syntax and runtime failures are the easiest early targets; logic and algorithm errors need richer examples and stronger tests.
 
-### Evidence
+### Sources
 - [PracRepair: LLM-Empowered Automated Program Repair Inspired by Human-Like Debugging Practices](../Inbox/2026-06-16--pracrepair-llm-empowered-automated-program-repair-inspired-by-human-like-debugging-practices.md): PracRepair records static and dynamic context, exposes evidence through tool calls, uses validation diagnostics and trace diffs, and reports Defects4J fix counts.
 - [PracRepair: LLM-Empowered Automated Program Repair Inspired by Human-Like Debugging Practices](../Inbox/2026-06-16--pracrepair-llm-empowered-automated-program-repair-inspired-by-human-like-debugging-practices.md): The paper abstract states that PracRepair uses on-demand static-dynamic context, question-driven failure diagnosis, repair hypotheses, and validation trace behavior changes.
 - [Unlocking LLM Code Correction with Iterative Feedback Loops](../Inbox/2026-06-16--unlocking-llm-code-correction-with-iterative-feedback-loops.md): The code-correction study evaluates iterative repair using compiler errors, runtime errors, failed test cases, and resource-limit feedback across repeated attempts.
@@ -62,7 +62,7 @@ The need is visible in benchmark results. One position paper reports that Termin
 
 The skill-evaluation work gives a practical measurement pattern for teams that encode repository rules, API patterns, or workflow preferences as agent skills. It generated tasks and hidden rubrics from each skill, then ran agents with and without the skill. Across about 500 skills, 1,000 tasks, 19 agent-model configurations, and 38,000 valid trajectories, relevant skills added 5.5 to 22 points depending on the model. A team can copy the paired-run design for its own skills before rolling them into default agent workstations.
 
-### Evidence
+### Sources
 - [Position: Coding Benchmarks Are Misaligned with Agentic Software Engineering](../Inbox/2026-06-16--position-coding-benchmarks-are-misaligned-with-agentic-software-engineering.md): The position paper separates model, harness, tools, environment, task setup, and verifier, and reports a 21.8-point Terminal-Bench spread across harnesses with a fixed model.
 - [Position: Coding Benchmarks Are Misaligned with Agentic Software Engineering](../Inbox/2026-06-16--position-coding-benchmarks-are-misaligned-with-agentic-software-engineering.md): The paper argues that end-to-end scores combine model, harness, environment, context, and feedback signals, limiting component-level diagnosis.
 - [A Framework for Evaluating Agentic Skills at Scale](../Inbox/2026-06-16--a-framework-for-evaluating-agentic-skills-at-scale.md): The skill-evaluation study compares agent runs with and without relevant skills across about 500 skills, 1,000 tasks, 19 configurations, and about 38,000 valid trajectories.

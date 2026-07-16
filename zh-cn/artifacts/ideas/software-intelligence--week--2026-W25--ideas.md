@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # 代码智能体验收控制
 
-## Summary
+## 摘要
 代码智能体采用正在转向具体的验收检查：经过失败测试的仓库指令、围绕智能体工作的轨迹门禁，以及面向陌生语料的分配前考试。有用工作位于模型周围的支持层：智能体被告知了什么、它实际做了什么、它使用了哪些证据，以及在人类评审结果前通过了哪些检查。
 
 ## 面向仓库特定代码智能体的失败测试版 AGENTS.md 文件
@@ -35,7 +35,7 @@ Probe-and-Refine 给出了这个流程的具体形式。在 500 个 SWE-bench Ve
 
 低成本采用测试可以这样做：让同一个智能体在一小组近期已修复缺陷上运行三种指导版本：无文件、手写文件、探针精炼文件。跟踪智能体是否找到正确文件、运行正确测试，并产出可进入评审的补丁。如果精炼文件只增加通用建议，就应像其他无用仓库产物一样被拒绝。
 
-### Evidence
+### 资料来源
 - [Probe-and-Refine Tuning of Repository Guidance for Coding Agents](../Inbox/2026-06-18--probe-and-refine-tuning-of-repository-guidance-for-coding-agents.md): 报告了 Probe-and-Refine 方法、SWE-bench Verified 解决率对比，以及精炼指导主要提高可评估补丁覆盖率的发现。
 - [Probe-and-Refine Tuning of Repository Guidance for Coding Agents](../Inbox/2026-06-18--probe-and-refine-tuning-of-repository-guidance-for-coding-agents.md): 描述了 AGENTS.md 类文件要捕获的操作知识，包括入口点、测试、约定和调试策略。
 
@@ -46,7 +46,7 @@ ProcGrep 说明了这件事为什么可行。它把代码智能体轨迹转成 `
 
 GlueRun-go 为已经运行并行智能体的团队提供了一种实现模式。每个 worker 在单独的 Git worktree 中运行，持有一个 JSON lease，写入包含变更文件、命令、测试和证据的状态包，并把门禁结果送入审计和恢复路径。该项目证据是工程证据，不是标准基准结果，但形式有用：隔离工作，记录任务证据，并把门禁失败作为一等结果处理。
 
-### Evidence
+### 资料来源
 - [Agent trajectories as programs: fingerprinting and programming coding-agent behavior](../Inbox/2026-06-15--agent-trajectories-as-programs-fingerprinting-and-programming-coding-agent-behavior.md): 定义了 ProcGrep 的动作轨迹表示、确定性轨迹查询、SWE-bench Verified 归因结果和分阶段搜索结果。
 - [Show HN: Agentic coding workflows built on Git worktrees and task evidence](../Inbox/2026-06-20--show-hn-agentic-coding-workflows-built-on-git-worktrees-and-task-evidence.md): 描述了用于并行代码智能体工作的 Git worktree 隔离、JSON lease、状态包、门禁结果、审计裁决和恢复动作。
 - [Show HN: Agentic coding workflows built on Git worktrees and task evidence](../Inbox/2026-06-20--show-hn-agentic-coding-workflows-built-on-git-worktrees-and-task-evidence.md): 展示了 worker 运行后使用的具体状态包和门禁结果流程。
@@ -58,7 +58,7 @@ StudyBench 把这种评估具体化。它把语料与隐藏考试配对，覆盖
 
 团队可以先从近期事故、API 迁移和维护者评审意见中抽取 20 到 40 个私有问题。通过考试应要求引用文件路径或文档引用。即使智能体随后会写代码，失败答案也有用，因为它们指出会导致糟糕补丁的缺失笔记、过期文档和检索路径。
 
-### Evidence
+### 资料来源
 - [Machine Studying](../Inbox/2026-06-21--machine-studying.md): 描述了 StudyBench、它的语料加隐藏考试设置、token 预算专业度指标，以及显示可用证据使用不足的早期结果。
 - [Machine Studying](../Inbox/2026-06-21--machine-studying.md): 描述了智能体在训练后处理新库、研究论文和私有语料的实际场景。
 - [Show HN: Vitrus – the company brain that tells you what it doesn't know](../Inbox/2026-06-20--show-hn-vitrus-the-company-brain-that-tells-you-what-it-doesn-t-know.md): 展示了一种有来源支撑的记忆设计，可为人类和智能体工作流返回引用、过期或无依据裁决，以及确定性缺口报告。

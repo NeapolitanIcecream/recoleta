@@ -39,7 +39,7 @@ A practical check is simple. Run the same manipulation suite at the trained came
 
 The upside is operational rather than cosmetic. In real Franka tests, π0 + CamVLA kept higher success than π0 alone at every tested offset, and the geometric head added about 1 ms on an RTX 4090. That is small enough to test as a deployment guardrail for teams whose cameras get bumped, moved between stations, or mounted on mobile hardware.
 
-### Evidence
+### Sources
 - Document 797: CamVLA reports the camera-pose failure mode, the camera-frame action plus 6-DoF hand-eye method, offset results on Franka, and added latency.
 - Document 797: The abstract states the deployment problem: real camera setups often change after training, and prior view-tolerant methods need explicit extrinsics.
 
@@ -50,7 +50,7 @@ Cortex is the clearest template for implementation. Its planner maintains text m
 
 The evaluation should use full episodes, not only per-step imitation. Cortex reports 65% success on 14-step real-world chemistry tasks and 55% on 14-step washing tasks, while the cited end-to-end baselines scored 0%. DSWAM adds a deployment detail for dual-arm work: asynchronous execution, real-time chunking, and BF16 TensorRT acceleration so policy queries do not stop robot control.
 
-### Evidence
+### Sources
 - Document 799: Cortex describes memory, a constrained 32-primitive interface, reachability-aware annotations, and real-world 14-step chemistry and washing results.
 - Document 806: DSWAM describes an optional vision-language subtask planner, a WAM executor, asynchronous execution, real-time chunking, and matched real folding results.
 
@@ -61,6 +61,6 @@ This is most useful when the task is known but the deployment scene differs from
 
 The key implementation detail is variation around the target scene. PRISM’s ablation shows why: a “digital cousin” setup scored 80.0% on both target and variant environments, while a tighter “digital twin” scored 100.0% on the target and 30.0% on variants. For real deployments, that means generating plausible scene variants, lighting changes, object poses, textures, and distractors during data creation.
 
-### Evidence
+### Sources
 - Document 807: PRISM describes one-image scene-matched dataset generation, object detection, asset retrieval, TAMP planning, 400-trajectory evaluations, and ablations.
 - Document 807: The abstract states the target-environment data problem and PRISM’s single-image plus instruction pipeline.

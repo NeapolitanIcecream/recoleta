@@ -35,7 +35,7 @@ Maintainers using coding agents should add a queue or check that replays merges 
 
 The operational pain is visible in GitHub data. In AIDev-pop, exact temporal overlap appeared in 40.2% of repositories with agent-authored PRs and covered 79.4% of agent PRs. Merge replay found textual conflicts in 19.8% of same-agent pairs and 41.7% of cross-agent pairs, with most conflicted files in source code. A first test is simple: run the check for two weeks on repositories where agents open multiple PRs, then compare conflict comments, CI reruns, and maintainer rebase work against the prior two weeks.
 
-### Evidence
+### Sources
 - Document 1776: Reports overlap rates for agent-authored pull requests and merge replay conflict rates across AIDev-pop.
 - Document 1776: States the sampled merge replay result and that most conflicts were source-code changes.
 - Document 1759: Shows maintainers perceive other people’s AI-generated code as harder to maintain, even without broad deterioration in observable repository signals.
@@ -45,7 +45,7 @@ Teams running coding agents on issues, pull requests, and CI output should treat
 
 This belongs in the agent runtime, not only in prompt rules. The agent data injection paper shows attackers can place delimiters, JSON-like structure, tags, or spoofed metadata inside untrusted content so the model reads it as trusted agent data. The reported attacks include spoofed GitHub issue comments and fake tool responses for coding agents, with remote code execution and supply-chain paths shown on Claude Code, Codex, and Gemini CLI. A cheap validation pass is to replay the paper’s delimiter and metadata-spoofing cases against the team’s own GitHub issue reader and PR review tools, then fail the build if untrusted text can alter trusted fields.
 
-### Evidence
+### Sources
 - Document 1770: Defines agent data injection, describes spoofed GitHub comments and fake tool responses, and reports attack success rates.
 - Document 1770: Reports remote code execution and supply-chain attack paths on coding agents and identifies missing isolation between trusted and untrusted data.
 - Document 1770: Explains the difference between trusted metadata and untrusted content in agent inputs.
@@ -55,7 +55,7 @@ Engineering teams choosing a coding agent should run candidate agents inside reb
 
 Several new results point to the same evaluation shape. KAT-Coder-V2.5 reports AutoBuilder raising executable environment construction success from 16.5% to 57.2% and filtering trajectories by exploration, localization, patch quality, verification, recovery, and honesty. EdgeBench measures agents over 12-hour executable tasks and finds that early progress can predict later performance with high fit. EvoAgentBench adds a transfer check by linking tasks through reusable procedures for search, debugging, and verification, while current automatic memory methods still show negative-transfer cases. A useful internal scorecard should include environment rebuild success, pass/fail outcome, time-to-first-valid-test, recovery after failed patches, and whether any stored procedure helped or hurt a later task.
 
-### Evidence
+### Sources
 - Document 1775: Describes executable environment construction, trajectory filtering, and reported AutoBuilder success gains.
 - Document 1768: Describes 12-hour executable tasks, progress curves, and long-run agent evaluation design.
 - Document 1766: Describes procedure-transfer testing through Ability units and reports mixed automatic transfer with negative-transfer cases.

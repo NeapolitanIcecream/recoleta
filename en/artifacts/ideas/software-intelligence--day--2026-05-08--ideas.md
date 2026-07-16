@@ -37,7 +37,7 @@ FixedBench gives a concrete reason to test this. In already-fixed SWE-bench Veri
 
 The first users are teams letting agents open or update maintenance PRs from issue queues. The workflow change is small: require a reproduction note and a “why no edit is safe” path before the agent can push a code diff. Human reviewers still keep merge authority, which matches current GitHub evidence: in 29,585 AI-agent-related PRs, agent-approved PRs totaled only 14 and stayed below 0.1% per tool.
 
-### Evidence
+### Sources
 - [Coding Agents Don't Know When to Act](../Inbox/2026-05-08--coding-agents-don-t-know-when-to-act.md): FixedBench measures unwanted edits on already-fixed issues and shows the prompt tradeoff on partially fixed issues.
 - [Coding Agents Don't Know When to Act](../Inbox/2026-05-08--coding-agents-don-t-know-when-to-act.md): The paper frames stale and duplicate bug reports as a routine repository condition where agents should abstain.
 - [Collaborator or Assistant? How AI Coding Agents Partition Work Across Pull Request Lifecycles](../Inbox/2026-05-08--collaborator-or-assistant-how-ai-coding-agents-partition-work-across-pull-request-lifecycles.md): The PR lifecycle study shows humans almost always retain merge authority in AI-agent PR workflows.
@@ -49,7 +49,7 @@ The new GitHub configuration dataset shows that this is already ordinary reposit
 
 Security work points to the checks the inventory should run first. Subagent systems need bounded memory inheritance, role-scoped resource access, lifecycle controls, and safe termination rules. Runtime governance work adds a practical placement model: pre-action gates for blocked operations, action-time monitors for risky tool use, post-action auditors for trace review, and escalation routing when a policy cannot be decided automatically. A CI audit can start with static detection and move the high-risk items into runtime checks where the agent acts.
 
-### Evidence
+### Sources
 - [A Dataset of Agentic AI Coding Tool Configurations](../Inbox/2026-05-08--a-dataset-of-agentic-ai-coding-tool-configurations.md): The dataset quantifies repository-level agent configuration artifacts across tools and configuration mechanisms.
 - [A Dataset of Agentic AI Coding Tool Configurations](../Inbox/2026-05-08--a-dataset-of-agentic-ai-coding-tool-configurations.md): The paper defines context files, skills, subagents, commands, rules, settings, hooks, and MCP configurations.
 - [When Child Inherits: Modeling and Exploiting Subagent Spawn in Multi-Agent Networks](../Inbox/2026-05-08--when-child-inherits-modeling-and-exploiting-subagent-spawn-in-multi-agent-networks.md): The subagent security paper identifies memory inheritance, resource access, stale state, and termination-control vulnerabilities.
@@ -62,7 +62,7 @@ VeriContest shows why this should be scoped narrowly. GPT-5.5 reached 92.18% pas
 
 The useful adoption test is small: choose ten functions with clear preconditions and postconditions, require Verus checks, and track where the agent fails: missing specification, incomplete postcondition, invalid invariant, or wrong code. VeriContest’s use of Post2Exe and large negative test suites also gives a concrete pattern for catching weak specifications before they are trusted.
 
-### Evidence
+### Sources
 - [VeriContest: A Competitive-Programming Benchmark for Verifiable Code Generation](../Inbox/2026-05-08--vericontest-a-competitive-programming-benchmark-for-verifiable-code-generation.md): VeriContest reports the benchmark composition and the large drop from ordinary code generation to verified generation.
 - [VeriContest: A Competitive-Programming Benchmark for Verifiable Code Generation](../Inbox/2026-05-08--vericontest-a-competitive-programming-benchmark-for-verifiable-code-generation.md): The paper reports the pass@1 split across code, specification, proof, and end-to-end verified generation.
 - [VeriContest: A Competitive-Programming Benchmark for Verifiable Code Generation](../Inbox/2026-05-08--vericontest-a-competitive-programming-benchmark-for-verifiable-code-generation.md): The content describes Verus specifications, executable Rust code, loop invariants, assertions, and proof structure.

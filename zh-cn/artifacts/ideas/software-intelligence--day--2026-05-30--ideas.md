@@ -25,7 +25,7 @@ language_code: zh-CN
 
 # 运营中工作代理的控制措施
 
-## Summary
+## 摘要
 代理部署正在进入日常运营工作：定时运行、密钥、沙箱、审批、轨迹和可重复的工作流测试。最实用的做法，是在现有编码代理外面加小型控制层、为个人代理做基于 recipe 的验收测试，以及在文件写入前保留人工审批的 ADR 草稿。
 
 ## Approval and audit controls for scheduled coding agents
@@ -35,7 +35,7 @@ language_code: zh-CN
 
 一个有用的首个测试，是在同一个工程团队里做一个双代理试点：一个负责代码维护，另一个负责外联或分流。给每个代理一份清单，要求任何对外副作用先审批，再看一周的运行记录里是否有缺少所有者、缺少授权、过期密钥或未复核动作。
 
-### Evidence
+### 资料来源
 - [Show HN: Lite-Harness – Self-Hosted Cursor Agents (Use Claude Code/OpenCode)](../Inbox/2026-05-30--show-hn-lite-harness-self-hosted-cursor-agents-use-claude-code-opencode.md): Lite-Harness provides scheduled agent runs, secrets, sandboxes, persistent sessions, and human approval routing.
 - [Show HN: Lite-Harness – Self-Hosted Cursor Agents (Use Claude Code/OpenCode)](../Inbox/2026-05-30--show-hn-lite-harness-self-hosted-cursor-agents-use-claude-code-opencode.md): The example deployment shows cron scheduling, vault keys, a sandbox check, a test run, and approval before each send.
 - [A case for an Autonomy Kernel](../Inbox/2026-05-30--a-case-for-an-autonomy-kernel.md): Autonomy Kernel defines the runtime responsibilities: execution, identity, authority, communication, auditing, stoppability, and traceable authorization.
@@ -47,7 +47,7 @@ language_code: zh-CN
 
 先从五个与真实故障或高风险副作用相关的 recipe 开始。为每次运行保存工件，包括提示词、模型/提供方、工具、轨迹、通过/失败检查和审阅备注。分数没有维护者能否看懂一次运行为何通过、失败，或需要人工决定那么重要。
 
-### Evidence
+### 资料来源
 - [Show HN: HermesBench – workflow reliability evals for personal AI agents](../Inbox/2026-05-30--show-hn-hermesbench-workflow-reliability-evals-for-personal-ai-agents.md): HermesBench evaluates complete agent configurations with recipes, traces, deterministic checks, and a public baseline across 27 workflows.
 - [Show HN: HermesBench – workflow reliability evals for personal AI agents](../Inbox/2026-05-30--show-hn-hermesbench-workflow-reliability-evals-for-personal-ai-agents.md): The site describes visible limits, redacted traces, score axes, and a single-recipe quick-start path for current configurations.
 - [The Manifesto for Dimensional Design](../Inbox/2026-05-30--the-manifesto-for-dimensional-design.md): Dimensional Design argues for deterministic pass-fail gates and small recorded human review around AI outputs that need exactness.
@@ -59,6 +59,6 @@ language_code: zh-CN
 
 采用测试很简单。把工具跑在十个本该有 ADR 的已关闭 issue 上，向审阅者隐藏最终合并方案，再问一位 staff engineer，生成的选项和建议是否会改进原来的评审。审批门要保持强制，拒绝的草稿也要保存，因为它们能说明代理在哪些地方漏掉了项目上下文。
 
-### Evidence
+### 资料来源
 - [Arch-Decision – A multi-agent architecture tool for Claude Code](../Inbox/2026-05-30--arch-decision-a-multi-agent-architecture-tool-for-claude-code.md): arch-decision describes the ADR workflow, eight phases, parallel codebase exploration, generated options, a synthesizer, and a required human approval gate.
 - [Arch-Decision – A multi-agent architecture tool for Claude Code](../Inbox/2026-05-30--arch-decision-a-multi-agent-architecture-tool-for-claude-code.md): The refinedev/refine case reports a recommendation that matched a later community PR in callback name, scope, and placement.

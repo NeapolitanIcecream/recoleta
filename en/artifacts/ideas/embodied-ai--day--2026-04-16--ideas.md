@@ -35,7 +35,7 @@ Mobile manipulators need a docking-robust data pipeline, not just a better contr
 
 This looks practical for teams already running a two-stage stack with navigation followed by fixed-base manipulation. The reported failure is direct: plain DP3 falls from 88.6% success with one docking point to 17.8% when evaluated across five docking points. With DockAnywhere augmentation, overall success reaches 78.9%, and most of the gain appears by four augmented docking points. A cheap validation step is to take one existing mobile manipulation task, collect demonstrations from one dock, synthesize three or four nearby docks, and measure whether success at unseen stops recovers without recollecting the contact phase of the task.
 
-### Evidence
+### Sources
 - [DockAnywhere: Data-Efficient Visuomotor Policy Learning for Mobile Manipulation via Novel Demonstration Generation](../Inbox/2026-04-16--dockanywhere-data-efficient-visuomotor-policy-learning-for-mobile-manipulation-via-novel-demonstration-generation.md): Provides the core method, failure mode under docking shifts, and the main success-rate comparisons including 78.9% overall success and the drop to 17.8% for plain DP3 across five docking points.
 - [DockAnywhere: Data-Efficient Visuomotor Policy Learning for Mobile Manipulation via Novel Demonstration Generation](../Inbox/2026-04-16--dockanywhere-data-efficient-visuomotor-policy-learning-for-mobile-manipulation-via-novel-demonstration-generation.md): Confirms the paper frames the method as lifting one demonstration to diverse feasible docking configurations for mobile manipulation.
 
@@ -44,7 +44,7 @@ Category-level manipulation teams can now build a real-to-real data generation s
 
 The reported gains are large enough to justify a narrow deployment around tasks where geometry drives failure. On unseen objects, hang_mug rises from 5% to 45%, hang_mug_hard from 5% to 50%, and serve_kettle from 35% to 75%. The weakest result here is pour_water, which only moves from 55% to 60%, so this looks most useful for tasks with tight functional contact points such as handles, hooks, and pour poses. A cheap check is to scan a small object family already used in training, generate warped demonstrations from five hand-collected source demos, and compare success on held-out shapes before expanding the pipeline.
 
-### Evidence
+### Sources
 - [ShapeGen: Robotic Data Generation for Category-Level Manipulation](../Inbox/2026-04-16--shapegen-robotic-data-generation-for-category-level-manipulation.md): Contains the simulator-free real-to-real method, the minimal human annotation requirement, and the task-level gains on unseen object instances.
 - [ShapeGen: Robotic Data Generation for Category-Level Manipulation](../Inbox/2026-04-16--shapegen-robotic-data-generation-for-category-level-manipulation.md): Confirms the paper targets category-level geometric variation in real-world manipulation.
 
@@ -53,6 +53,6 @@ Dexterous hand labs have a clear chance to lower the cost of data collection by 
 
 The reported user study gives a useful first benchmark for adoption. In the attached configuration, DEX-Mouse reaches 86.67% overall success and 10.05 seconds average completion time, ahead of the two glove baselines in the study. The gap versus remote teleoperation is also large: 86.67% versus 52.5% overall success for DEX-Mouse itself. For a lab choosing between another custom glove build and a simpler collection rig, the immediate test is small and cheap: run the same three contact-rich tasks in attached and remote modes, track completion rate and time per operator, and check whether the higher-quality data offsets the narrower physical setup.
 
-### Evidence
+### Sources
 - [DEX-Mouse: A Low-cost Portable and Universal Interface with Force Feedback for Data Collection of Dexterous Robotic Hands](../Inbox/2026-04-16--dex-mouse-a-low-cost-portable-and-universal-interface-with-force-feedback-for-data-collection-of-dexterous-robotic-hands.md): Provides the hardware cost, attached-versus-remote setup, and the user-study results including success rates and completion times.
 - [DEX-Mouse: A Low-cost Portable and Universal Interface with Force Feedback for Data Collection of Dexterous Robotic Hands](../Inbox/2026-04-16--dex-mouse-a-low-cost-portable-and-universal-interface-with-force-feedback-for-data-collection-of-dexterous-robotic-hands.md): Confirms the system is open-sourced for replication and adoption and states the headline attached-configuration result.

@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # 仓库任务验证
 
-## Summary
+## 摘要
 最近最清楚的方向，是在仓库代理前面加上明确的规格和验证步骤，再用端到端的仓库任务来测试它们，而不是只做局部代码检查。证据支持三个具体动作：在修 issue 之前先写结构化需求，把仓库迁移包装成带规划和验证检查点的流程，以及用空工作区的黑盒 CLI 行为测试来评估 0 到 1 的代码生成。
 
 ## 在仓库补丁生成之前先写结构化需求
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 一个可落地的实现，是做一个连接仓库的分诊工具：每个新来的 bug 或功能请求先生成需求记录，把缺失字段展示给开发者，然后再把任务交给修补代理。最先会用到它的是那些 issue 数量大、工单质量不稳定的团队，因为缺少复现步骤和不清楚的成功标准会浪费代理运行次数。一个便宜的检查方法很直接：抽样你自己还没解决的 issues，加上需求记录和测试生成循环，再把补丁接受率和重跑次数和现有流程对比。
 
-### Evidence
+### 资料来源
 - [REAgent: Requirement-Driven LLM Agents for Software Issue Resolution](../Inbox/2026-04-08--reagent-requirement-driven-llm-agents-for-software-issue-resolution.md): REAgent reports requirement generation, requirement scoring with generated tests, iterative refinement, and 9.17% to 24.83% gains in resolved issues.
 - [REAgent: Requirement-Driven LLM Agents for Software Issue Resolution](../Inbox/2026-04-08--reagent-requirement-driven-llm-agents-for-software-issue-resolution.md): The paper states that repository-level issue resolution remains far below function-level performance, which supports demand for a requirements layer.
 
@@ -40,7 +40,7 @@ language_code: zh-CN
 
 这支持给跨语言迁移代码库的团队提供一个具体服务：接收源仓库，产出目标项目设计和依赖感知的实现计划，然后保留一份可见的验证记录，记录编译状态、翻译后测试状态和新生成测试的覆盖情况。迁移采购方更在意可审计性和回滚点，而不是原始代码输出。一个有用的首轮试点，是在单个工程组织里开一条窄的迁移队列，用编译成功率、人工返工工时，以及无需手工修复就通过仓库测试的翻译模块占比来衡量。
 
-### Evidence
+### 资料来源
 - [ReCodeAgent: A Multi-Agent Workflow for Language-agnostic Translation and Validation of Large-scale Repositories](../Inbox/2026-04-08--recodeagent-a-multi-agent-workflow-for-language-agnostic-translation-and-validation-of-large-scale-repositories.md): ReCodeAgent describes the four-agent workflow and reports 99.4% compilation success and 86.5% test pass rate across 118 projects.
 
 ## 空工作区代理评测的黑盒 CLI 生成工具
@@ -48,6 +48,6 @@ language_code: zh-CN
 
 这指向一个面向内部评测的产品，给正在发布代码生成功能的代理团队使用。每次运行都从空容器开始，输入需求、`--help` 接口，以及每个命令类别的一个已验证示例，然后把返回码、stdout 和文件系统副作用与 oracle 实现对比。这个工具也能抓住单元测试看不到的规划质量、仓库布局和终止行为回归。如果团队已经在用提示词生成小应用或 CLI，这是一种低成本方法，用来在用户碰到之前先找出代理还会在哪些地方失效。
 
-### Evidence
+### 资料来源
 - [Evaluating LLM-Based 0-to-1 Software Generation in End-to-End CLI Tool Scenarios](../Inbox/2026-04-08--evaluating-llm-based-0-to-1-software-generation-in-end-to-end-cli-tool-scenarios.md): CLI-Tool-Bench defines empty-workspace CLI generation and black-box evaluation over return code, stdout, and file-system side effects, with top models below 43% success.
 - [Evaluating LLM-Based 0-to-1 Software Generation in End-to-End CLI Tool Scenarios](../Inbox/2026-04-08--evaluating-llm-based-0-to-1-software-generation-in-end-to-end-cli-tool-scenarios.md): The paper reports monolithic code structures and infinite generation loops as observed failure modes, which a black-box harness can surface.

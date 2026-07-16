@@ -45,7 +45,7 @@ FATE-VLA gives evaluation teams a second concrete tool: adaptive scene generatio
 
 A practical adoption change is to turn every new VLA policy candidate into a small failure-discovery campaign. Start with a task family that matters to deployment, vary object identity, object pose, workspace position, and instruction wording, and report semantic target accuracy separately from grasp success. The output should be a failure map that operators and model trainers can act on, not a single average success rate.
 
-### Evidence
+### Sources
 - [RoboSemanticBench: Diagnosing Semantic Grounding in Action Prediction for VLA Models](../Inbox/2026-06-01--robosemanticbench-diagnosing-semantic-grounding-in-action-prediction-for-vla-models.md): RoboSemanticBench separates grasp success from semantic target choice and reports low or negative normalized Semantic Grounding scores across evaluated VLA models.
 - [FATE-VLA:Failue-aware test generation for vision-language-action models](../Inbox/2026-06-01--fate-vla-failue-aware-test-generation-for-vision-language-action-models.md): FATE-VLA uses adaptive test generation to discover more manipulation failures than random testing on GR00T-N1.6 and EO-1.
 
@@ -58,7 +58,7 @@ The reported gains are concentrated exactly where deployment teams feel latency.
 
 A cheap first test is to wrap an existing OpenVLA-style policy on one moving-object station and compare success across object speeds. The pass condition should include latency, uncertainty-triggered horizon length, and success at the fastest operating speed, because a predictor that only helps at slow speeds will not solve the shop-floor timing problem.
 
-### Evidence
+### Sources
 - [Intercepting the Future: Latent-Space Predictive World Model for Dynamic VLA Manipulation](../Inbox/2026-06-01--intercepting-the-future-latent-space-predictive-world-model-for-dynamic-vla-manipulation.md): AHEAD wraps frozen 7B OpenVLA with a small latent world model and reports large gains on dynamic simulation and physical xArm 7 moving-object tasks.
 - [Intercepting the Future: Latent-Space Predictive World Model for Dynamic VLA Manipulation](../Inbox/2026-06-01--intercepting-the-future-latent-space-predictive-world-model-for-dynamic-vla-manipulation.md): The paper abstract describes AHEAD as a predict-then-act wrapper that forecasts future patch tokens in the VLA feature space using motion-aware latent prediction.
 
@@ -73,7 +73,7 @@ Lie Diffuser Actor points to the same operational issue at the action level. It 
 
 A useful pilot is to take one mixed-camera manipulation dataset, convert observations and actions into a shared robot-base or tabletop coordinate frame, and rerun the policy under held-out camera poses. The metric should include task success and invalid pose statistics, since a policy can score well in one camera setup while producing unstable rotations under a different frame.
 
-### Evidence
+### Sources
 - [Dexterity-BEV: Aligning 3D World and Actions for Generalizable Robot Policies Learning](../Inbox/2026-06-01--dexterity-bev-aligning-3d-world-and-actions-for-generalizable-robot-policies-learning.md): Dexterity-BEV aligns visual inputs, proprioception, and actions in a shared 3D BEV coordinate frame and reports strong results under modified camera and pose tests.
 - [Dexterity-BEV: Aligning 3D World and Actions for Generalizable Robot Policies Learning](../Inbox/2026-06-01--dexterity-bev-aligning-3d-world-and-actions-for-generalizable-robot-policies-learning.md): The paper abstract describes aligned vertex maps, vertex spectrum, BEV construction, and a data processing pipeline for spatial-temporal alignment.
 - [The Lie We Tell: Correcting the Euclidean Fallacy in Vision Language Action Policies via Score Matching on Tangent Space](../Inbox/2026-06-01--the-lie-we-tell-correcting-the-euclidean-fallacy-in-vision-language-action-policies-via-score-matching-on-tangent-space.md): Lie Diffuser Actor keeps pose diffusion on SE(3), improves CALVIN and LIBERO metrics, and reduces rotation orthogonality violations.

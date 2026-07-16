@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # Latent Control Interfaces for Robot Manipulation
 
-## Summary
+## 摘要
 潜在未来表示正在成为操作模型的具体控制接口，论文报告了示教效率的提升，也有早期迹象表明人类数据和机器人数据混合后可以支持跨具身迁移。对象中心路线推进得更慢：分阶段训练有帮助，但当前模型在进入机器人规划或控制之前，仍需要对 slot 质量、因果可用性和数值稳定性做明确评估。
 
 ## Two-stage VLA training with a horizon-16 latent future interface
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 直接受益的是那些已经有 VLM 驱动的操作策略、但在端到端微调时要消耗大量示教并且训练不稳定的机器人团队。实现方式很具体：增加一个未来特征头，让潜变量和感知保持在同一个 ViT 特征空间里，并检查当未来预测变成必需输入而不是辅助损失时，控制器是否仍然受益。一个成本较低的检查方法，是在固定数据预算下重跑一个 tabletop 基准，比较直接动作预测和潜在未来接口的成功率与训练稳定性。如果这种收益在几千条示教上仍然成立，就会改变团队为操作训练分配数据采集预算的方式。
 
-### Evidence
+### 资料来源
 - [DIAL: Decoupling Intent and Action via Latent World Modeling for End-to-End VLA](../Inbox/2026-03-31--dial-decoupling-intent-and-action-via-latent-world-modeling-for-end-to-end-vla.md): Describes the latent future bottleneck, horizon-16 setup, two-stage training, and the 10x demonstration-efficiency claim on RoboCasa.
 - [DIAL: Decoupling Intent and Action via Latent World Modeling for End-to-End VLA](../Inbox/2026-03-31--dial-decoupling-intent-and-action-via-latent-world-modeling-for-end-to-end-vla.md): Confirms the paper's report of new state-of-the-art performance on RoboCasa GR1 Tabletop with far fewer demonstrations.
 
@@ -40,7 +40,7 @@ language_code: zh-CN
 
 这件事首先适合那些手头有零散遥操作日志、机器人时间有限、而且在新物体或新场景布局上反复泛化失败的团队。流程调整需要很明确：意图模型在不同具身之间共享，动作头保持具身特定，并且在采集更多机器人数据之前，先在留出的物体外观、物体组合和物体类型上测试 zero-shot 表现。论文摘录没有给出完整的逐基线表格，所以第一步应当是对某一类操作任务做一次受限试点。即使这样也有价值，因为它能显示在人类数据和机器人数据混合后，是否能在额外机器人采集缓慢且昂贵的场景里改善迁移。
 
-### Evidence
+### 资料来源
 - [DIAL: Decoupling Intent and Action via Latent World Modeling for End-to-End VLA](../Inbox/2026-03-31--dial-decoupling-intent-and-action-via-latent-world-modeling-for-end-to-end-vla.md): Summarizes the use of 27,419 EgoDex trajectories for cross-embodiment zero-shot tests and the IRON-R01-1.11 real-world transfer setup.
 - [DIAL: Decoupling Intent and Action via Latent World Modeling for End-to-End VLA](../Inbox/2026-03-31--dial-decoupling-intent-and-action-via-latent-world-modeling-for-end-to-end-vla.md): States that heterogeneous human demonstrations improved zero-shot generalization to unseen objects and configurations in deployment.
 
@@ -49,6 +49,6 @@ language_code: zh-CN
 
 最先会用到这些指标的是想把对象级潜变量用于规划、干预或反事实分析的研究团队。他们需要一种方法来拒绝那些预测损失看起来不错、但分解失败的运行。HCLSM 对两阶段训练和 no-SBD 变体的比较说明了为什么这件事重要：更低的损失可能来自更容易预测、但对对象推理没那么有用的分布式编码。一个成本较低的验证步骤，是把这些检查加到 PushT 或类似 tabletop 数据集上的一个现有 slot 基线里，看看这些指标和预测损失有多常不一致。这样在投入更多因果结构学习工作之前，实验室就能判断自己面对的是建模问题还是评估问题。
 
-### Evidence
+### 资料来源
 - [HCLSM: Hierarchical Causal Latent State Machines for Object-Centric World Modeling](../Inbox/2026-03-31--hclsm-hierarchical-causal-latent-state-machines-for-object-centric-world-modeling.md): Provides the staged training setup, PushT metrics, weak slot decomposition, failed causal edges, and bf16 instability.
 - [HCLSM: Hierarchical Causal Latent State Machines for Object-Centric World Modeling](../Inbox/2026-03-31--hclsm-hierarchical-causal-latent-state-machines-for-object-centric-world-modeling.md): Confirms the paper's core claim that slot specialization must be enforced before future prediction begins.

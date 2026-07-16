@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # 编码代理控制门
 
-## Summary
+## 摘要
 近期最清楚的变化，是围绕编码代理增加更明确的控制点：仓库生成前先放合同工件，给代码生成加安全评分并配上受限编辑工具，以及在需求含糊时先做澄清。证据更支持具体构建和流程调整，而不是更大的自治承诺。
 
 ## 面向多文件绿色开发的先合同仓库生成
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 最先会用到它的是那些生成新的多文件服务、管理工具、游戏原型或迁移脚手架的团队，因为这类任务里跨文件一致性比本地语法更容易出错。一个简单的测试方法是：拿十个现在通常要经过多轮代理修复的绿色项目任务，加上一份必须在代码生成前审批或自动检查的合同工件，然后测文件级一致性、重跑次数和到可通过仓库的耗时。同一组证据也说明了它的边界：当任务可以拆成明确接口和模块边界时，这种方法最有用。带有密集策略逻辑或业务规则冲突的任务，仍然需要合同之上的另一层控制。
 
-### Evidence
+### 资料来源
 - [Contract-Coding: Towards Repo-Level Generation via Structured Symbolic Paradigm](../Inbox/2026-04-10--contract-coding-towards-repo-level-generation-via-structured-symbolic-paradigm.md): Repo-level results, benchmark comparisons, and runtime gains support a contract-first build for multi-file generation.
 - [Can Coding Agents Be General Agents?](../Inbox/2026-04-10--can-coding-agents-be-general-agents.md): The Odoo case shows where explicit structure still struggles once policy constraints and interdependent business decisions accumulate.
 
@@ -40,7 +40,7 @@ language_code: zh-CN
 
 这足够支持一个窄一些的产品方案，面向把内部编码代理放进常见安全敏感代码库的团队：Web 处理程序、认证流程、文件操作、数据库访问和依赖拼接。Zup 的部署论文给出了工具侧的补充。它的内部代理依赖定向字符串替换编辑、分层 shell 限制、审计日志，以及在更高自治之前的审批模式。实际落地可以这样做：把高风险文件路由到安全强化过的模型路径，保持编辑为补丁式，并在早期阶段要求 shell 和写入操作先审批。一个便宜的检查方法是，回放几百个已接受的代理任务，带上安全审查标签，然后在扩展权限前比较漏洞发现、通过率和人工返工。
 
-### Evidence
+### 资料来源
 - [DeepGuard: Secure Code Generation via Multi-Layer Semantic Aggregation](../Inbox/2026-04-10--deepguard-secure-code-generation-via-multi-layer-semantic-aggregation.md): Provides the concrete secure-code gain and the mechanism that preserves correctness while improving security.
 - [Building an Internal Coding Agent at Zup: Lessons and Open Questions](../Inbox/2026-04-10--building-an-internal-coding-agent-at-zup-lessons-and-open-questions.md): Shows the surrounding tool controls that make a security-hardened coding agent usable in production.
 
@@ -49,6 +49,6 @@ language_code: zh-CN
 
 实现方式很直接：在涉及需求不清、隐藏策略选择或仓库上下文不完整的工单上，执行前先做 blocker 检查。代理应该暴露候选 blocker，提出有针对性的问题，并在问题没有得到回答时暂停。评估也不能只看成败。Ask-F1、blocker recall 和 question precision 应该和任务完成率一起出现在内部评分卡上。旁边的日志研究从另一个角度指向同一个操作问题。代理会漏掉非功能性要求，后续由人工补救：在 58.4% 的仓库里，人工修改日志的次数比代理更多，代理对建设性日志请求的遵守失败率是 67%，而 72.5% 的生成后日志修复由人工完成。把代理接进 issue-to-PR 流程的团队，在开始编码前需要正式的澄清步骤，而不只是一个模型很少用好的聊天框。
 
-### Evidence
+### 资料来源
 - [HiL-Bench (Human-in-Loop Benchmark): Do Agents Know When to Ask for Help?](../Inbox/2026-04-10--hil-bench-human-in-loop-benchmark-do-agents-know-when-to-ask-for-help.md): Quantifies how badly agents perform when they must decide when to ask for clarification.
 - [Do AI Coding Agents Log Like Humans? An Empirical Study](../Inbox/2026-04-10--do-ai-coding-agents-log-like-humans-an-empirical-study.md): Shows a related failure in observability requirements where humans repair what agents omit or mis-handle.

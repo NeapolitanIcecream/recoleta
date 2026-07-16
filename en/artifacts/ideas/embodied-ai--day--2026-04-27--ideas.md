@@ -39,7 +39,7 @@ CF-VLA gives a concrete baseline for this test. It reports 96.5 average LIBERO s
 
 A cheap validation run is a two-column comparison: current sampler versus a coarse-to-fine or buffered variant, with success and latency recorded together. A sampler that saves milliseconds while lowering contact-task success should fail the gate.
 
-### Evidence
+### Sources
 - [CF-VLA: Efficient Coarse-to-Fine Action Generation for Vision-Language-Action Policies](../Inbox/2026-04-27--cf-vla-efficient-coarse-to-fine-action-generation-for-vision-language-action-policies.md): CF-VLA reports the two-step NFE=2 sampler, LIBERO success, action sampling latency reduction, and real-robot success.
 - [Libra-VLA: Achieving Learning Equilibrium via Asynchronous Coarse-to-Fine Dual-System](../Inbox/2026-04-27--libra-vla-achieving-learning-equilibrium-via-asynchronous-coarse-to-fine-dual-system.md): Libra-VLA describes coarse intent prediction, continuous refinement, and an inference-time FIFO intent buffer.
 - [Characterizing Vision-Language-Action Models across XPUs: Constraints and Acceleration for On-Robot Deployment](../Inbox/2026-04-27--characterizing-vision-language-action-models-across-xpus-constraints-and-acceleration-for-on-robot-deployment.md): The deployment study reports model-hardware latency, energy, and compilation effects for VLA inference.
@@ -51,7 +51,7 @@ AsyncShield is a direct template. It uses five realigned look-ahead waypoints sp
 
 The first field test can replay logged cloud-VLA packets with injected delay, jitter, and packet loss while the robot drives in a mapped obstacle course. The pass condition should combine arrival, cross-track error, and minimum-distance violations, since close tracking can still be unsafe when waypoints are stale.
 
-### Evidence
+### Sources
 - [AsyncShield: A Plug-and-Play Edge Adapter for Asynchronous Cloud-based VLA Navigation](../Inbox/2026-04-27--asyncshield-a-plug-and-play-edge-adapter-for-asynchronous-cloud-based-vla-navigation.md): AsyncShield provides the pose-buffer, SE(2) realignment, LiDAR policy, network-degradation results, and ablations.
 - [AsyncShield: A Plug-and-Play Edge Adapter for Asynchronous Cloud-based VLA Navigation](../Inbox/2026-04-27--asyncshield-a-plug-and-play-edge-adapter-for-asynchronous-cloud-based-vla-navigation.md): The paper abstract states the cloud-to-edge latency problem and the edge correction mechanism.
 - [Characterizing Vision-Language-Action Models across XPUs: Constraints and Acceleration for On-Robot Deployment](../Inbox/2026-04-27--characterizing-vision-language-action-models-across-xpus-constraints-and-acceleration-for-on-robot-deployment.md): The VLA deployment profiling paper frames latency as a closed-loop robot failure source.
@@ -63,7 +63,7 @@ MoT-HRA gives the most concrete recipe. Its HA-2.2M dataset is built from HowTo1
 
 A practical pilot is to curate a small task-specific human-video subset, pretrain the trajectory and hand-motion heads, then fine-tune with the same 50 to 100 robot demonstrations used by a robot-only baseline. The comparison should include novel object placement and instruction variation, since $M^2$-VLA also reports larger gains when instructions and objects change after training.
 
-### Evidence
+### Sources
 - [Learning Human-Intention Priors from Large-Scale Human Demonstrations for Robotic Manipulation](../Inbox/2026-04-27--learning-human-intention-priors-from-large-scale-human-demonstrations-for-robotic-manipulation.md): MoT-HRA describes HA-2.2M, the three-expert split, read-only transfer, and SimplerEnv-WidowX results.
 - [Learning Human-Intention Priors from Large-Scale Human Demonstrations for Robotic Manipulation](../Inbox/2026-04-27--learning-human-intention-priors-from-large-scale-human-demonstrations-for-robotic-manipulation.md): The paper abstract describes learning human-intention priors from reconstructed large-scale human demonstrations.
 - [$M^2$-VLA: Boosting Vision-Language Models for Generalizable Manipulation via Layer Mixture and Meta-Skills](../Inbox/2026-04-27--m-2-vla-boosting-vision-language-models-for-generalizable-manipulation-via-layer-mixture-and-meta-skills.md): $M^2$-VLA reports gains under rephrased instructions and novel-object tests using frozen VLM features and retrieved meta-skills.

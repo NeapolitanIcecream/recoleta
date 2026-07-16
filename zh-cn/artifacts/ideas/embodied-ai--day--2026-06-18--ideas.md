@@ -23,7 +23,7 @@ language_code: zh-CN
 
 # 操作 rollout 准备度
 
-## Summary
+## 摘要
 机器人实验室可以通过三项改动提高部署准备度：在 rollout 执行框架中加入故障报警，在下游微调前剪枝 VLA 层，并用 3D 一致的增强 episode 修复特定物体失败。每项改动都能接入现有操作工作流，并有可测量的首次测试：报警提前量、延迟和训练小时数降低，或失败物体上的成功率恢复。
 
 ## 用于无人值守 VLA rollout 的滑动窗口故障报警
@@ -31,7 +31,7 @@ language_code: zh-CN
 
 便宜的首次测试是在实验室自己的成功和失败日志上做离线回放。用滑动窗口计算三个 Tri-Info 信号，训练小型时间分类器，并测量报警有多常能早到足以支持停止、重试或人工复核。如果监控器只能在失败已经可见后起作用，就不应进入机器人控制路径。
 
-### Evidence
+### 资料来源
 - [Tri-Info: Generalizable, Interpretable Failure Prediction for VLA Models via Information Theory](../Inbox/2026-06-18--tri-info-generalizable-interpretable-failure-prediction-for-vla-models-via-information-theory.md): Tri-Info 定义了熵和互信息信号，将它们映射到可解释的 rollout 失败模式，并报告了真实世界迁移准确率。
 - [ENPIRE: Agentic Robot Policy Self-Improvement in the Real World](../Inbox/2026-06-18--enpire-agentic-robot-policy-self-improvement-in-the-real-world.md): ENPIRE 描述了真实机器人的重置、rollout、验证和代码编辑循环；无人值守的策略改进需要自动安全检查和结果检查。
 
@@ -40,7 +40,7 @@ language_code: zh-CN
 
 对于受限于 GPU 小时数或边缘端延迟的实验室，这是一个实际的工作流改动。首次采用检查很简单：剪枝一个任务模型，保持相同数据和训练配方，并把验证成功率、实际训练耗时和机器人端控制延迟与完整模型对比。若成功率持平或提高，同时延迟降到控制循环预算以内，这个方法最有用。
 
-### Evidence
+### 资料来源
 - [Finetuning Vision-Language-Action Models Requires Fewer Layers Than You Think](../Inbox/2026-06-18--finetuning-vision-language-action-models-requires-fewer-layers-than-you-think.md): CLP 给出了剪枝流程，并报告了 π0、GR00T-N1.5 和 SmolVLA 上的模型规模、可训练参数、训练时间、延迟和成功率结果。
 - [Finetuning Vision-Language-Action Models Requires Fewer Layers Than You Think](../Inbox/2026-06-18--finetuning-vision-language-action-models-requires-fewer-layers-than-you-think.md): 论文摘要确认了单次前向传播的 CKA 剪枝方法，并说明该方法已在仿真和真实世界操作任务中验证。
 
@@ -49,6 +49,6 @@ language_code: zh-CN
 
 首次有用试验应收窄范围：选择一小组失败物体，从已有成功运行中生成增强 episode，微调同一个 VLA，并重新运行失败物体评估。Pose6DAug 报告称，在使用 GR00T-1.5 的 RoboCasa365 Counter-to-Cabinet 失败 episode 上，平均成功率为 22.8%；相比之下，VACE 为 16.4%，MimicGen 为 15.8%，基础策略为 0.0%。
 
-### Evidence
+### 资料来源
 - [Pose6DAug: Physically Plausible Multi-view Object Swapping for Robot Data Augmentation](../Inbox/2026-06-18--pose6daug-physically-plausible-multi-view-object-swapping-for-robot-data-augmentation.md): Pose6DAug 详细说明了保留 6D 位姿的物体替换工作流，并报告了在失败 episode 和困难未见物体上的成功率提升。
 - [Pose6DAug: Physically Plausible Multi-view Object Swapping for Robot Data Augmentation](../Inbox/2026-06-18--pose6daug-physically-plausible-multi-view-object-swapping-for-robot-data-augmentation.md): 摘要说明了新物体带来的数据收集瓶颈，并描述了如何把成功 episode 转成有针对性的演示，而无需新的遥操作数据。

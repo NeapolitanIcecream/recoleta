@@ -32,14 +32,14 @@ pass_kind: trend_synthesis
 ## Overview
 This week’s robotics corpus judges Vision-Language-Action (VLA) systems by live execution: latency, recovery, data loops, and sim-to-real contact. MotuBrain, Sentinel-VLA, and LWD anchor the signal with action-world prediction, status monitoring, and fleet learning tied to hardware or benchmark results.
 
-## Clusters
+## Findings
 
 ### Low-latency action structure
 VLA papers treat action generation as a control design problem. Libra-VLA separates coarse discrete intent from continuous fine control, then runs the planner less often while the refiner acts at the control rate. It reports 97.2% average success on LIBERO and 79.5% on LIBERO-Plus zero-shot transfer.
 
 World-action work adds future-state prediction to the same constraint. MotuBrain predicts actions and future visual states in one diffusion model, with multiview support and a faster inference stack. Its reported latency falls from 4.90 seconds to 0.09 seconds, raising frequency to 11.11 Hz. The useful claim is practical: predictive models matter when they fit the robot’s update budget.
 
-#### Evidence
+#### Sources
 - [Libra-VLA: Achieving Learning Equilibrium via Asynchronous Coarse-to-Fine Dual-System](../Inbox/2026-04-27--libra-vla-achieving-learning-equilibrium-via-asynchronous-coarse-to-fine-dual-system.md): Libra-VLA summary gives the coarse-to-fine policy design, LIBERO results, and asynchronous inference setup.
 - [MotuBrain: An Advanced World Action Model for Robot Control](../Inbox/2026-04-30--motubrain-an-advanced-world-action-model-for-robot-control.md): MotuBrain summary gives the unified world-action model design and latency/frequency results.
 
@@ -50,7 +50,7 @@ Sentinel-VLA adds a status monitor that detects Initial, Normal, New-subtask, an
 
 Navigation work shows the same concern under network delay. AsyncShield realigns delayed cloud VLA waypoints with an SE(2) pose transform and adds a safety-constrained local policy. Under mixed network degradation, success reaches 76.7%, while the no-alignment ablation drops to 36.7%.
 
-#### Evidence
+#### Sources
 - [VLA-ATTC: Adaptive Test-Time Compute for VLA Models with Relative Action Critic Model](../Inbox/2026-05-02--vla-attc-adaptive-test-time-compute-for-vla-models-with-relative-action-critic-model.md): VLA-ATTC summary gives uncertainty-triggered candidate selection, real-robot success gains, and control frequency.
 - [Sentinel-VLA: A Metacognitive VLA Model with Active Status Monitoring for Dynamic Reasoning and Error Recovery](../Inbox/2026-05-02--sentinel-vla-a-metacognitive-vla-model-with-active-status-monitoring-for-dynamic-reasoning-and-error-recovery.md): Sentinel-VLA summary gives status monitoring, recovery behavior, latency, and real-world results.
 - [AsyncShield: A Plug-and-Play Edge Adapter for Asynchronous Cloud-based VLA Navigation](../Inbox/2026-04-27--asyncshield-a-plug-and-play-edge-adapter-for-asynchronous-cloud-based-vla-navigation.md): AsyncShield summary gives delayed-waypoint correction, safety policy design, and degradation/ablation results.
@@ -62,7 +62,7 @@ Data collection work attacks the smaller-lab bottleneck. Phone2Act turns an Andr
 
 Lucid-XR broadens the data path with headset-based simulation and generated multi-view images. In 30-minute sessions, users collected about twice as many demonstrations as real teleoperation, and augmentation raised effective dataset size to about five times the real baseline.
 
-#### Evidence
+#### Sources
 - [Learning while Deploying: Fleet-Scale Reinforcement Learning for Generalist Robot Policies](../Inbox/2026-05-01--learning-while-deploying-fleet-scale-reinforcement-learning-for-generalist-robot-policies.md): LWD summary gives fleet-scale online reinforcement learning setup, task set, and 95% average success.
 - [Phone2Act: A Low-Cost, Hardware-Agnostic Teleoperation System for Scalable VLA Data Collection](../Inbox/2026-05-03--phone2act-a-low-cost-hardware-agnostic-teleoperation-system-for-scalable-vla-data-collection.md): Phone2Act summary gives phone teleoperation design, LeRobot recording, latency, and fine-tuning result.
 - [Lucid-XR: An Extended-Reality Data Engine for Robotic Manipulation](../Inbox/2026-04-30--lucid-xr-an-extended-reality-data-engine-for-robotic-manipulation.md): Lucid-XR summary gives XR data collection rate, augmentation scale, and real-robot transfer claims.
@@ -72,6 +72,6 @@ Simulation papers focus on contact, visual fidelity, and hardware transfer. GS-P
 
 DexSim2Real uses a vision-language model as a realism critic to tune simulation randomization for dexterous manipulation. The final policy trains in Isaac Sim and transfers to a real Franka Panda with an Allegro Hand. Across six real tasks, it reports 78.2% average success and an 8.3% sim-to-real gap, with ablations showing losses when tactile input, guided randomization, or the skill curriculum are removed.
 
-#### Evidence
+#### Sources
 - [GS-Playground: A High-Throughput Photorealistic Simulator for Vision-Informed Robot Learning](../Inbox/2026-04-28--gs-playground-a-high-throughput-photorealistic-simulator-for-vision-informed-robot-learning.md): GS-Playground summary gives high-throughput photorealistic simulation, contact physics, and rendering throughput.
 - [DexSim2Real: Foundation Model-Guided Sim-to-Real Transfer for Generalizable Dexterous Manipulation](../Inbox/2026-05-03--dexsim2real-foundation-model-guided-sim-to-real-transfer-for-generalizable-dexterous-manipulation.md): DexSim2Real summary gives foundation-model-guided randomization, tactile-visual policy design, and real dexterous results.

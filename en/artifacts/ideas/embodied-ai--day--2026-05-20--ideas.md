@@ -39,7 +39,7 @@ VLA teams can add a small real-robot station to their release process and use it
 
 The useful adoption change is a fixed local gate before claiming progress on a new policy or fine-tune. Run the same 10 manipulation tasks, reuse the 500-demonstration adaptation set, and report success across the 50 in-distribution and 40 out-of-distribution scenes. The baseline table also sets expectations: π0.5 leads the tested policies at 0.54 average success in-distribution, while ACT, DiT variants, SmolVLA, X-VLA, and π0 are lower. A team with a new VLA can learn quickly whether a leaderboard gain still works with lighting, camera pose, object placement, and contact on real hardware.
 
-### Evidence
+### Sources
 - [VLA-REPLICA: A Low-Cost, Reproducible Benchmark for Real-World Evaluation of Vision-Language-Action Models](../Inbox/2026-05-20--vla-replica-a-low-cost-reproducible-benchmark-for-real-world-evaluation-of-vision-language-action-models.md): VLA-REPLICA specifies the low-cost hardware, 10-task suite, 500 demonstrations, 90 test scenes, reproducibility check, and policy success rates.
 - [VLA-REPLICA: A Low-Cost, Reproducible Benchmark for Real-World Evaluation of Vision-Language-Action Models](../Inbox/2026-05-20--vla-replica-a-low-cost-reproducible-benchmark-for-real-world-evaluation-of-vision-language-action-models.md): The paper describes the motivation for a locally executable real-world benchmark and gives the accessible hardware setup.
 
@@ -48,7 +48,7 @@ Teams training VLAs on RGB-D manipulation data can test whether geometry reaches
 
 The practical check is a controlled ablation on spatial tasks and long-horizon kitchen tasks. Keep the base VLA and training data fixed, add either point-cloud attention in the decoder or 3D Gaussian auxiliary supervision, and compare errors on grasp points, target poses, stacking, unstacking, and spatial relations. PointACT reports 96.0% average success on LIBERO and a 17.9-point gain over SpatialVLA in the same table. GaussianDream reports 98.4% on LIBERO and 52.6% on RoboCasa Human-50 while avoiding test-time Gaussian rendering or future video rollout.
 
-### Evidence
+### Sources
 - [PointACT: Vision-Language-Action Models with Multi-Scale Point-Action Interaction](../Inbox/2026-05-20--pointact-vision-language-action-models-with-multi-scale-point-action-interaction.md): PointACT describes point-cloud features connected directly to action tokens and reports LIBERO results and the SpatialVLA comparison.
 - [GaussianDream: A Feed-Forward 3D Gaussian World Model for Robotic Manipulation](../Inbox/2026-05-20--gaussiandream-a-feed-forward-3d-gaussian-world-model-for-robotic-manipulation.md): GaussianDream describes training-time 3D Gaussian reconstruction, future scene-flow supervision, inference-time removal of auxiliary heads, and reported LIBERO and RoboCasa results.
 
@@ -57,6 +57,6 @@ Dexterous-hand teams using tendon-driven hardware can run a focused sensing upgr
 
 The reported hardware result makes the check worth doing on real hands. On a 55 mm cube, the direct-joint-sensing policy reaches 11.83 RPM with 100% rotation accuracy, 100% drop-free success, and zero drops across three 60-second trials. The same paper reports a 26.8% speed gain over the motor-encoder version on the 55 mm cube. For teams fighting cable stretch, backlash, occlusion, and camera calibration, this is a measurable retrofit: add direct joint sensing, train the history model, and score RPM, drops, and rotation accuracy against the existing controller.
 
-### Evidence
+### Sources
 - [Learning Robust Dexterous In-Hand Manipulation from Joint Sensors with Proprioceptive Transformer](../Inbox/2026-05-20--learning-robust-dexterous-in-hand-manipulation-from-joint-sensors-with-proprioceptive-transformer.md): Proprioceptive Transformer specifies the joint-history student policy, direct joint sensing on the ORCA hand, and the cube-rotation results against baselines.
 - [Learning Robust Dexterous In-Hand Manipulation from Joint Sensors with Proprioceptive Transformer](../Inbox/2026-05-20--learning-robust-dexterous-in-hand-manipulation-from-joint-sensors-with-proprioceptive-transformer.md): The abstract frames joint-only dexterous manipulation and the teacher-student design using only joint sensing feedback.

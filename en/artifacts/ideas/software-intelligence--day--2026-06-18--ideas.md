@@ -39,7 +39,7 @@ Probe-and-Refine gives a concrete pattern: 10 synthetic bug-fix probes per itera
 
 A cheap first version is a nightly job on the top repositories where agents already open drafts. Track whether the agent reaches an evaluable patch, which commands it ran, and which guidance lines were used or contradicted. Keep the output short enough for every run to read, and require a human review for guidance edits that change release, security, or data-migration steps.
 
-### Evidence
+### Sources
 - [Probe-and-Refine Tuning of Repository Guidance for Coding Agents](../Inbox/2026-06-18--probe-and-refine-tuning-of-repository-guidance-for-coding-agents.md): Shows the probe-and-refine method, the 33.0% versus 28.3% and 25.5% resolve-rate comparison, and the finding that refined guidance mainly increases evaluable patches.
 - [Phoenix: Safe GitHub Issue Resolution via Multi-Agent LLMs](../Inbox/2026-06-18--phoenix-safe-github-issue-resolution-via-multi-agent-llms.md): Reports that manual inspection of real issue pull requests found many generic or invented-path changes, a failure mode that better repository guidance can target.
 
@@ -50,7 +50,7 @@ Phoenix is a useful reference design because it handles broken or flaky reposito
 
 Permission choice needs its own check in the same lane. ToolPrivBench found that six of 11 evaluated models exceeded 30% over-privileged tool use when lower-privilege tools were sufficient. Eve shows the production plumbing that makes these gates easier to ship: durable sessions, sandboxes, human approvals, traces, and file-based evals. A production repository can start with three required records on every agent PR: baseline test hash, patched test hash, and any high-privilege tool or approval event.
 
-### Evidence
+### Sources
 - [Phoenix: Safe GitHub Issue Resolution via Multi-Agent LLMs](../Inbox/2026-06-18--phoenix-safe-github-issue-resolution-via-multi-agent-llms.md): Describes Phoenix’s baseline-versus-patched test gate, safety controls, pull request workflow, and reported no PASS_TO_PASS regressions on successful runs.
 - [When Lower Privileges Suffice: Investigating Over-Privileged Tool Selection in LLM Agents](../Inbox/2026-06-18--when-lower-privileges-suffice-investigating-over-privileged-tool-selection-in-llm-agents.md): Shows that agents often choose higher-privilege tools even when lower-privilege tools are sufficient, with OPUR results across 11 models.
 - [Eve](../Inbox/2026-06-18--eve.md): Lists production agent runtime features such as durable workflows, sandboxes, approvals, traces, and evals.
@@ -63,6 +63,6 @@ Multi-LCB gives the cross-language template. It extends LiveCodeBench to 12 lang
 
 JAMER adds the project-scale test. Its Godot benchmark filters more than 240,000 candidate repositories down to 8,133 behavior-valid projects and checks compilation, startup stability, structural completeness, and runtime behavior. Runtime pass rates on code completion fall from 80.4% on small projects to 5.7% on large projects. A practical adoption test can be small: pick 20 tasks from the team’s own languages and 5 large multi-file tasks, then block general rollout until the chosen agent passes the same CI and runtime checks a developer would face.
 
-### Evidence
+### Sources
 - [Multi-LCB: Extending LiveCodeBench to Multiple Programming Languages](../Inbox/2026-06-18--multi-lcb-extending-livecodebench-to-multiple-programming-languages.md): Shows Multi-LCB’s 12-language extension of LiveCodeBench and the reported language-specific score gaps.
 - [JAMER: Project-Level Code Framework Dataset and Benchmark on Professional Game Engines](../Inbox/2026-06-18--jamer-project-level-code-framework-dataset-and-benchmark-on-professional-game-engines.md): Shows JAMER’s project-level Godot evaluation, behavior-valid repository filtering, and the runtime pass-rate drop from small to large projects.

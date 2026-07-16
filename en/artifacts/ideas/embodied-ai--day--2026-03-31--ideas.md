@@ -35,7 +35,7 @@ A practical next step for VLA teams is a two-stage training pipeline with an exp
 
 The immediate user is the robotics team that already has a VLM-backed manipulation policy but is spending heavily on demonstrations and fighting instability when it fine-tunes end to end. The concrete build is narrow: add a future-feature head, keep the latent in the same ViT space as perception, and evaluate whether the controller still benefits when the future prediction is mandatory input rather than an auxiliary loss. A cheap check is to rerun one tabletop benchmark at fixed data budgets and compare success rate and training stability between direct action prediction and the latent-future interface. If the gain holds at a few thousand demos, this changes how teams budget data collection for manipulation training.
 
-### Evidence
+### Sources
 - [DIAL: Decoupling Intent and Action via Latent World Modeling for End-to-End VLA](../Inbox/2026-03-31--dial-decoupling-intent-and-action-via-latent-world-modeling-for-end-to-end-vla.md): Describes the latent future bottleneck, horizon-16 setup, two-stage training, and the 10x demonstration-efficiency claim on RoboCasa.
 - [DIAL: Decoupling Intent and Action via Latent World Modeling for End-to-End VLA](../Inbox/2026-03-31--dial-decoupling-intent-and-action-via-latent-world-modeling-for-end-to-end-vla.md): Confirms the paper's report of new state-of-the-art performance on RoboCasa GR1 Tabletop with far fewer demonstrations.
 
@@ -44,7 +44,7 @@ Cross-embodiment robot training now looks buildable as a data-mixing workflow, n
 
 This matters first for groups that have scattered teleoperation logs, limited robot time, and repeated generalization failures on new objects or scene layouts. The workflow change is specific: keep the intent model shared across embodiments, keep the action head embodiment-specific, and test zero-shot performance on held-out object appearances, object combinations, and object types before collecting more robot data. The paper does not provide full per-baseline tables in the excerpt, so the right first move is a constrained pilot on one family of manipulation tasks. Even that is useful, because it can show whether mixed human-plus-robot data improves transfer in a setting where extra robot collection is slow and expensive.
 
-### Evidence
+### Sources
 - [DIAL: Decoupling Intent and Action via Latent World Modeling for End-to-End VLA](../Inbox/2026-03-31--dial-decoupling-intent-and-action-via-latent-world-modeling-for-end-to-end-vla.md): Summarizes the use of 27,419 EgoDex trajectories for cross-embodiment zero-shot tests and the IRON-R01-1.11 real-world transfer setup.
 - [DIAL: Decoupling Intent and Action via Latent World Modeling for End-to-End VLA](../Inbox/2026-03-31--dial-decoupling-intent-and-action-via-latent-world-modeling-for-end-to-end-vla.md): States that heterogeneous human demonstrations improved zero-shot generalization to unseen objects and configurations in deployment.
 
@@ -53,6 +53,6 @@ Object-centric world models still need instrumentation and failure checks before
 
 The first users are research teams that want object-level latents for planning, intervention, or counterfactual analysis. They need a way to reject runs that look good on prediction loss while failing at decomposition. HCLSM's own comparison between two-stage training and the no-SBD variant shows why this matters: lower loss can come from distributed codes that are easier to predict but less useful for object reasoning. A cheap validation step is to add these checks to one existing slot-based baseline on PushT or a similar tabletop dataset and see how often the metrics disagree with prediction loss. That will tell a lab whether it has a modeling problem or an evaluation problem before it invests more effort in causal structure learning.
 
-### Evidence
+### Sources
 - [HCLSM: Hierarchical Causal Latent State Machines for Object-Centric World Modeling](../Inbox/2026-03-31--hclsm-hierarchical-causal-latent-state-machines-for-object-centric-world-modeling.md): Provides the staged training setup, PushT metrics, weak slot decomposition, failed causal edges, and bf16 instability.
 - [HCLSM: Hierarchical Causal Latent State Machines for Object-Centric World Modeling](../Inbox/2026-03-31--hclsm-hierarchical-causal-latent-state-machines-for-object-centric-world-modeling.md): Confirms the paper's core claim that slot specialization must be enforced before future prediction begins.

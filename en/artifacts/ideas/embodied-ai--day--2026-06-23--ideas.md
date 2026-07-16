@@ -41,7 +41,7 @@ InSight gives a workable shape for this. On real xArm twist and pour tasks, it s
 
 The same deployment workflow should store the policy’s own observation-action-consequence triplets during rollouts. Reflective VLA shows why that log matters: the triplets expose camera geometry, calibration error, and actuation bias through the visible result of an executed action. On LIBERO-Plus, Reflective VLA reports 87.7% average success against 82.3% for a matched reactive baseline, with the largest listed gain on the Robot shift at 72.9% versus 50.0%. A cheap check is to run the loop on one missing primitive and one camera or robot offset, then measure whether the retrained policy keeps the old pick-and-place skill while improving the new primitive.
 
-### Evidence
+### Sources
 - [InSight: Self-Guided Skill Acquisition via Steerable VLAs](../Inbox/2026-06-23--insight-self-guided-skill-acquisition-via-steerable-vlas.md): InSight describes primitive segmentation, VLM-guided missing primitive acquisition, real xArm twist and pour results, long-horizon composition, and acquisition time.
 - [Reflective VLA: In-Context Action Consequences Make VLAs Generalize](../Inbox/2026-06-23--reflective-vla-in-context-action-consequences-make-vlas-generalize.md): Reflective VLA describes observation-action-consequence triplets and reports gains under robot, camera, and calibration shifts.
 
@@ -52,7 +52,7 @@ G3VLA supports the camera-calibration half of this workflow. It keeps the pretra
 
 GRA supports the synthetic-video half. It uses generated videos for future 2D end-effector waypoint supervision and trains actions only on real robot demonstrations. On three real Franka pick-and-place tasks, 25 real demos plus 75 generated videos per task reached 68.9% mean success, compared with 61.1% for the real-only matched budget and lower scores for pseudo-action baselines. A practical first test is a three-arm ablation on one task: real-only, real plus pseudo-actions, and real plus generated-video waypoint supervision.
 
-### Evidence
+### Sources
 - [G$^3$VLA: Geometric inductive bias for Vision-Language-Action Models](../Inbox/2026-06-23--g-3-vla-geometric-inductive-bias-for-vision-language-action-models.md): G3VLA documents calibration-aware visual tokens, ray embeddings, PRoPE, cross-view fusion, and benchmark and real-world pouring results.
 - [Supervise What Survives: Geometry-Guided VLA Adaptation from Synthetic Robot Videos](../Inbox/2026-06-23--supervise-what-survives-geometry-guided-vla-adaptation-from-synthetic-robot-videos.md): GRA documents generated-video 2D waypoint supervision, real-only action training, Franka task results, and pseudo-action comparisons.
 
@@ -63,6 +63,6 @@ MANGO gives the step-localization piece. It builds reusable atomic task librarie
 
 World Value Models give the progress-scoring piece for imperfect data. WVM uses a pretrained video world model to estimate task progress from video and language, and introduces Suboptimal-Value-Bench with 800 human-annotated trajectories across 3 embodiments and 15 tasks. It reports 0.05 average Hesitation-RMSE and 0.78 average Retry-VOC, ahead of the listed value-model baselines, and reports better downstream policy learning with WVM-guided AWR and filtered BC across simulated and real tasks. The first useful deployment check is a replay dashboard for one benchmark suite that shows the failed atomic step, a progress curve, and segments tagged as hesitation or retry.
 
-### Evidence
+### Sources
 - [MANGO: Automated Multi-Agent Test Oracle Generation for Vision-Language-Action Models](../Inbox/2026-06-23--mango-automated-multi-agent-test-oracle-generation-for-vision-language-action-models.md): MANGO documents automatic generation of fine-grained oracles, atomic task libraries, simulator checks, and failure localization on LIBERO_10 and RoboCasa Humanoid Tabletop.
 - [World Value Models for Robotic Manipulation](../Inbox/2026-06-23--world-value-models-for-robotic-manipulation.md): WVM documents video-based task progress scoring, Suboptimal-Value-Bench, hesitation and retry metrics, and downstream policy-learning use.

@@ -37,7 +37,7 @@ Robotics evaluation teams should add a small visual-cue regression set before us
 
 The reason to prioritize this is operational. VISER reports an average Pearson correlation of 0.92 between simulation and real-world policy performance, and its examples show large task-level swings from visual details. In the eggplant-in-pot step, success rises from 10% without specular highlights to 90% with them, close to 100% in the real world. For put-spoon-on-towel, soft shadows give 49% success, compared with 12% without shadows and 42% in the real world. A simulator that drops these cues can rank policies using scenes that remove information the robot uses for geometry and spatial grounding.
 
-### Evidence
+### Sources
 - [Toward Visually Realistic Simulation: A Benchmark for Evaluating Robot Manipulation in Simulation](../Inbox/2026-05-07--toward-visually-realistic-simulation-a-benchmark-for-evaluating-robot-manipulation-in-simulation.md): VISER summary reports PBR assets, soft shadows, specular cues, sim-to-real correlation, and task-level success changes from visual cue ablations.
 - [Toward Visually Realistic Simulation: A Benchmark for Evaluating Robot Manipulation in Simulation](../Inbox/2026-05-07--toward-visually-realistic-simulation-a-benchmark-for-evaluating-robot-manipulation-in-simulation.md): The paper abstract states that VISER builds diverse VLA evaluation tasks and reports an average Pearson correlation coefficient of 0.92 across policies.
 
@@ -46,7 +46,7 @@ VLA teams working on instructions such as “put the red mug on the green tray�
 
 OA-WAM shows one concrete implementation. It splits each object slot into a fixed identity address and a changing content vector, then routes cross-slot attention through the address slice. Its causal slot-intervention result reports a swap-binding cosine of 0.87, while eight holistic baselines stay at 0.09 or lower. The same paper reports 97.8% average success on LIBERO and stronger results on LIBERO-Plus geometric axes, with a 13.3-point camera-axis drop when the address-only key projection is removed. This gives model builders a cheap diagnostic for target confusion under scene changes, even if they do not adopt OA-WAM’s full architecture.
 
-### Evidence
+### Sources
 - [OA-WAM: Object-Addressable World Action Model for Robust Robot Manipulation](../Inbox/2026-05-07--oa-wam-object-addressable-world-action-model-for-robust-robot-manipulation.md): OA-WAM summary describes the fixed identity address, changing content state, slot-intervention test, LIBERO results, and ablation on address-only key projection.
 - [OA-WAM: Object-Addressable World Action Model for Robust Robot Manipulation](../Inbox/2026-05-07--oa-wam-object-addressable-world-action-model-for-robust-robot-manipulation.md): The paper abstract explains the object-addressable world action model and its block-causal per-slot state design.
 
@@ -55,6 +55,6 @@ Dexterous manipulation teams with limited teleoperation capacity can test a smal
 
 DexSynRefine is a concrete case. It starts with seven HOI demonstrations per task, expands them to about 300 trajectories per task, and adds PPO-trained task-space residuals plus contact and dynamics adaptation. Across five simulated dexterous tasks, task-space residual actions reach 68.1% mean success, while kinematic retargeting stays between 0.0% and 5.8%. On Hammer, the full student policy reaches 44.3% success, compared with 17.2% without contact and 7.5% without dynamics. This is a practical test for labs deciding whether human motion capture can reduce the amount of dexterous robot teleoperation needed for a new object task.
 
-### Evidence
+### Sources
 - [DexSynRefine: Synthesizing and Refining Human-Object Interaction Motion for Physically Feasible Dexterous Robot Actions](../Inbox/2026-05-07--dexsynrefine-synthesizing-and-refining-human-object-interaction-motion-for-physically-feasible-dexterous-robot-actions.md): DexSynRefine summary gives the seven-demo setup, trajectory expansion, residual RL design, contact and dynamics adapter, and task success comparisons.
 - [DexSynRefine: Synthesizing and Refining Human-Object Interaction Motion for Physically Feasible Dexterous Robot Actions](../Inbox/2026-05-07--dexsynrefine-synthesizing-and-refining-human-object-interaction-motion-for-physically-feasible-dexterous-robot-actions.md): The paper text explains why HOI motion is not directly executable because contact forces, friction, and embodiment differences are not observed.

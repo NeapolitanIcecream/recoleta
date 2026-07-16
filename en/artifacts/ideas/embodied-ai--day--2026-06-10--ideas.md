@@ -37,7 +37,7 @@ Robot teams running VLA policies on contact-rich manipulation should split the c
 
 The practical test is a narrow A/B on one hard contact task, such as socket insertion or button pressing: compare the current synchronous policy against a buffered version that preserves the existing VLA weights where possible and adds gated cross-attention for fast modalities. DAM-VLA reports 95.2% average success across seven real Franka tasks, compared with 40.95% for the strongest synchronous baseline, while sustaining 100 Hz control. The same summary reports that naive high-frequency synchronous X-VLA_100 falls to 21.9%, so the check should measure success, action latency, and whether camera upsampling degrades behavior.
 
-### Evidence
+### Sources
 - [DAM-VLA: Decoupled Asynchronous Multimodal Vision Language Action model](../Inbox/2026-06-10--dam-vla-decoupled-asynchronous-multimodal-vision-language-action-model.md): DAM-VLA describes per-modality latent buffers, 100 Hz control, the synchronous baseline gap, and the failure of naive high-frequency synchronous processing.
 - [DAM-VLA: Decoupled Asynchronous Multimodal Vision Language Action model](../Inbox/2026-06-10--dam-vla-decoupled-asynchronous-multimodal-vision-language-action-model.md): The abstract states the timing mismatch between language, vision, and high-frequency physical signals and the use of per-modality buffers.
 
@@ -46,7 +46,7 @@ Bimanual manipulation teams should add a tactile correction stage when failures 
 
 A small adoption test can start with one task and two policies: the current vision-only VLA after RL post-training, and the same policy with tactile tokens plus the contact gate. TacCoRL reports 72.5% average success across four real bimanual contact-rich tasks, compared with 50.0% for the vision-only RL post-trained policy. The simulator step matters: direct sparse-reward RL from the base VLA gets 0.0 success across the four simulated tasks, while co-training and a real-data anchor improve transfer.
 
-### Evidence
+### Sources
 - [TacCoRL: Integrating Tactile Feedback into VLA via Simulation](../Inbox/2026-06-10--taccorl-integrating-tactile-feedback-into-vla-via-simulation.md): TacCoRL gives the task setting, tactile-token method, contact gate, sim-real co-training, real-data anchor, and real-world success comparison.
 - [TacCoRL: Integrating Tactile Feedback into VLA via Simulation](../Inbox/2026-06-10--taccorl-integrating-tactile-feedback-into-vla-via-simulation.md): The abstract explains why visual observations miss local contact state and why simulated contact interaction is used before real deployment.
 
@@ -55,6 +55,6 @@ Teams evaluating VLA policies under changed camera pose, lighting, object geomet
 
 A first check is to cache world-action model outputs during training, then run the model online at each decision step for a fixed OOD suite. World Pilot reports 84.7% total success on LIBERO-Plus zero-shot OOD, ahead of ABot-M0 at 80.5% and Cosmos Policy at 79.7%. In real-robot tests across four tasks and twelve settings, it reports the highest success rate in every listed table cell, including Container-Lid Alignment with lid-pose OOD at 65% versus 15% for the best listed baseline.
 
-### Evidence
+### Sources
 - [World Pilot: Steering Vision-Language-Action Models with World-Action Priors](../Inbox/2026-06-10--world-pilot-steering-vision-language-action-models-with-world-action-priors.md): World Pilot describes the frozen world-action model, latent steering, action steering, OOD motivation, and benchmark results.
 - [World Pilot: Steering Vision-Language-Action Models with World-Action Priors](../Inbox/2026-06-10--world-pilot-steering-vision-language-action-models-with-world-action-priors.md): The paper text ties VLA fragility to static image-text pretraining and states the real-robot gains under viewpoint, geometry, deformable-state, and pose shifts.
