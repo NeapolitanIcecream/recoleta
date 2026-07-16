@@ -14,10 +14,10 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from bs4 import BeautifulSoup, Comment
-from markdown_it import MarkdownIt
 
 from recoleta.config import Settings
 from recoleta.delivery import ResendBatchSender
+from recoleta.markdown_render import build_email_markdown_renderer
 from recoleta.models import (
     DELIVERY_CHANNEL_EMAIL,
     DELIVERY_STATUS_FAILED,
@@ -36,7 +36,7 @@ from recoleta.site_email_links import (
 )
 
 
-EMAIL_RENDERER_VERSION = "trend-email-v3"
+EMAIL_RENDERER_VERSION = "trend-email-v4"
 RESEND_BATCH_MAX_RECIPIENTS = 100
 _EMAIL_COLOR_CANVAS = "#f5f6f8"
 _EMAIL_COLOR_PAPER = "#ffffff"
@@ -543,9 +543,7 @@ def _render_markdown_html(*, markdown_text: Any) -> str:
     normalized = str(markdown_text or "").strip()
     if not normalized:
         return ""
-    rendered = MarkdownIt("commonmark", {"html": True, "typographer": True}).render(
-        normalized
-    )
+    rendered = build_email_markdown_renderer().render(normalized)
     soup = BeautifulSoup(rendered, "html.parser")
     for comment in soup.find_all(string=lambda value: isinstance(value, Comment)):
         comment.extract()
@@ -604,9 +602,10 @@ def _style_markdown_fragment(soup: BeautifulSoup, *, direction: str) -> None:
     for quote in soup.find_all("blockquote"):
         quote["style"] = f"margin:0 0 16px;{quote_edge};color:{_EMAIL_COLOR_TEXT}"
     for preformatted in soup.find_all("pre"):
+        preformatted["dir"] = "ltr"
         preformatted["style"] = (
             f"margin:0 0 16px;padding:12px;background:{_EMAIL_COLOR_CANVAS};"
-            "white-space:pre-wrap;"
+            "direction:ltr;text-align:left;white-space:pre-wrap;"
             "font-family:Menlo,Consolas,monospace;font-size:14px;line-height:22px;"
             f"mso-line-height-rule:at-least;color:{_EMAIL_COLOR_TEXT};"
             "word-break:break-word"
@@ -614,7 +613,9 @@ def _style_markdown_fragment(soup: BeautifulSoup, *, direction: str) -> None:
     for code in soup.find_all("code"):
         if code.parent is not None and code.parent.name == "pre":
             continue
+        code["dir"] = "ltr"
         code["style"] = (
+            "direction:ltr;text-align:left;"
             "font-family:Menlo,Consolas,monospace;font-size:14px;line-height:22px;"
             f"background:{_EMAIL_COLOR_CANVAS};color:{_EMAIL_COLOR_TEXT}"
         )

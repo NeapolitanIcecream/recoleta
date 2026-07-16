@@ -28,6 +28,7 @@ class TrendSiteDocument:
     instance: str | None
     body_html: str
     excerpt: str
+    excerpt_html: str
     frontmatter: dict[str, Any]
 
 
@@ -126,6 +127,7 @@ class IdeaSiteDocument:
     evidence_count: int
     body_html: str
     excerpt: str
+    excerpt_html: str
     frontmatter: dict[str, Any]
 
 

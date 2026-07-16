@@ -1371,6 +1371,15 @@ wheels = [
 ]
 
 [[package]]
+name = "latex2mathml"
+version = "3.81.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3b/62/35bb816c5c19d4d0cde5bdfb82ebb996306243d5f94e03f201658c629960/latex2mathml-3.81.0.tar.gz", hash = "sha256:4b959cdc3cac8686bc0e3e5aece8127dfb1b81ca1241bed8e00ef31b82bb4022", size = 77584, upload-time = "2026-04-15T00:55:27.977Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e8/b1/c488b530994c4f68e46efa99a4d6ca6741aaf158e35779fe6c4d8a9a427d/latex2mathml-3.81.0-py3-none-any.whl", hash = "sha256:d317710393fe20579aea39cfe8928fa2ad9b8780896e585326c75e89c1d1d1a4", size = 79185, upload-time = "2026-04-15T00:55:29.301Z" },
+]
+
+[[package]]
 name = "litellm"
 version = "1.76.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1590,6 +1599,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/fc/6d/62e76bbb8144d6ed86e202b5edd8a4cb631e7c8130f3f4893c3f90262b10/mcp-1.26.0.tar.gz", hash = "sha256:db6e2ef491eecc1a0d93711a76f28dec2e05999f93afd48795da1c1137142c66", size = 608005, upload-time = "2026-01-24T19:40:32.468Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fd/d9/eaa1f80170d2b7c5ba23f3b59f766f3a0bb41155fbc32a69adfa1adaaef9/mcp-1.26.0-py3-none-any.whl", hash = "sha256:904a21c33c25aa98ddbeb47273033c435e595bbacfdb177f4bd87f6dceebe1ca", size = 233615, upload-time = "2026-01-24T19:40:30.652Z" },
+]
+
+[[package]]
+name = "mdit-py-plugins"
+version = "0.6.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "markdown-it-py" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/59/fc/f8d0863f8862f25602c0404d75568e89fb6b4109804645e5cdfb1be5cf56/mdit_py_plugins-0.6.1.tar.gz", hash = "sha256:a2bca0f039f39dbd35fb74ae1b5f998608c437463371f0ff7f49a19a17a114d0", size = 56114, upload-time = "2026-05-13T09:03:38.91Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a5/69/6da5581c6a7fede7dc261bf4e67d6adca4196f176b43288b55b3db395b6e/mdit_py_plugins-0.6.1-py3-none-any.whl", hash = "sha256:214c82fb2ac524472ab6a5bcab1de80f73b50443e187f401bfd77efbc7c6481d", size = 66663, upload-time = "2026-05-13T09:03:37.76Z" },
 ]
 
 [[package]]
@@ -2629,9 +2650,12 @@ dependencies = [
     { name = "httpx" },
     { name = "huggingface-hub" },
     { name = "lancedb" },
+    { name = "latex2mathml" },
     { name = "litellm" },
     { name = "loguru" },
+    { name = "markdown-it-py" },
     { name = "markdownify" },
+    { name = "mdit-py-plugins" },
     { name = "openai" },
     { name = "openreview-py" },
     { name = "orjson" },
@@ -2682,9 +2706,12 @@ requires-dist = [
     { name = "huggingface-hub", specifier = ">=0.36.2" },
     { name = "huldra-arxiv", marker = "extra == 'huldra'", git = "https://github.com/NeapolitanIcecream/huldra.git?rev=aed7bcfd0c8a47e0244f7370d48c937c0b3feeb6" },
     { name = "lancedb", specifier = ">=0.29.2" },
+    { name = "latex2mathml", specifier = ">=3.81.0" },
     { name = "litellm", specifier = ">=1.76.1" },
     { name = "loguru", specifier = ">=0.7.3" },
+    { name = "markdown-it-py", specifier = ">=4.0.0" },
     { name = "markdownify", specifier = ">=1.2.2" },
+    { name = "mdit-py-plugins", specifier = ">=0.6.1" },
     { name = "openai", specifier = ">=1.109.1" },
     { name = "openreview-py", specifier = ">=1.57.1" },
     { name = "orjson", specifier = ">=3.11.7" },

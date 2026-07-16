@@ -76,6 +76,10 @@ section hierarchy, markdown-to-site rendering, or reader-facing generation rules
   and no more than about 40 CJK glyphs for sustained prose.
 - Give CJK display type its own metrics. Do not reuse tight negative tracking or
   sub-1.0 line heights from Latin display headings.
+- Size compact text controls with a real text line box, not only a tall outer hit
+  area. Autonyms and translated labels must leave room for Latin descenders and
+  the full metrics of their own scripts without clipping at default or zoomed
+  text sizes.
 - Use small uppercase labels sparingly. Do not make 10px or 11px all-caps labels
   carry information that a plain heading or metadata line could express.
 - Keep all small reader-facing text at a contrast ratio of at least 4.5:1 against
@@ -116,6 +120,13 @@ section hierarchy, markdown-to-site rendering, or reader-facing generation rules
   as `R-CNN`, `GPT-4o`, or `CLIP-based`.
 - Bound growing collections with static pagination. Preserve canonical first-page
   URLs, newest-first order, relative links, and clear Previous/Next controls.
+- Render mathematical notation as semantic, selectable content on the web. When
+  the home page's latest-item excerpt contains math, render the expression there
+  as well and treat it as an atomic unit during truncation; discard unrelated
+  rich markup instead of copying the source fragment. Keep the source
+  representation available for fallback, show malformed expressions rather than
+  dropping them, and let long display equations scroll inside their own reading
+  block instead of widening or clipping the page.
 
 ## Email Surface Contract
 
@@ -146,6 +157,12 @@ section hierarchy, markdown-to-site rendering, or reader-facing generation rules
   full-height exact line box into the VML text container, where Word can clip it.
 - Treat plain text as a first-class edited output with readable link placement and
   punctuation, not as HTML stripped into a debug transcript.
+- Do not rely on JavaScript, MathML, SVG, data URLs, or web-font substitution for
+  email equations. Preserve readable TeX in HTML and plain text as the baseline.
+  Use generated equation images only when their delivery and retention are part
+  of the publishing contract; include equivalent alt text and keep the message
+  useful when remote images are blocked. Never enable arbitrary source images or
+  math markup merely to admit renderer-generated output.
 
 ## Language
 
@@ -158,8 +175,9 @@ section hierarchy, markdown-to-site rendering, or reader-facing generation rules
   use a compact menu whose options form a semantic list and whose current option
   is identified without relying only on color. Use `lang` and `hreflang`, avoid
   flags, and keep language controls at least 44px high. Resolve language names
-  from CLDR autonyms rather than a short hard-coded locale table; fail the site
-  build with an actionable error when no native display name is available.
+  from CLDR autonyms rather than a short hard-coded locale table, using the
+  concise product label `中文` for `zh-CN`; fail the site build with an
+  actionable error when no native display name is available.
 - Localize only explicit chrome and metadata nodes. Never run UI phrase or count
   replacement across article prose, excerpts, source reasons, or research titles.
 - Let long-form prose follow the selected output language. Translation may reflow
@@ -189,6 +207,10 @@ section hierarchy, markdown-to-site rendering, or reader-facing generation rules
 - Inspect representative real artifacts, not only synthetic short fixtures.
 - Check short and long English and Chinese samples at 1440px, 1024px, 390px, and
   200% zoom. For email, also check 320px, 375px, and 600px widths.
+- Include inline and long display equations, currency using dollar signs, code
+  containing math delimiters, and malformed TeX in rendering checks. Confirm
+  excerpts and plain text contain each equation once, and inspect the email with
+  external images disabled whenever equation images are introduced.
 - Use Playwright or equivalent browser rendering for site changes. Validate email
   in Outlook Classic, a modern Outlook client, Gmail, and Apple Mail when the
   change affects production delivery.
