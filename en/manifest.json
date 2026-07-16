@@ -15,6 +15,10 @@
     ],
     "favicon": "assets/favicon.svg",
     "idea_pages": [
+      "ideas/embodied-ai--day--2026-07-15--ideas.html",
+      "ideas/software-intelligence--day--2026-07-15--ideas.html",
+      "ideas/embodied-ai--day--2026-07-14--ideas.html",
+      "ideas/software-intelligence--day--2026-07-14--ideas.html",
       "ideas/embodied-ai--day--2026-07-13--ideas.html",
       "ideas/software-intelligence--day--2026-07-13--ideas.html",
       "ideas/embodied-ai--week--2026-W28--ideas.html",
@@ -261,10 +265,39 @@
       "ideas/page/16/index.html",
       "ideas/page/17/index.html",
       "ideas/page/18/index.html",
-      "ideas/page/19/index.html"
+      "ideas/page/19/index.html",
+      "ideas/page/20/index.html"
     ],
     "index": "index.html",
     "item_pages": [
+      "items/software-intelligence--2026-07-15--ebae-a-protocol-for-bounding-the-real-world-authority-of-autonomous-agents.html",
+      "items/software-intelligence--2026-07-15--vint-cerf-is-working-on-a-plan-to-unleash-ai-agents-on-the-open-internet.html",
+      "items/software-intelligence--2026-07-15--visualrepair-dynamic-tool-calling-and-region-focusing-for-visual-software-issue-repair.html",
+      "items/embodied-ai--2026-07-15--physclaw-0-a-symbiotic-agentic-system-for-robot-autonomy-via-language-corrections.html",
+      "items/software-intelligence--2026-07-15--early-adoption-of-agentic-coding-tools-by-github-projects.html",
+      "items/embodied-ai--2026-07-15--industrial-dexterity-benchmark-a-hardware-software-benchmarking-platform-for-industrial-dexterous-manipulation.html",
+      "items/software-intelligence--2026-07-15--profmalplus-agent-coordinated-detection-of-malicious-npm-packages-via-static-dynamic-analysis-synergy.html",
+      "items/embodied-ai--2026-07-15--gigaworld-policy-0-5-a-faster-and-stronger-wam-empowered-by-autoresearch.html",
+      "items/embodied-ai--2026-07-15--learning-robust-execution-in-robotic-manipulation-with-agentic-reinforcement-learning.html",
+      "items/software-intelligence--2026-07-15--agentcompass-a-unified-evaluation-infrastructure-for-agent-capabilities.html",
+      "items/embodied-ai--2026-07-15--semantic-anchoring-for-robotic-action-representations.html",
+      "items/software-intelligence--2026-07-15--drea-decoupled-reasoning-and-exploration-agents-for-repository-level-vulnerability-detection.html",
+      "items/embodied-ai--2026-07-15--generalizable-vla-finetuning-via-representation-anchoring-and-language-action-alignment.html",
+      "items/software-intelligence--2026-07-15--set-shifting-behavioral-test-for-harnessed-agents.html",
+      "items/software-intelligence--2026-07-14--faithful-autoformalization-of-natural-language-assertions.html",
+      "items/software-intelligence--2026-07-14--harness-handbook-making-evolving-agent-harnesses-readable-navigable-and-editable.html",
+      "items/software-intelligence--2026-07-14--from-human-centric-to-agentic-code-review-the-impact-of-different-generations-of-generative-ai-technology-on-review-quality.html",
+      "items/software-intelligence--2026-07-14--design-system-aware-development-with-ai-evaluating-productivity-and-design-consistency.html",
+      "items/embodied-ai--2026-07-14--worlds-in-one-demo-a-synthetic-data-engine-for-learning-open-world-mobile-manipulation.html",
+      "items/software-intelligence--2026-07-14--do-ai-agents-know-when-a-task-is-simple-toward-complexity-aware-reasoning-and-execution.html",
+      "items/software-intelligence--2026-07-14--software-supply-chains-are-dead-use-case-oriented-regeneration.html",
+      "items/embodied-ai--2026-07-14--flowwam-optical-flow-as-a-unified-action-representation-for-world-action-models.html",
+      "items/embodied-ai--2026-07-14--chunkflow-towards-continuity-consistent-chunked-policy-learning.html",
+      "items/embodied-ai--2026-07-14--extoken-structured-exploration-for-efficient-vision-language-action-reinforcement-fine-tuning.html",
+      "items/embodied-ai--2026-07-14--jetson-pi-towards-onboard-real-time-robot-control-via-foresight-aligned-asynchronous-inference.html",
+      "items/software-intelligence--2026-07-14--multi-perspective-agentic-program-repair-via-code-property-graphs-and-temporal-execution-graphs.html",
+      "items/embodied-ai--2026-07-14--vistavla-geometry-and-semantic-aware-3d-gaussian-grounded-vla-for-robotic-manipulation.html",
+      "items/embodied-ai--2026-07-14--reducing-temporal-redundancy-for-efficient-vision-language-action-inference.html",
       "items/software-intelligence--2026-07-13--long-term-memory-cortex-for-agents-that-maintains-tensions.html",
       "items/software-intelligence--2026-07-13--show-hn-context-warp-drive-deterministic-zero-llm-context-compaction.html",
       "items/embodied-ai--2026-07-13--a-minimalist-retargeting-guided-reinforcement-learning-recipe-for-dexterous-manipulation.html",
@@ -2164,6 +2197,9 @@
       "execution-feedback": [
         "topics/execution-feedback.html"
       ],
+      "execution-recovery": [
+        "topics/execution-recovery.html"
+      ],
       "execution-verification": [
         "topics/execution-verification.html"
       ],
@@ -2275,6 +2311,9 @@
       ],
       "human-in-the-loop": [
         "topics/human-in-the-loop.html"
+      ],
+      "human-in-the-loop-autonomy": [
+        "topics/human-in-the-loop-autonomy.html"
       ],
       "human-oversight": [
         "topics/human-oversight.html"
@@ -2700,6 +2739,9 @@
       "repository-workflows": [
         "topics/repository-workflows.html"
       ],
+      "representation-anchoring": [
+        "topics/representation-anchoring.html"
+      ],
       "reproducibility": [
         "topics/reproducibility.html"
       ],
@@ -2748,7 +2790,8 @@
       "robot-learning": [
         "topics/robot-learning.html",
         "topics/robot-learning/page/2/index.html",
-        "topics/robot-learning/page/3/index.html"
+        "topics/robot-learning/page/3/index.html",
+        "topics/robot-learning/page/4/index.html"
       ],
       "robot-manipulation": [
         "topics/robot-manipulation.html",
@@ -3189,6 +3232,9 @@
         "topics/vla.html",
         "topics/vla/page/2/index.html"
       ],
+      "vla-fine-tuning": [
+        "topics/vla-fine-tuning.html"
+      ],
       "vla-finetuning": [
         "topics/vla-finetuning.html"
       ],
@@ -3455,6 +3501,7 @@
       "topics/execution.html",
       "topics/execution-based-validation.html",
       "topics/execution-feedback.html",
+      "topics/execution-recovery.html",
       "topics/execution-verification.html",
       "topics/extended-reality.html",
       "topics/failure-recovery.html",
@@ -3492,6 +3539,7 @@
       "topics/hot-fixes.html",
       "topics/human-demonstrations.html",
       "topics/human-in-the-loop.html",
+      "topics/human-in-the-loop-autonomy.html",
       "topics/human-oversight.html",
       "topics/human-video-data.html",
       "topics/humanoid-control.html",
@@ -3632,6 +3680,7 @@
       "topics/repository-scale-generation.html",
       "topics/repository-verification.html",
       "topics/repository-workflows.html",
+      "topics/representation-anchoring.html",
       "topics/reproducibility.html",
       "topics/requirement-alignment.html",
       "topics/requirements-engineering.html",
@@ -3783,6 +3832,7 @@
       "topics/visual-foresight.html",
       "topics/visual-reinforcement-learning.html",
       "topics/vla.html",
+      "topics/vla-fine-tuning.html",
       "topics/vla-finetuning.html",
       "topics/vla-models.html",
       "topics/vla-policies.html",
@@ -3829,6 +3879,10 @@
       "topics/page/23/index.html"
     ],
     "trend_pages": [
+      "trends/embodied-ai--day--2026-07-15--trend--886.html",
+      "trends/software-intelligence--day--2026-07-15--trend--1934.html",
+      "trends/embodied-ai--day--2026-07-14--trend--874.html",
+      "trends/software-intelligence--day--2026-07-14--trend--1917.html",
       "trends/embodied-ai--day--2026-07-13--trend--861.html",
       "trends/software-intelligence--day--2026-07-13--trend--1896.html",
       "trends/embodied-ai--week--2026-W28--trend--851.html",
@@ -4075,20 +4129,21 @@
       "trends/page/16/index.html",
       "trends/page/17/index.html",
       "trends/page/18/index.html",
-      "trends/page/19/index.html"
+      "trends/page/19/index.html",
+      "trends/page/20/index.html"
     ]
   },
-  "ideas_total": 225,
+  "ideas_total": 229,
   "item_export_scope": "linked",
-  "items_available_total": 7278,
-  "items_total": 1259,
-  "items_unreferenced_total": 6019,
+  "items_available_total": 7376,
+  "items_total": 1287,
+  "items_unreferenced_total": 6089,
   "pagination": {
     "card_page_size": 12,
     "dense_page_size": 24,
     "topic_column_page_size": 12,
     "topic_page_size": 12
   },
-  "topics_total": 547,
-  "trends_total": 225
+  "topics_total": 551,
+  "trends_total": 229
 }
