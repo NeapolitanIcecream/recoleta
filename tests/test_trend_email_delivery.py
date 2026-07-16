@@ -473,8 +473,79 @@ def test_build_trend_email_preview_writes_preview_artifacts_and_site_first_links
     assert "Read the full brief" in html_body
     assert "Agent systems" in text_body
     manifest = json.loads(entry.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["renderer_version"] == "trend-email-v3"
     assert manifest["content_hash"] == entry.content_hash
     assert manifest["primary_page_url"] == entry.primary_page_url
+
+
+def test_build_trend_email_preview_uses_site_palette_roles(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+    site_css = (site_dir / "assets" / "site.css").read_text(encoding="utf-8")
+    site_palette: dict[str, str] = {}
+    for line in site_css.splitlines():
+        declaration = line.strip().rstrip(";")
+        if not declaration.startswith("--") or ":" not in declaration:
+            continue
+        name, value = declaration.split(":", 1)
+        site_palette[name] = value.strip()
+
+    soup = BeautifulSoup(entry.html_path.read_text(encoding="utf-8"), "html.parser")
+    body = soup.body
+    shell = soup.select_one("table.email-shell")
+    article = soup.select_one("div[role='article']")
+    title = soup.select_one("h1.email-title")
+    summary = soup.find("p")
+    evidence_link = soup.find("a")
+    assert isinstance(body, Tag)
+    assert isinstance(shell, Tag)
+    assert isinstance(article, Tag)
+    assert isinstance(title, Tag)
+    assert isinstance(summary, Tag)
+    assert isinstance(evidence_link, Tag)
+    period_line = article.find("div", recursive=False)
+    assert isinstance(period_line, Tag)
+    cta = next(
+        (
+            anchor
+            for anchor in soup.find_all("a")
+            if anchor.get_text(" ", strip=True) == "Read the full brief"
+        ),
+        None,
+    )
+    assert isinstance(cta, Tag)
+
+    def style_value(tag: Tag, property_name: str) -> str:
+        declarations = str(tag.get("style") or "").split(";")
+        prefix = f"{property_name}:"
+        declaration = next(
+            (item.strip() for item in declarations if item.strip().startswith(prefix)),
+            None,
+        )
+        assert declaration is not None
+        return declaration.split(":", 1)[1].strip()
+
+    assert style_value(body, "background") == site_palette["--surface"]
+    assert style_value(shell, "background") == site_palette["--paper"]
+    assert style_value(shell, "border").endswith(site_palette["--line-strong"])
+    assert style_value(title, "color") == site_palette["--ink"]
+    assert style_value(summary, "color") == site_palette["--text"]
+    assert style_value(period_line, "color") == site_palette["--muted"]
+    assert style_value(evidence_link, "color") == site_palette["--accent"]
+    assert style_value(cta, "background") == site_palette["--accent"]
+    assert style_value(cta, "color") == site_palette["--on-accent"]
 
 
 def test_build_trend_email_preview_omits_instance_from_subject(
@@ -744,14 +815,22 @@ def test_build_trend_email_preview_renders_outlook_safe_cta_buttons(
     assert isinstance(entry, trend_email_module.TrendEmailPreviewEntryResult)
 
     html_body = entry.html_path.read_text(encoding="utf-8")
+    mso_block = html_body.split("<!--[if mso]>", 1)[1].split("<![endif]-->", 1)[0]
+    non_mso_block = html_body.split("<!--[if !mso]><!-->", 1)[1].split(
+        "<!--<![endif]-->", 1
+    )[0]
     assert html_body.count("<v:roundrect") == 1
     assert html_body.count("<!--[if mso]>") == 1
     assert html_body.count("<!--[if !mso]><!-->") == 1
-    assert 'style="height:44px;' in html_body
-    assert 'arcsize="8%"' in html_body
-    assert 'fillcolor="#16538c"' in html_body
-    assert "mso-hide:all" in html_body
-    assert "mso-line-height-rule:exactly" in html_body
+    assert 'style="height:44px;v-text-anchor:middle;' in mso_block
+    assert "line-height:44px" not in mso_block
+    assert "mso-line-height-rule:exactly" not in mso_block
+    assert "line-height:44px" in non_mso_block
+    assert "text-align:center" in non_mso_block
+    assert "mso-hide:all" in non_mso_block
+    mso_fill = mso_block.split('fillcolor="', 1)[1].split('"', 1)[0]
+    html_fill = non_mso_block.split("background:", 1)[1].split(";", 1)[0]
+    assert mso_fill == html_fill
     assert html_body.count("Read the full brief") == 2
 
 
@@ -896,7 +975,7 @@ def test_build_trend_email_preview_uses_rtl_markdown_edges(
     assert "padding:0 24px 0 0" in str(listing.get("style") or "")
     quote_style = str(quote.get("style") or "")
     assert "padding:0 16px 0 0" in quote_style
-    assert "border-right:2px solid #b9b5aa" in quote_style
+    assert "border-right:" in quote_style
     assert "border-left" not in quote_style
 
 

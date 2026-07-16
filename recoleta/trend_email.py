@@ -36,8 +36,24 @@ from recoleta.site_email_links import (
 )
 
 
-EMAIL_RENDERER_VERSION = "trend-email-v2"
+EMAIL_RENDERER_VERSION = "trend-email-v3"
 RESEND_BATCH_MAX_RECIPIENTS = 100
+_EMAIL_COLOR_CANVAS = "#f5f6f8"
+_EMAIL_COLOR_PAPER = "#ffffff"
+_EMAIL_COLOR_INK = "#172033"
+_EMAIL_COLOR_TEXT = "#354052"
+_EMAIL_COLOR_MUTED = "#5f6875"
+_EMAIL_COLOR_LINE = "#e2e5ea"
+_EMAIL_COLOR_LINE_STRONG = "#c8ced6"
+_EMAIL_COLOR_ACCENT = "#145da0"
+_EMAIL_COLOR_ON_ACCENT = "#ffffff"
+_EMAIL_FONT_SANS = (
+    "-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,Microsoft YaHei,"
+    "Noto Sans CJK SC,Arial,Helvetica,sans-serif"
+)
+_EMAIL_FONT_SERIF = (
+    "Songti SC,STSong,Noto Serif CJK SC,Georgia,Times New Roman,SimSun,serif"
+)
 _ALLOWED_EMAIL_GRANULARITIES = {"day", "week", "month"}
 _EMAIL_MARKDOWN_TAGS = {
     "a",
@@ -558,48 +574,49 @@ def _render_markdown_html(*, markdown_text: Any) -> str:
 
 def _style_markdown_fragment(soup: BeautifulSoup, *, direction: str) -> None:
     base_text_style = (
-        "margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;"
+        f"margin:0 0 16px;font-family:{_EMAIL_FONT_SANS};"
         "font-size:16px;line-height:27px;mso-line-height-rule:at-least;"
-        "color:#27323a;word-break:break-word"
+        f"color:{_EMAIL_COLOR_TEXT};word-break:break-word"
     )
     for paragraph in soup.find_all("p"):
         paragraph["style"] = base_text_style
     for anchor in soup.find_all("a"):
         anchor["style"] = (
-            "color:#16538c;text-decoration:underline;text-underline-offset:2px;"
+            f"color:{_EMAIL_COLOR_ACCENT};text-decoration:underline;"
+            "text-underline-offset:2px;"
             "word-break:break-word"
         )
     list_padding = "0 24px 0 0" if direction == "rtl" else "0 0 0 24px"
     for listing in soup.find_all(["ul", "ol"]):
         listing["style"] = (
             f"margin:0 0 16px;padding:{list_padding};"
-            "font-family:Arial,Helvetica,sans-serif;"
+            f"font-family:{_EMAIL_FONT_SANS};"
             "font-size:16px;line-height:27px;mso-line-height-rule:at-least;"
-            "color:#27323a"
+            f"color:{_EMAIL_COLOR_TEXT}"
         )
     for item in soup.find_all("li"):
         item["style"] = "margin:0 0 8px;padding:0"
     quote_edge = (
-        "padding:0 16px 0 0;border-right:2px solid #b9b5aa"
+        f"padding:0 16px 0 0;border-right:3px solid {_EMAIL_COLOR_ACCENT}"
         if direction == "rtl"
-        else "padding:0 0 0 16px;border-left:2px solid #b9b5aa"
+        else f"padding:0 0 0 16px;border-left:3px solid {_EMAIL_COLOR_ACCENT}"
     )
     for quote in soup.find_all("blockquote"):
-        quote["style"] = (
-            f"margin:0 0 16px;{quote_edge};color:#4f5a62"
-        )
+        quote["style"] = f"margin:0 0 16px;{quote_edge};color:{_EMAIL_COLOR_TEXT}"
     for preformatted in soup.find_all("pre"):
         preformatted["style"] = (
-            "margin:0 0 16px;padding:12px;background:#f1efe8;white-space:pre-wrap;"
+            f"margin:0 0 16px;padding:12px;background:{_EMAIL_COLOR_CANVAS};"
+            "white-space:pre-wrap;"
             "font-family:Menlo,Consolas,monospace;font-size:14px;line-height:22px;"
-            "mso-line-height-rule:at-least;color:#27323a;word-break:break-word"
+            f"mso-line-height-rule:at-least;color:{_EMAIL_COLOR_TEXT};"
+            "word-break:break-word"
         )
     for code in soup.find_all("code"):
         if code.parent is not None and code.parent.name == "pre":
             continue
         code["style"] = (
             "font-family:Menlo,Consolas,monospace;font-size:14px;line-height:22px;"
-            "background:#f1efe8;color:#27323a"
+            f"background:{_EMAIL_COLOR_CANVAS};color:{_EMAIL_COLOR_TEXT}"
         )
 
 
@@ -862,15 +879,18 @@ def _render_email_button(
 ) -> str:
     height = 44
     width = 200
-    background = "#16538c"
-    foreground = "#ffffff"
+    horizontal_padding = 20
+    html_content_width = width - (horizontal_padding * 2)
+    background = _EMAIL_COLOR_ACCENT
+    foreground = _EMAIL_COLOR_ON_ACCENT
     url_attr = html.escape(url, quote=True)
     label_html = html.escape(label)
     anchor_style = (
         f"display:inline-block;background:{background};color:{foreground};"
-        "text-decoration:none;font-family:Arial,Helvetica,sans-serif;"
+        f"text-decoration:none;font-family:{_EMAIL_FONT_SANS};"
+        f"width:{html_content_width}px;text-align:center;"
         "font-size:16px;font-weight:700;line-height:44px;"
-        "mso-line-height-rule:exactly;padding:0 20px;border-radius:4px;mso-hide:all"
+        f"padding:0 {horizontal_padding}px;border-radius:4px;mso-hide:all"
     )
     return (
         "<!--[if mso]>"
@@ -878,11 +898,10 @@ def _render_email_button(
         'xmlns:w="urn:schemas-microsoft-com:office:word" '
         f'href="{url_attr}" '
         f'style="height:{height}px;v-text-anchor:middle;width:{width}px;" '
-        f'arcsize="8%" stroke="f" fillcolor="{background}">'
+        f'arcsize="18%" stroke="f" fillcolor="{background}">'
         "<w:anchorlock/>"
-        f'<center style="color:{foreground};font-family:Arial,sans-serif;'
-        "font-size:16px;font-weight:700;line-height:44px;"
-        f'mso-line-height-rule:exactly;">{label_html}</center>'
+        f"<center style='color:{foreground};font-family:{_EMAIL_FONT_SANS};"
+        f"font-size:16px;font-weight:700'>{label_html}</center>"
         "</v:roundrect>"
         "<![endif]-->"
         "<!--[if !mso]><!-->"
@@ -901,11 +920,11 @@ def _render_finding(
     if cluster.evidence:
         sources_html = (
             "<div data-section='sources' style='margin:18px 0 0'>"
-            f"<h4 style='margin:0 0 8px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;mso-line-height-rule:at-least;font-weight:700;color:#27323a'>{html.escape(copy['sources'])}</h4>"
+            f"<h4 style='margin:0 0 8px;font-family:{_EMAIL_FONT_SANS};font-size:16px;line-height:24px;mso-line-height-rule:at-least;font-weight:700;color:{_EMAIL_COLOR_TEXT}'>{html.escape(copy['sources'])}</h4>"
             + "".join(
                 (
-                    "<div style='margin:0 0 7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;mso-line-height-rule:at-least'>"
-                    f"<a href='{html.escape(entry.url, quote=True)}' style='color:#16538c;text-decoration:underline;text-underline-offset:2px;word-break:break-word'>{html.escape(entry.title)}</a>"
+                    f"<div style='margin:0 0 7px;font-family:{_EMAIL_FONT_SANS};font-size:16px;line-height:24px;mso-line-height-rule:at-least'>"
+                    f"<a href='{html.escape(entry.url, quote=True)}' style='color:{_EMAIL_COLOR_ACCENT};text-decoration:underline;text-underline-offset:2px;word-break:break-word'>{html.escape(entry.title)}</a>"
                     "</div>"
                 )
                 for entry in cluster.evidence
@@ -914,10 +933,10 @@ def _render_finding(
         )
     section_style = "margin:0;padding:0 0 28px"
     if index > 0:
-        section_style += ";border-top:1px solid #d8d5cc;padding-top:28px"
+        section_style += f";border-top:1px solid {_EMAIL_COLOR_LINE};padding-top:28px"
     return (
         f"<div style='{section_style}'>"
-        f"<h3 style='margin:0 0 12px;font-family:Georgia,Times New Roman,serif;font-size:22px;line-height:29px;mso-line-height-rule:at-least;font-weight:700;color:#1d2a33'>{html.escape(cluster.title)}</h3>"
+        f"<h3 style='margin:0 0 12px;font-family:{_EMAIL_FONT_SERIF};font-size:22px;line-height:29px;mso-line-height-rule:at-least;font-weight:700;color:{_EMAIL_COLOR_INK}'>{html.escape(cluster.title)}</h3>"
         f"<div>{cluster.content_html}</div>"
         f"{sources_html}"
         "</div>"
@@ -938,7 +957,7 @@ def _render_html_email(*, bundle: _TrendEmailBundle) -> str:
     if findings_html:
         findings_section = (
             "<div style='margin:26px 0 0'>"
-            f"<h2 style='margin:0 0 22px;font-family:Arial,Helvetica,sans-serif;font-size:18px;line-height:26px;mso-line-height-rule:at-least;font-weight:700;color:#1d2a33'>{html.escape(copy['findings'])}</h2>"
+            f"<h2 style='margin:0 0 22px;font-family:{_EMAIL_FONT_SANS};font-size:18px;line-height:26px;mso-line-height-rule:at-least;font-weight:700;color:{_EMAIL_COLOR_INK}'>{html.escape(copy['findings'])}</h2>"
             f"{findings_html}"
             "</div>"
         )
@@ -960,20 +979,20 @@ def _render_html_email(*, bundle: _TrendEmailBundle) -> str:
         "}"
         "</style>"
         "</head>"
-        "<body style='margin:0;padding:0;background:#f4f2ec'>"
+        f"<body style='margin:0;padding:0;background:{_EMAIL_COLOR_CANVAS}'>"
         "<div class='preheader' aria-hidden='true' style='display:none!important;max-height:0;max-width:0;overflow:hidden;opacity:0;color:transparent;font-size:1px;line-height:1px'>"
         f"{html.escape(preheader)}"
         "</div>"
-        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' bgcolor='#f4f2ec' style='width:100%;background:#f4f2ec;border-collapse:collapse'>"
+        f"<table role='presentation' width='100%' cellspacing='0' cellpadding='0' bgcolor='{_EMAIL_COLOR_CANVAS}' style='width:100%;background:{_EMAIL_COLOR_CANVAS};border-collapse:collapse'>"
         "<tr><td class='email-gutter' align='center' style='padding:24px 12px'>"
-        "<table class='email-shell' role='presentation' width='600' cellspacing='0' cellpadding='0' bgcolor='#ffffff' style='width:100%;max-width:600px;background:#ffffff;border:1px solid #d8d5cc;border-collapse:collapse'>"
+        f"<table class='email-shell' role='presentation' width='600' cellspacing='0' cellpadding='0' bgcolor='{_EMAIL_COLOR_PAPER}' style='width:100%;max-width:600px;background:{_EMAIL_COLOR_PAPER};border:1px solid {_EMAIL_COLOR_LINE_STRONG};border-collapse:collapse'>"
         "<tr><td class='email-content' style='padding:42px 48px'>"
         "<div role='article' aria-roledescription='email'>"
-        f"<div style='margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:21px;mso-line-height-rule:at-least;font-weight:600;color:#58636d'>{html.escape(period_line)}</div>"
-        f"<h1 class='email-title' style='margin:0 0 22px;font-family:Georgia,Times New Roman,serif;font-size:32px;line-height:41px;mso-line-height-rule:at-least;font-weight:700;color:#1d2a33'>{html.escape(bundle.title)}</h1>"
+        f"<div style='margin:0 0 12px;font-family:{_EMAIL_FONT_SANS};font-size:14px;line-height:21px;mso-line-height-rule:at-least;font-weight:600;color:{_EMAIL_COLOR_MUTED}'>{html.escape(period_line)}</div>"
+        f"<h1 class='email-title' style='margin:0 0 22px;font-family:{_EMAIL_FONT_SERIF};font-size:32px;line-height:41px;mso-line-height-rule:at-least;font-weight:700;color:{_EMAIL_COLOR_INK}'>{html.escape(bundle.title)}</h1>"
         f"<div>{bundle.overview_html}</div>"
         f"{findings_section}"
-        "<div style='margin:4px 0 0;padding:28px 0 0;border-top:1px solid #d8d5cc'>"
+        f"<div style='margin:4px 0 0;padding:28px 0 0;border-top:1px solid {_EMAIL_COLOR_LINE_STRONG}'>"
         f"{_render_email_button(url=bundle.primary_page_url, label=copy['read_full'])}"
         "</div>"
         "</div></td></tr>"
