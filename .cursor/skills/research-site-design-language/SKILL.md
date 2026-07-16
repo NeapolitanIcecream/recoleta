@@ -120,6 +120,9 @@ section hierarchy, markdown-to-site rendering, or reader-facing generation rules
 ## Email Surface Contract
 
 - Email is an edited research dispatch, not a miniature site or dashboard.
+- Keep the email's canvas, text, rule, and accent roles aligned with the current
+  site palette. Adapt layout and density to the medium without reviving a separate
+  warm or cool color system for email.
 - Use a content-bearing subject and a complementary preheader. Do not repeat the
   sender name, date, summary, or topics in several blocks.
 - Select the strongest two or three findings for the message, with the smallest
@@ -138,6 +141,9 @@ section hierarchy, markdown-to-site rendering, or reader-facing generation rules
   least 44px high.
 - Use an Outlook-safe VML fallback when a button is necessary, without making a
   large rounded branded button part of the visual identity.
+- Treat the Outlook/Word button branch as a separate renderer. Let the VML shape
+  height and vertical anchor center its label; do not copy the browser anchor's
+  full-height exact line box into the VML text container, where Word can clip it.
 - Treat plain text as a first-class edited output with readable link placement and
   punctuation, not as HTML stripped into a debug transcript.
 
