@@ -8,6 +8,7 @@ from urllib.parse import unquote, urlsplit
 from bs4 import BeautifulSoup, Tag
 import pytest
 
+from recoleta.markdown_render import html_to_reader_text
 from recoleta.presentation import presentation_sidecar_path
 from recoleta.site import (
     RECOLETA_QUICKSTART_URL,
@@ -15,6 +16,7 @@ from recoleta.site import (
     _build_idea_body_from_presentation,
     _build_trend_body_from_presentation,
     _display_topic_label,
+    _excerpt_payload_from_html,
     _item_action_label,
     _localize_site_chrome,
     _localized_site_chrome_text,
@@ -139,7 +141,7 @@ def test_two_language_switcher_names_only_the_available_destination() -> None:
     assert isinstance(switcher, Tag)
     assert switcher["aria-label"] == "Language"
     assert isinstance(link, Tag)
-    assert link.get_text(" ", strip=True) == "简体中文"
+    assert link.get_text(" ", strip=True) == "中文"
     assert link["hreflang"] == "zh-CN"
     assert link.select_one("[lang='zh-CN'][dir='auto']") is not None
     assert link["href"] == "../../zh-cn/trends/example.html"
@@ -165,7 +167,7 @@ def test_many_language_switcher_uses_a_native_name_menu() -> None:
     assert [
         label.get_text(" ", strip=True)
         for label in menu.select("ul.language-switcher-list a > span[lang][dir='auto']")
-    ] == ["English", "简体中文", "français"]
+    ] == ["English", "中文", "français"]
     assert isinstance(current, Tag)
     assert current.select_one("[lang='en'][dir='auto']") is not None
     assert [link["data-language-code"] for link in menu.select("a")] == [
@@ -185,9 +187,10 @@ def test_many_language_switcher_uses_a_native_name_menu() -> None:
     ]
 
 
-def test_native_language_names_use_cldr_autonyms() -> None:
+def test_native_language_names_use_autonyms_and_concise_chinese_label() -> None:
     assert _native_language_name("fr") == "français"
     assert _native_language_name("pt-BR") == "português (Brasil)"
+    assert _native_language_name("zh-CN") == "中文"
     assert _native_language_name("zh-Hant-TW") == "繁體中文"
 
 
@@ -347,6 +350,17 @@ def test_safe_excerpt_prefers_complete_sentences_and_cleans_trailing_punctuation
     )
 
 
+def test_home_excerpt_text_extraction_handles_deep_inline_markup() -> None:
+    nested_html = ("<span>" * 700) + "Readable text" + ("</span>" * 700)
+
+    excerpt, excerpt_html = _excerpt_payload_from_html(nested_html)
+
+    assert excerpt == "Readable text"
+    assert BeautifulSoup(excerpt_html, "html.parser").get_text(strip=True) == (
+        "Readable text"
+    )
+
+
 def test_display_topic_label_preserves_research_names_with_hyphens() -> None:
     assert _display_topic_label("R-CNN") == "R-CNN"
     assert _display_topic_label("GPT-4o") == "GPT-4o"
@@ -445,6 +459,226 @@ def test_presentation_bodies_omit_empty_source_placeholders() -> None:
     assert "Sources" not in idea_result.body_html
     assert "(none)" not in trend_html
     assert "(none)" not in idea_result.body_html
+
+
+def test_presentation_body_renders_math_without_duplicating_excerpt_text() -> None:
+    trend_html, excerpt = _build_trend_body_from_presentation(
+        presentation={
+            "language_code": "en",
+            "content": {
+                "overview": "Energy follows $E=mc^2$.",
+                "clusters": [],
+            },
+        }
+    )
+    soup = BeautifulSoup(trend_html, "html.parser")
+
+    assert soup.select_one(".math.inline math[display='inline']") is not None
+    assert excerpt.count("E=mc^2") == 1
+
+
+@pytest.mark.parametrize("latest_kind", ["trend", "ideas"])
+def test_home_latest_excerpt_renders_complete_math_and_truncates_only_prose(
+    tmp_path: Path,
+    latest_kind: str,
+) -> None:
+    notes_root = tmp_path / "notes"
+    (notes_root / "Trends").mkdir(parents=True)
+    note_dir = notes_root / ("Trends" if latest_kind == "trend" else "Ideas")
+    note_dir.mkdir(parents=True, exist_ok=True)
+    stem = (
+        "day--2026-07-15--trend--1"
+        if latest_kind == "trend"
+        else "day--2026-07-15--ideas"
+    )
+    heading = "Overview" if latest_kind == "trend" else "Summary"
+    status_lines = ["status: succeeded"] if latest_kind == "ideas" else []
+    (note_dir / f"{stem}.md").write_text(
+        "\n".join(
+            [
+                "---",
+                f"kind: {latest_kind}",
+                "granularity: day",
+                "period_start: 2026-07-15T00:00:00+00:00",
+                "period_end: 2026-07-16T00:00:00+00:00",
+                *status_lines,
+                "topics:",
+                "- evaluation",
+                "---",
+                "",
+                "# Calibrated decisions",
+                "",
+                f"## {heading}",
+                "",
+                '<span onclick="alert(1)">Safe visible text</span> Cost $5, code `$z$`, malformed $x_$, readable before & value=$E=mc^2$, then the block expression',
+                "",
+                r"$$\frac{a+b}{c}$$",
+                "",
+                "The ordinary prose after it remains readable and complete.",
+                "",
+                ("Long tail filler " * 30) + "TAIL_MARKER",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(
+        input_dir=notes_root / "Trends",
+        output_dir=site_dir,
+    )
+
+    home = _read_html(site_dir / "index.html")
+    excerpt = home.select_one(".home-latest .home-feature-excerpt")
+    assert isinstance(excerpt, Tag)
+    assert excerpt.select_one(".math.inline math[display='inline']") is not None
+    assert excerpt.select_one(".math.block math[display='block']") is not None
+    literal_code = excerpt.select_one("code:not(.math-source-fallback)")
+    fallback = excerpt.select_one(".math-source-fallback")
+    assert isinstance(literal_code, Tag)
+    assert isinstance(fallback, Tag)
+    assert literal_code.get_text() == "$z$"
+    assert fallback.get_text() == "$x_$"
+    assert excerpt.select("script, [onclick]") == []
+    annotations = excerpt.select("annotation[encoding='application/x-tex']")
+    assert [annotation.get_text() for annotation in annotations] == [
+        "E=mc^2",
+        r"\frac{a+b}{c}",
+    ]
+    inline_math = excerpt.select_one(".math.inline math[display='inline']")
+    assert isinstance(inline_math, Tag)
+    inline_wrapper = inline_math.parent
+    assert isinstance(inline_wrapper, Tag)
+    assert str(inline_wrapper.previous_sibling).endswith("value=")
+    assert str(inline_wrapper.next_sibling).startswith(",")
+    reader_text = html_to_reader_text(str(excerpt))
+    assert reader_text.count("E=mc^2") == 1
+    assert reader_text.count(r"\frac{a+b}{c}") == 1
+    assert "Cost $5" in reader_text
+    assert "Safe visible text" in reader_text
+    assert "readable before & value=" in reader_text
+    assert "ordinary prose after it remains readable" in reader_text
+    assert "TAIL_MARKER" not in reader_text
+
+
+def test_home_latest_excerpt_never_emits_a_partial_formula_at_its_boundary(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    trends_dir = notes_root / "Trends"
+    trends_dir.mkdir(parents=True)
+    formula = r"\frac{a_1+\cdots+a_{40}}{b_1+\cdots+b_{40}}"
+    boundary_prefix = "边界文本" * 48
+    (trends_dir / "day--2026-07-15--trend--1.md").write_text(
+        "\n".join(
+            [
+                "---",
+                "kind: trend",
+                "granularity: day",
+                "period_start: 2026-07-15T00:00:00+00:00",
+                "period_end: 2026-07-16T00:00:00+00:00",
+                "topics:",
+                "- evaluation",
+                "---",
+                "",
+                "# Boundary-safe formula",
+                "",
+                "## Overview",
+                "",
+                f"{boundary_prefix}${formula}$ trailing prose",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(
+        input_dir=trends_dir,
+        output_dir=site_dir,
+    )
+
+    detail = _read_html(site_dir / "trends" / "day--2026-07-15--trend--1.html")
+    detail_annotation = detail.select_one(
+        "annotation[encoding='application/x-tex']"
+    )
+    assert isinstance(detail_annotation, Tag)
+    assert detail_annotation.get_text() == formula
+
+    home = _read_html(site_dir / "index.html")
+    excerpt = home.select_one(".home-latest .home-feature-excerpt")
+    assert isinstance(excerpt, Tag)
+    annotation = excerpt.select_one("annotation[encoding='application/x-tex']")
+    reader_text = html_to_reader_text(str(excerpt))
+    if isinstance(annotation, Tag):
+        assert annotation.get_text() == formula
+        assert reader_text.count(formula) == 1
+    else:
+        assert excerpt.find("math") is None
+        assert r"\frac" not in reader_text
+        assert "a_{40}" not in reader_text
+        assert "b_{40}" not in reader_text
+
+
+def test_home_latest_excerpt_bounds_oversized_math_and_code(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    trends_dir = notes_root / "Trends"
+    trends_dir.mkdir(parents=True)
+    formula = "+".join(f"x_{{{index}}}" for index in range(80))
+    code = "z" * 500
+    (trends_dir / "day--2026-07-15--trend--1.md").write_text(
+        "\n".join(
+            [
+                "---",
+                "kind: trend",
+                "granularity: day",
+                "period_start: 2026-07-15T00:00:00+00:00",
+                "period_end: 2026-07-16T00:00:00+00:00",
+                "topics:",
+                "- evaluation",
+                "---",
+                "",
+                "# Bounded excerpt atoms",
+                "",
+                "## Overview",
+                "",
+                f"${formula}$",
+                "",
+                f"`{code}`",
+                "",
+                "Readable prose remains available after oversized atoms.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    site_dir = tmp_path / "site"
+    export_trend_static_site(
+        input_dir=trends_dir,
+        output_dir=site_dir,
+    )
+
+    detail = _read_html(site_dir / "trends" / "day--2026-07-15--trend--1.html")
+    detail_annotation = detail.select_one(
+        "annotation[encoding='application/x-tex']"
+    )
+    detail_code = detail.select_one("code:not(.math-source-fallback)")
+    assert isinstance(detail_annotation, Tag)
+    assert isinstance(detail_code, Tag)
+    assert detail_annotation.get_text() == formula
+    assert detail_code.get_text() == code
+
+    home = _read_html(site_dir / "index.html")
+    excerpt = home.select_one(".home-latest .home-feature-excerpt")
+    assert isinstance(excerpt, Tag)
+    assert excerpt.find("math") is None
+    assert excerpt.find("code") is None
+    reader_text = html_to_reader_text(str(excerpt))
+    assert reader_text == "Readable prose remains available after oversized atoms."
 
 
 def test_item_body_omits_repeated_summary_heading() -> None:

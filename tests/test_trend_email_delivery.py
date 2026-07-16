@@ -473,7 +473,7 @@ def test_build_trend_email_preview_writes_preview_artifacts_and_site_first_links
     assert "Read the full brief" in html_body
     assert "Agent systems" in text_body
     manifest = json.loads(entry.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["renderer_version"] == "trend-email-v3"
+    assert manifest["renderer_version"] == "trend-email-v4"
     assert manifest["content_hash"] == entry.content_hash
     assert manifest["primary_page_url"] == entry.primary_page_url
 
@@ -627,6 +627,42 @@ def test_build_trend_email_preview_renders_summary_once_with_semantic_outline(
     assert preheader is not None
     assert overview not in preheader.get_text(" ", strip=True)
     assert "Release discipline" in preheader.get_text(" ", strip=True)
+
+
+def test_build_trend_email_preview_keeps_formula_tex_in_html_and_plain_text(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    display_tex = (
+        r"x_1+x_2+x_3+x_4+x_5+x_6+x_7+x_8+x_9+x_{10}"
+        r"=\sum_{i=1}^{10}x_i"
+    )
+    fixture = _write_email_fixture(
+        tmp_path=tmp_path,
+        overview_md=f"Energy follows $E=mc^2$.\n\n$${display_tex}$$",
+    )
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+    soup = BeautifulSoup(entry.html_path.read_text(encoding="utf-8"), "html.parser")
+    text_body = entry.text_path.read_text(encoding="utf-8")
+
+    assert soup.find("math") is None
+    assert soup.find("img") is None
+    code_texts = [code.get_text() for code in soup.find_all("code")]
+    assert "$E=mc^2$" in code_texts
+    assert f"$${display_tex}$$" in code_texts
+    assert text_body.count("$E=mc^2$") == 1
+    assert text_body.count(f"$${display_tex}$$") == 1
 
 
 def test_build_trend_email_preview_uses_title_preheader_without_findings(
@@ -949,7 +985,10 @@ def test_build_trend_email_preview_uses_rtl_markdown_edges(
 ) -> None:
     fixture = _write_email_fixture(
         tmp_path=tmp_path,
-        overview_md="- عنصر أول\n- عنصر ثان\n\n> اقتباس موثّق",
+        overview_md=(
+            "- عنصر أول\n- عنصر ثان\n\n> اقتباس موثّق\n\n"
+            "المعادلة $E=mc^2$.\n\n$$\\frac{a}{b}$$"
+        ),
         language_code="AR",
     )
     output_dir = Path(fixture["output_dir"])
@@ -968,15 +1007,30 @@ def test_build_trend_email_preview_uses_rtl_markdown_edges(
     soup = BeautifulSoup(entry.html_path.read_text(encoding="utf-8"), "html.parser")
     listing = soup.find("ul")
     quote = soup.find("blockquote")
+    preformatted = soup.find("pre")
+    inline_code = next(
+        (
+            code
+            for code in soup.find_all("code")
+            if code.parent is not None and code.parent.name != "pre"
+        ),
+        None,
+    )
 
     assert soup.html is not None and soup.html.get("dir") == "rtl"
     assert isinstance(listing, Tag)
     assert isinstance(quote, Tag)
+    assert isinstance(preformatted, Tag)
+    assert isinstance(inline_code, Tag)
     assert "padding:0 24px 0 0" in str(listing.get("style") or "")
     quote_style = str(quote.get("style") or "")
     assert "padding:0 16px 0 0" in quote_style
     assert "border-right:" in quote_style
     assert "border-left" not in quote_style
+    assert preformatted.get("dir") == "ltr"
+    assert inline_code.get("dir") == "ltr"
+    assert "direction:ltr" in str(preformatted.get("style") or "")
+    assert "direction:ltr" in str(inline_code.get("style") or "")
 
 
 def test_build_trend_email_preview_sanitizes_raw_markdown_html(

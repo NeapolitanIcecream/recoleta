@@ -18,11 +18,17 @@ from urllib.parse import quote, urlparse
 
 from babel import Locale
 from babel.core import UnknownLocaleError
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, Comment, Tag
+from bs4.element import NavigableString
 from loguru import logger
 from markdown_it import MarkdownIt
 from slugify import slugify
 
+from recoleta.markdown_render import (
+    build_site_markdown_renderer,
+    html_to_reader_text,
+    render_site_math_fragment,
+)
 from recoleta.presentation import (
     PRESENTATION_SCHEMA_VERSION,
     idea_display_labels,
@@ -90,6 +96,57 @@ from recoleta.site_presentation import (
 
 RECOLETA_REPO_URL = "https://github.com/NeapolitanIcecream/recoleta"
 RECOLETA_QUICKSTART_URL = f"{RECOLETA_REPO_URL}#recoleta-quickstart"
+_EXCERPT_ATOM_OPEN = "\ue000"
+_EXCERPT_ATOM_CLOSE = "\ue001"
+_EXCERPT_ATOM_FILL = "\ue002"
+_EXCERPT_ATOM_PATTERN = re.compile(
+    rf"{_EXCERPT_ATOM_OPEN}(?P<index>\d+):{_EXCERPT_ATOM_FILL}+{_EXCERPT_ATOM_CLOSE}"
+)
+_EXCERPT_BLOCK_TAGS = frozenset(
+    {
+        "address",
+        "article",
+        "aside",
+        "blockquote",
+        "br",
+        "dd",
+        "div",
+        "dl",
+        "dt",
+        "figcaption",
+        "figure",
+        "footer",
+        "form",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "header",
+        "hr",
+        "li",
+        "main",
+        "nav",
+        "ol",
+        "p",
+        "pre",
+        "section",
+        "table",
+        "td",
+        "th",
+        "tr",
+        "ul",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _ExcerptAtom:
+    token: str
+    text: str
+    is_block: bool
+    is_math: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -405,7 +462,203 @@ def _safe_excerpt(value: str, *, limit: int = 220) -> str:
     return truncated + "…"
 
 
-def _section_excerpt(sections: list[Any]) -> str:
+def _excerpt_atom_token(*, index: int, text: str) -> str:
+    prefix = f"{_EXCERPT_ATOM_OPEN}{index}:"
+    overhead = len(prefix) + len(_EXCERPT_ATOM_CLOSE)
+    filler_count = max(len(text) - overhead, 1)
+    return f"{prefix}{_EXCERPT_ATOM_FILL * filler_count}{_EXCERPT_ATOM_CLOSE}"
+
+
+def _math_source_from_tag(math: Tag) -> str:
+    annotation = math.find("annotation", attrs={"encoding": "application/x-tex"})
+    if isinstance(annotation, Tag):
+        return annotation.get_text("", strip=False)
+    return math.get_text(" ", strip=True)
+
+
+def _math_is_block(math: Tag) -> bool:
+    if str(math.get("display") or "").strip().lower() == "block":
+        return True
+    wrapper = math.find_parent(class_="math")
+    return isinstance(wrapper, Tag) and "block" in list(wrapper.get("class") or [])
+
+
+def _fallback_math_source(code: Tag) -> tuple[str, bool] | None:
+    raw = code.get_text("", strip=False).strip()
+    if raw.startswith("$$") and raw.endswith("$$") and len(raw) >= 4:
+        return raw[2:-2], True
+    if raw.startswith("$") and raw.endswith("$") and len(raw) >= 2:
+        return raw[1:-1], False
+    return None
+
+
+def _trim_partial_excerpt_atom(value: str) -> str:
+    last_open = value.rfind(_EXCERPT_ATOM_OPEN)
+    last_close = value.rfind(_EXCERPT_ATOM_CLOSE)
+    if last_open <= last_close:
+        return value
+    prefix = re.sub(
+        r"[,;:，；：、]+$",
+        "",
+        value[:last_open].rstrip(),
+    ).rstrip()
+    return f"{prefix}…" if prefix else ""
+
+
+def _excerpt_atom_html(atom: _ExcerptAtom) -> str:
+    if atom.is_math:
+        return render_site_math_fragment(
+            source=atom.text,
+            display_mode=atom.is_block,
+        )
+    return f"<code>{html.escape(atom.text)}</code>"
+
+
+def _excerpt_protected_text(soup: BeautifulSoup) -> str:
+    parts: list[str] = []
+    stack: list[tuple[Any, bool]] = [
+        (child, False) for child in reversed(soup.contents)
+    ]
+    while stack:
+        node, exiting = stack.pop()
+        if isinstance(node, Comment):
+            continue
+        if isinstance(node, NavigableString):
+            parts.append(str(node))
+            continue
+        if not isinstance(node, Tag):
+            continue
+        if node.name in _EXCERPT_BLOCK_TAGS:
+            parts.append(" ")
+        if exiting:
+            continue
+        stack.append((node, True))
+        stack.extend((child, False) for child in reversed(node.contents))
+    return "".join(parts).strip()
+
+
+def _excerpt_html_from_atoms(
+    *,
+    protected_excerpt: str,
+    atoms: list[_ExcerptAtom],
+) -> str:
+    if not protected_excerpt:
+        return ""
+    atoms_by_index = {index: atom for index, atom in enumerate(atoms)}
+    blocks: list[str] = []
+    inline_parts: list[str] = []
+    cursor = 0
+
+    def flush_inline() -> None:
+        content = "".join(inline_parts).strip()
+        inline_parts.clear()
+        if content:
+            blocks.append(f"<p>{content}</p>")
+
+    for match in _EXCERPT_ATOM_PATTERN.finditer(protected_excerpt):
+        inline_parts.append(html.escape(protected_excerpt[cursor : match.start()]))
+        atom = atoms_by_index.get(int(match.group("index")))
+        if atom is None:
+            inline_parts.append(html.escape(match.group(0)))
+        elif atom.is_block:
+            flush_inline()
+            blocks.append(_excerpt_atom_html(atom))
+        else:
+            inline_parts.append(_excerpt_atom_html(atom))
+        cursor = match.end()
+    inline_parts.append(html.escape(protected_excerpt[cursor:]))
+    flush_inline()
+    return "".join(blocks)
+
+
+def _excerpt_payload_from_html(
+    rendered_html: str,
+    *,
+    limit: int = 220,
+) -> tuple[str, str]:
+    soup = BeautifulSoup(str(rendered_html or ""), "html.parser")
+    for hidden in soup.find_all(["script", "style", "template", "noscript"]):
+        hidden.decompose()
+
+    atoms: list[_ExcerptAtom] = []
+
+    def replace_with_atom(
+        node: Tag,
+        *,
+        text: str,
+        is_block: bool,
+        is_math: bool,
+    ) -> None:
+        if len(text) > limit:
+            node.decompose()
+            return
+        token = _excerpt_atom_token(index=len(atoms), text=text)
+        atoms.append(
+            _ExcerptAtom(
+                token=token,
+                text=text,
+                is_block=is_block,
+                is_math=is_math,
+            )
+        )
+        node.replace_with(token)
+
+    for code in list(soup.find_all("code")):
+        if code.find_parent("math") is not None:
+            continue
+        classes = {str(value) for value in list(code.get("class") or [])}
+        fallback = (
+            _fallback_math_source(code)
+            if "math-source-fallback" in classes
+            else None
+        )
+        if fallback is not None:
+            source, display_mode = fallback
+            replace_with_atom(
+                code,
+                text=source,
+                is_block=display_mode,
+                is_math=True,
+            )
+            continue
+        code_text = code.get_text("", strip=False)
+        replace_with_atom(
+            code,
+            text=code_text,
+            is_block=False,
+            is_math=False,
+        )
+
+    for math in list(soup.find_all("math")):
+        source = _math_source_from_tag(math=math)
+        if not source:
+            math.decompose()
+            continue
+        display_mode = _math_is_block(math=math)
+        replace_with_atom(
+            math,
+            text=source,
+            is_block=display_mode,
+            is_math=True,
+        )
+
+    protected_text = _excerpt_protected_text(soup)
+    protected_excerpt = _trim_partial_excerpt_atom(
+        _safe_excerpt(protected_text, limit=limit)
+    )
+    excerpt_text = protected_excerpt
+    for atom in atoms:
+        excerpt_text = excerpt_text.replace(atom.token, atom.text)
+    return (
+        excerpt_text,
+        _excerpt_html_from_atoms(
+            protected_excerpt=protected_excerpt,
+            atoms=atoms,
+        ),
+    )
+
+
+def _section_excerpt_payload(sections: list[Any]) -> tuple[str, str]:
     preferred_html = ""
     for section in sections:
         heading = str(getattr(section, "heading", "") or "").strip().lower()
@@ -414,8 +667,25 @@ def _section_excerpt(sections: list[Any]) -> str:
             break
     if not preferred_html and sections:
         preferred_html = str(getattr(sections[0], "inner_html", "") or "")
-    text = BeautifulSoup(preferred_html, "html.parser").get_text(" ", strip=True)
-    return _safe_excerpt(text, limit=220)
+    return _excerpt_payload_from_html(preferred_html, limit=220)
+
+
+def _section_excerpt(sections: list[Any]) -> str:
+    excerpt, _excerpt_html = _section_excerpt_payload(sections)
+    return excerpt
+
+
+def _body_excerpt_payload(body_html: str) -> tuple[str, str]:
+    soup = BeautifulSoup(str(body_html or ""), "html.parser")
+    prose = soup.select_one(
+        ".summary-card .prose, .section-card .prose, .prose"
+    )
+    if isinstance(prose, Tag):
+        return _excerpt_payload_from_html(str(prose), limit=220)
+    _title, sections = _extract_trend_pdf_sections(body_html=str(soup))
+    if sections:
+        return _section_excerpt_payload(sections)
+    return _excerpt_payload_from_html(str(soup), limit=220)
 
 
 def _site_href(*, from_page: Path, to_page: Path) -> str:
@@ -1529,6 +1799,7 @@ def _render_home_feature(
     topic_html = (
         f"<div class='topic-pill-row'>{topic_links}</div>" if topic_links else ""
     )
+    excerpt_html = document.excerpt_html or f"<p>{html.escape(document.excerpt)}</p>"
     return (
         "<article class='home-feature'>"
         "<div class='home-feature-meta'>"
@@ -1536,7 +1807,7 @@ def _render_home_feature(
         f"<time>{html.escape(document.period_token)}</time>"
         "</div>"
         f"<h2 class='home-feature-title'><a href='{href}'>{html.escape(document.title)}</a></h2>"
-        f"<p class='home-feature-excerpt'>{html.escape(document.excerpt)}</p>"
+        f"<div class='home-feature-excerpt'>{excerpt_html}</div>"
         f"{topic_html}"
         "</article>"
     )
@@ -2114,6 +2385,12 @@ iframe {
   font-size: 18px;
   line-height: 1.68;
 }
+.home-feature-excerpt > p {
+  margin: 0;
+}
+.home-feature-excerpt > .math.block {
+  margin: 0.8em 0;
+}
 .latest-feed,
 .timeline-list,
 .archive-list,
@@ -2492,6 +2769,34 @@ iframe {
 .detail-content .cluster-body pre {
   max-width: 100%;
   overflow-x: auto;
+}
+.math.inline {
+  display: inline-flex;
+  max-width: 100%;
+  vertical-align: -0.14em;
+}
+.math.inline math {
+  font-size: 1em;
+}
+.math.block {
+  max-width: 100%;
+  margin: 1.35em 0;
+  padding: 0.2em 0 0.35em;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.math.block math[display="block"] {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  font-size: 1.05em;
+}
+.math-source-fallback {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 .detail-content .prose th,
 .detail-content .prose td,
@@ -3279,7 +3584,7 @@ def _extract_item_body_html(*, body_html: str) -> tuple[str, str, str]:
     _section_title, sections = _extract_trend_pdf_sections(body_html=normalized_html)
     excerpt = _section_excerpt(sections) if sections else ""
     if not excerpt:
-        excerpt = _safe_excerpt(soup.get_text(" ", strip=True), limit=220)
+        excerpt = _safe_excerpt(html_to_reader_text(str(soup)), limit=220)
     return title, normalized_html, excerpt
 
 
@@ -3315,7 +3620,7 @@ def _load_item_site_documents(
     source_documents: Sequence[ItemSiteSourceDocument],
     output_dir: Path,
 ) -> tuple[list[ItemSiteDocument], dict[SiteSourceKey, Path]]:
-    markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
+    markdown = build_site_markdown_renderer()
     items_dir = output_dir / "items"
     item_artifacts_dir = output_dir / "artifacts" / "items"
     items_dir.mkdir(parents=True, exist_ok=True)
@@ -3370,9 +3675,7 @@ def _render_presentation_markdown_html(markdown_text: Any) -> str:
     normalized = str(markdown_text or "").strip()
     if not normalized:
         return "<p>(none)</p>"
-    return MarkdownIt("commonmark", {"html": True, "typographer": True}).render(
-        normalized
-    )
+    return build_site_markdown_renderer().render(normalized)
 
 
 def _render_presentation_source_list(
@@ -3470,10 +3773,7 @@ def _build_trend_body_from_presentation(
     if cluster_section := _trend_cluster_section(clusters=clusters, labels=labels):
         rendered_sections.append(cluster_section)
 
-    excerpt = _safe_excerpt(
-        BeautifulSoup(overview_html, "html.parser").get_text(" ", strip=True),
-        limit=220,
-    )
+    excerpt, _excerpt_html = _excerpt_payload_from_html(overview_html, limit=220)
     return (
         "<div class='document-flow'>" + "".join(rendered_sections) + "</div>",
         excerpt,
@@ -3558,7 +3858,7 @@ def _load_idea_site_documents(
     output_dir: Path,
     linked_page_by_source_key: dict[SiteSourceKey, Path],
 ) -> tuple[list[IdeaSiteDocument], dict[SiteSourceKey, Path]]:
-    markdown = MarkdownIt("commonmark", {"html": True, "typographer": True})
+    markdown = build_site_markdown_renderer()
     ideas_dir = output_dir / "ideas"
     idea_artifacts_dir = output_dir / "artifacts" / "ideas"
     ideas_dir.mkdir(parents=True, exist_ok=True)
@@ -3591,18 +3891,10 @@ def _load_idea_site_documents(
                 if isinstance(content, dict)
                 else ""
             ) or source_document.markdown_path.stem
-            excerpt = _safe_excerpt(
-                BeautifulSoup(
-                    _render_presentation_markdown_html(
-                        content.get("summary") if isinstance(content, dict) else ""
-                    ),
-                    "html.parser",
-                ).get_text(" ", strip=True),
-                limit=220,
-            )
             idea_body = _build_idea_body_from_presentation(
                 presentation=source_document.presentation,
             )
+            excerpt, excerpt_html = _body_excerpt_payload(idea_body.body_html)
         else:
             normalized_markdown = source_document.markdown_body.strip() or "# Ideas\n"
             rendered_html = markdown.render(normalized_markdown)
@@ -3610,6 +3902,7 @@ def _load_idea_site_documents(
                 body_html=rendered_html
             )
             idea_body = _build_idea_browser_body_html(body_html=raw_body_html)
+            excerpt, excerpt_html = _body_excerpt_payload(raw_body_html)
         body_html = _rewrite_site_markdown_links(
             html_text=idea_body.body_html,
             source_markdown_path=source_document.markdown_path,
@@ -3648,6 +3941,7 @@ def _load_idea_site_documents(
                 evidence_count=idea_body.evidence_count,
                 body_html=body_html,
                 excerpt=excerpt,
+                excerpt_html=excerpt_html,
                 frontmatter=source_document.frontmatter,
             )
         )
@@ -3670,7 +3964,8 @@ def _load_trend_site_documents(
             normalize_obsidian_callouts_for_pdf=_normalize_obsidian_callouts_for_pdf,
             extract_trend_pdf_sections=_extract_trend_pdf_sections,
             sanitize_trend_title=sanitize_trend_title,
-            section_excerpt=_section_excerpt,
+            section_excerpt_payload=_section_excerpt_payload,
+            body_excerpt_payload=_body_excerpt_payload,
             build_trend_body_from_presentation=_build_trend_body_from_presentation,
             rewrite_site_markdown_links=_rewrite_site_markdown_links,
             build_trend_browser_body_html=_build_trend_browser_body_html,
@@ -3746,7 +4041,7 @@ _LANGUAGE_SWITCHER_CSS = """
   color: var(--text);
   font-size: 13px;
   font-weight: 650;
-  line-height: 1;
+  line-height: 1.35;
   white-space: nowrap;
 }
 .language-switcher-link {
@@ -4418,7 +4713,7 @@ def _native_language_name(language_code: str) -> str:
     except (UnknownLocaleError, ValueError) as exc:
         raise ValueError(error_message) from exc
     if primary == "zh":
-        return "繁體中文" if _site_chrome_locale(language_code) == "zh-TW" else "简体中文"
+        return "繁體中文" if _site_chrome_locale(language_code) == "zh-TW" else "中文"
     if not native_name:
         raise ValueError(error_message)
     return native_name
