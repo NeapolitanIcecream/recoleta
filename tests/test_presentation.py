@@ -106,8 +106,8 @@ def test_build_trend_presentation_v2_projects_only_public_contract() -> None:
     assert presentation["presentation_schema_version"] == PRESENTATION_SCHEMA_VERSION
     assert presentation["display_labels"] == {
         "overview": "Overview",
-        "clusters": "Clusters",
-        "evidence": "Evidence",
+        "clusters": "Findings",
+        "evidence": "Sources",
     }
     cluster = presentation["content"]["clusters"][0]
     assert set(cluster) == {"title", "content", "evidence"}
@@ -138,8 +138,8 @@ def test_build_idea_presentation_v2_caps_to_three_ideas() -> None:
 
     assert presentation["display_labels"] == {
         "summary": "Summary",
-        "ideas": "Ideas",
-        "evidence": "Evidence",
+        "ideas": "Research ideas",
+        "evidence": "Sources",
     }
     assert [idea["title"] for idea in presentation["content"]["ideas"]] == [
         "Idea 1",
@@ -198,21 +198,48 @@ def test_build_presentation_v2_rejects_missing_required_keywords() -> None:
         cast(Any, build_idea_presentation_v2)()
 
 
-def test_presentation_labels_stay_in_english_across_languages() -> None:
+def test_presentation_labels_follow_the_reader_language() -> None:
     assert trend_display_labels(language_code="zh-TW") == {
-        "overview": "Overview",
-        "clusters": "Clusters",
-        "evidence": "Evidence",
+        "overview": "概覽",
+        "clusters": "研究發現",
+        "evidence": "資料來源",
     }
     assert idea_display_labels(language_code="zh-CN") == {
-        "summary": "Summary",
-        "ideas": "Ideas",
-        "evidence": "Evidence",
+        "summary": "摘要",
+        "ideas": "研究想法",
+        "evidence": "资料来源",
     }
+    assert trend_display_labels(language_code="ja") == {
+        "overview": "概要",
+        "clusters": "主な発見",
+        "evidence": "情報源",
+    }
+    assert idea_display_labels(language_code="ko") == {
+        "summary": "요약",
+        "ideas": "연구 아이디어",
+        "evidence": "출처",
+    }
+    assert trend_display_labels(language_code="zh") == {
+        "overview": "概览",
+        "clusters": "研究发现",
+        "evidence": "资料来源",
+    }
+    assert idea_display_labels(language_code="zh-Hant") == {
+        "summary": "摘要",
+        "ideas": "研究想法",
+        "evidence": "資料來源",
+    }
+    assert trend_display_labels(language_code="zh-Hant-TW")["overview"] == "概覽"
+    assert trend_display_labels(language_code="zh-Hans-CN")["overview"] == "概览"
+    assert trend_display_labels(language_code="JA")["overview"] == "概要"
 
 
 def test_resolve_presentation_language_code_prefers_explicit_codes() -> None:
     assert resolve_presentation_language_code(language_code="zh_CN") == "zh-CN"
+    assert resolve_presentation_language_code(language_code="zh_hant_tw") == (
+        "zh-Hant-TW"
+    )
+    assert resolve_presentation_language_code(language_code="JA") == "ja"
     assert resolve_presentation_language_code(output_language="Chinese (Traditional)") == (
         "zh-TW"
     )

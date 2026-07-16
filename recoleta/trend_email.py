@@ -9,10 +9,11 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
 from markdown_it import MarkdownIt
 
 from recoleta.config import Settings
@@ -28,8 +29,6 @@ from recoleta.site import (
     _discover_trend_site_input_dirs,
     _load_trend_source_documents,
     _resolve_site_local_markdown_target,
-    _topic_slug,
-    language_slug_from_code,
 )
 from recoleta.site_email_links import (
     email_links_artifact_path,
@@ -37,9 +36,91 @@ from recoleta.site_email_links import (
 )
 
 
-EMAIL_RENDERER_VERSION = "trend-email-v1"
+EMAIL_RENDERER_VERSION = "trend-email-v2"
 RESEND_BATCH_MAX_RECIPIENTS = 100
 _ALLOWED_EMAIL_GRANULARITIES = {"day", "week", "month"}
+_EMAIL_MARKDOWN_TAGS = {
+    "a",
+    "blockquote",
+    "br",
+    "code",
+    "em",
+    "hr",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "strong",
+    "ul",
+}
+_EMAIL_MARKDOWN_DANGEROUS_TAGS = {
+    "embed",
+    "iframe",
+    "math",
+    "object",
+    "script",
+    "style",
+    "svg",
+    "template",
+}
+_RTL_LANGUAGE_CODES = {"ar", "fa", "he", "ur"}
+_EMAIL_COPY = {
+    "en": {
+        "brief": "Research brief",
+        "day": "Daily brief",
+        "week": "Weekly brief",
+        "month": "Monthly brief",
+        "findings": "Findings",
+        "sources": "Sources",
+        "read_full": "Read the full brief",
+        "full_brief": "Full brief",
+        "source": "Source",
+    },
+    "zh-CN": {
+        "brief": "研究简报",
+        "day": "日度简报",
+        "week": "周度简报",
+        "month": "月度简报",
+        "findings": "研究发现",
+        "sources": "资料来源",
+        "read_full": "阅读完整报告",
+        "full_brief": "完整报告",
+        "source": "来源",
+    },
+    "zh-TW": {
+        "brief": "研究簡報",
+        "day": "日度簡報",
+        "week": "週度簡報",
+        "month": "月度簡報",
+        "findings": "研究發現",
+        "sources": "資料來源",
+        "read_full": "閱讀完整報告",
+        "full_brief": "完整報告",
+        "source": "來源",
+    },
+    "ja": {
+        "brief": "リサーチ速報",
+        "day": "日次速報",
+        "week": "週次速報",
+        "month": "月次速報",
+        "findings": "主な発見",
+        "sources": "情報源",
+        "read_full": "レポート全文を読む",
+        "full_brief": "レポート全文",
+        "source": "情報源",
+    },
+    "ko": {
+        "brief": "리서치 브리프",
+        "day": "일간 브리프",
+        "week": "주간 브리프",
+        "month": "월간 브리프",
+        "findings": "주요 발견",
+        "sources": "출처",
+        "read_full": "전체 보고서 읽기",
+        "full_brief": "전체 보고서",
+        "source": "출처",
+    },
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,7 +200,6 @@ class _TrendEmailCandidate:
 class _ResolvedEvidenceEntry:
     title: str
     url: str
-    reason: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,8 +222,7 @@ class _TrendEmailBundle:
     title: str
     overview_html: str
     overview_text: str
-    topics: list[str]
-    topic_links: list[dict[str, str]]
+    display_labels: dict[str, str]
     clusters: list[_RenderedCluster]
     primary_relative_path: str
     primary_page_url: str
@@ -201,8 +280,14 @@ def _normalized_language_filter(settings: Settings) -> tuple[str | None, bool]:
     email = _normalized_email_config(settings)
     explicit = str(email.language_code or "").strip() or None
     if explicit is not None:
-        return explicit, True
-    return _default_site_language_code(settings), False
+        return _normalized_email_language_code(explicit), True
+    default_language = _default_site_language_code(settings)
+    return (
+        _normalized_email_language_code(default_language)
+        if default_language is not None
+        else None,
+        False,
+    )
 
 
 def _load_trend_email_links(*, site_output_dir: Path) -> dict[str, Any]:
@@ -244,7 +329,7 @@ def _presentation_content_map(presentation: dict[str, Any]) -> dict[str, Any]:
 
 
 def _source_document_presentation_language(source_document: Any) -> str | None:
-    return (
+    language_code = (
         str(
             source_document.presentation.get("language_code")
             or source_document.frontmatter.get("language_code")
@@ -252,6 +337,11 @@ def _source_document_presentation_language(source_document: Any) -> str | None:
             or ""
         ).strip()
         or None
+    )
+    return (
+        _normalized_email_language_code(language_code)
+        if language_code is not None
+        else None
     )
 
 
@@ -437,9 +527,80 @@ def _render_markdown_html(*, markdown_text: Any) -> str:
     normalized = str(markdown_text or "").strip()
     if not normalized:
         return ""
-    return MarkdownIt("commonmark", {"html": True, "typographer": True}).render(
+    rendered = MarkdownIt("commonmark", {"html": True, "typographer": True}).render(
         normalized
     )
+    soup = BeautifulSoup(rendered, "html.parser")
+    for comment in soup.find_all(string=lambda value: isinstance(value, Comment)):
+        comment.extract()
+    for tag in list(soup.find_all(_EMAIL_MARKDOWN_DANGEROUS_TAGS)):
+        tag.decompose()
+    for tag in list(soup.find_all(True)):
+        if tag.name not in _EMAIL_MARKDOWN_TAGS:
+            tag.unwrap()
+            continue
+        if tag.name == "a":
+            href = str(tag.get("href") or "").strip()
+            try:
+                scheme = urlsplit(href).scheme.lower()
+            except ValueError:
+                href = ""
+                scheme = ""
+            tag.attrs = (
+                {"href": href}
+                if href and scheme in {"", "http", "https", "mailto"}
+                else {}
+            )
+            continue
+        tag.attrs = {}
+    return str(soup)
+
+
+def _style_markdown_fragment(soup: BeautifulSoup, *, direction: str) -> None:
+    base_text_style = (
+        "margin:0 0 16px;font-family:Arial,Helvetica,sans-serif;"
+        "font-size:16px;line-height:27px;mso-line-height-rule:at-least;"
+        "color:#27323a;word-break:break-word"
+    )
+    for paragraph in soup.find_all("p"):
+        paragraph["style"] = base_text_style
+    for anchor in soup.find_all("a"):
+        anchor["style"] = (
+            "color:#16538c;text-decoration:underline;text-underline-offset:2px;"
+            "word-break:break-word"
+        )
+    list_padding = "0 24px 0 0" if direction == "rtl" else "0 0 0 24px"
+    for listing in soup.find_all(["ul", "ol"]):
+        listing["style"] = (
+            f"margin:0 0 16px;padding:{list_padding};"
+            "font-family:Arial,Helvetica,sans-serif;"
+            "font-size:16px;line-height:27px;mso-line-height-rule:at-least;"
+            "color:#27323a"
+        )
+    for item in soup.find_all("li"):
+        item["style"] = "margin:0 0 8px;padding:0"
+    quote_edge = (
+        "padding:0 16px 0 0;border-right:2px solid #b9b5aa"
+        if direction == "rtl"
+        else "padding:0 0 0 16px;border-left:2px solid #b9b5aa"
+    )
+    for quote in soup.find_all("blockquote"):
+        quote["style"] = (
+            f"margin:0 0 16px;{quote_edge};color:#4f5a62"
+        )
+    for preformatted in soup.find_all("pre"):
+        preformatted["style"] = (
+            "margin:0 0 16px;padding:12px;background:#f1efe8;white-space:pre-wrap;"
+            "font-family:Menlo,Consolas,monospace;font-size:14px;line-height:22px;"
+            "mso-line-height-rule:at-least;color:#27323a;word-break:break-word"
+        )
+    for code in soup.find_all("code"):
+        if code.parent is not None and code.parent.name == "pre":
+            continue
+        code["style"] = (
+            "font-family:Menlo,Consolas,monospace;font-size:14px;line-height:22px;"
+            "background:#f1efe8;color:#27323a"
+        )
 
 
 def _render_markdown_with_site_links(
@@ -448,6 +609,7 @@ def _render_markdown_with_site_links(
     links_artifact: dict[str, Any],
     source_markdown_path: Path,
     markdown_text: Any,
+    direction: str,
 ) -> tuple[str, str]:
     rendered_html = _render_markdown_html(markdown_text=markdown_text)
     if not rendered_html:
@@ -468,6 +630,7 @@ def _render_markdown_with_site_links(
         )
         if public_url is not None:
             anchor["href"] = public_url
+    _style_markdown_fragment(soup, direction=direction)
     normalized_html = str(soup)
     normalized_text = BeautifulSoup(normalized_html, "html.parser").get_text(
         " ",
@@ -505,62 +668,57 @@ def _resolve_evidence_entry(
     resolved_url = str(resolved_url or "").strip()
     if not resolved_url:
         return None
-    reason = str(entry.get("reason") or "").strip() or None
-    return _ResolvedEvidenceEntry(title=title, url=resolved_url, reason=reason)
+    return _ResolvedEvidenceEntry(title=title, url=resolved_url)
 
 
-def _resolve_topic_links(
-    *,
-    settings: Settings,
-    links_artifact: dict[str, Any],
-    topics: list[str],
-    language_code: str | None,
-) -> list[dict[str, str]]:
-    language_slug = language_slug_from_code(language_code)
-    topic_pages_by_language = links_artifact.get("topic_pages_by_language") or {}
-    scoped_topic_pages: dict[str, Any] = {}
-    if (
-        language_slug
-        and isinstance(topic_pages_by_language, dict)
-        and isinstance(topic_pages_by_language.get(language_slug), dict)
-    ):
-        scoped_topic_pages = dict(topic_pages_by_language.get(language_slug) or {})
-    if not scoped_topic_pages:
-        raw_topic_pages = links_artifact.get("topic_pages_by_slug") or {}
-        if isinstance(raw_topic_pages, dict):
-            scoped_topic_pages = dict(raw_topic_pages)
-
-    links: list[dict[str, str]] = []
-    for topic in topics:
-        slug = _topic_slug(topic)
-        relative_path = str(scoped_topic_pages.get(slug) or "").strip()
-        if not relative_path:
-            continue
-        links.append(
-            {
-                "label": topic,
-                "url": _public_url(settings=settings, relative_path=relative_path),
-            }
+def _source_url_dedup_key(url: str) -> str:
+    normalized = str(url or "").strip()
+    try:
+        parts = urlsplit(normalized)
+        hostname = parts.hostname
+        normalized_netloc = parts.netloc
+        if hostname is not None:
+            userinfo = ""
+            if "@" in parts.netloc:
+                userinfo = parts.netloc.rsplit("@", 1)[0] + "@"
+            normalized_host = hostname.casefold()
+            if ":" in normalized_host:
+                normalized_host = f"[{normalized_host}]"
+            port = parts.port
+            normalized_netloc = (
+                f"{userinfo}{normalized_host}"
+                + (f":{port}" if port is not None else "")
+            )
+        return urlunsplit(
+            (
+                parts.scheme.casefold(),
+                normalized_netloc,
+                parts.path,
+                parts.query,
+                "",
+            )
         )
-    return links
+    except ValueError:
+        return normalized.split("#", 1)[0]
 
 
 def _build_email_subject(
     *,
     settings: Settings,
-    granularity: str,
-    period_token: str,
+    title: str,
     instance: str | None,
 ) -> str:
     email = _normalized_email_config(settings)
     prefix = str(email.subject_prefix or "").strip()
-    instance_segment = f"[{instance}]" if instance else ""
-    parts = [prefix + instance_segment if prefix else instance_segment]
-    parts.append(f"{granularity.title()} trends · {period_token}")
+    normalized_title = " ".join(str(title or "").split()).strip()
+    _ = instance
+    parts = [prefix, normalized_title]
     return " ".join(part for part in parts if part).strip()
 
 
-def _canonical_bundle_payload(bundle: _TrendEmailBundle, *, settings: Settings) -> dict[str, Any]:
+def _canonical_bundle_payload(
+    bundle: _TrendEmailBundle, *, settings: Settings
+) -> dict[str, Any]:
     email = _normalized_email_config(settings)
     return {
         "renderer_version": EMAIL_RENDERER_VERSION,
@@ -576,12 +734,12 @@ def _canonical_bundle_payload(bundle: _TrendEmailBundle, *, settings: Settings) 
         "language_code": bundle.language_code,
         "instance": bundle.instance,
         "title": bundle.title,
+        "subject": bundle.subject,
         "overview_html": bundle.overview_html,
-        "topics": bundle.topics,
-        "topic_links": bundle.topic_links,
+        "display_labels": bundle.display_labels,
         "primary_page_url": bundle.primary_page_url,
-        "max_clusters": int(email.max_clusters),
-        "max_evidence_per_cluster": int(email.max_evidence_per_cluster),
+        "max_findings": min(int(email.max_clusters), 3),
+        "max_sources_per_finding": min(int(email.max_evidence_per_cluster), 2),
         "clusters": [
             {
                 "title": cluster.title,
@@ -590,7 +748,6 @@ def _canonical_bundle_payload(bundle: _TrendEmailBundle, *, settings: Settings) 
                     {
                         "title": entry.title,
                         "url": entry.url,
-                        "reason": entry.reason,
                     }
                     for entry in cluster.evidence
                 ],
@@ -610,53 +767,110 @@ def _hash_payload(payload: dict[str, Any]) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def _render_meta_rows(bundle: _TrendEmailBundle) -> list[tuple[str, str]]:
-    period_end = (
-        bundle.period_end.astimezone(UTC).date().isoformat()
-        if bundle.period_end
-        else None
-    )
-    window_value = bundle.period_start.astimezone(UTC).date().isoformat()
-    if period_end is not None:
-        window_value = f"{window_value} to {period_end}"
-    rows = [("Window", window_value), ("Language", bundle.language_code or "default")]
-    if bundle.instance:
-        rows.append(("Instance", bundle.instance))
-    if bundle.topics:
-        rows.append(("Topics", ", ".join(bundle.topics[:4])))
-    return rows
+def _normalized_email_language_code(language_code: str | None) -> str:
+    normalized = str(language_code or "").strip().replace("_", "-")
+    if not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", normalized):
+        return "en"
+    parts = normalized.split("-")
+    canonical = [parts[0].lower()]
+    for part in parts[1:]:
+        if len(part) == 4 and part.isalpha():
+            canonical.append(part.title())
+        elif (len(part) == 2 and part.isalpha()) or (
+            len(part) == 3 and part.isdigit()
+        ):
+            canonical.append(part.upper())
+        else:
+            canonical.append(part.lower())
+    return "-".join(canonical)
 
 
-def _email_excerpt(value: str, *, limit: int = 220) -> str:
-    collapsed = " ".join(str(value or "").split()).strip()
-    collapsed = re.sub(r"\s+([,.;:!?])", r"\1", collapsed)
-    collapsed = re.sub(r"\s+([，。；：！？）】》])", r"\1", collapsed)
-    if len(collapsed) <= limit:
-        return collapsed
-    boundary = collapsed.rfind(" ", 0, limit)
-    if boundary < max(80, limit // 2):
-        boundary = limit
-    return collapsed[:boundary].rstrip() + "…"
+def _email_locale_key(language_code: str | None) -> str:
+    normalized = _normalized_email_language_code(language_code)
+    parts = normalized.casefold().split("-")
+    primary = parts[0]
+    if primary == "zh" and (
+        "hant" in parts or any(region in parts for region in {"hk", "mo", "tw"})
+    ):
+        return "zh-TW"
+    if primary == "zh":
+        return "zh-CN"
+    if primary == "ja":
+        return "ja"
+    if primary == "ko":
+        return "ko"
+    return "en"
+
+
+def _email_language_code(language_code: str | None) -> str:
+    return _normalized_email_language_code(language_code)
+
+
+def _email_direction(language_code: str | None) -> str:
+    language = _email_language_code(language_code).split("-", 1)[0].lower()
+    return "rtl" if language in _RTL_LANGUAGE_CODES else "ltr"
+
+
+def _email_copy_for(bundle: _TrendEmailBundle) -> dict[str, str]:
+    copy = dict(_EMAIL_COPY[_email_locale_key(bundle.language_code)])
+    legacy_english = {
+        "clusters": {"Clusters", "Findings"},
+        "evidence": {"Evidence", "Sources"},
+    }
+    for source_key, copy_key in (("clusters", "findings"), ("evidence", "sources")):
+        label = str(bundle.display_labels.get(source_key) or "").strip()
+        if not label:
+            continue
+        if label in legacy_english[source_key]:
+            continue
+        copy[copy_key] = label
+    return copy
+
+
+def _email_period_line(bundle: _TrendEmailBundle, copy: dict[str, str]) -> str:
+    granularity_label = copy.get(bundle.granularity, copy["brief"])
+    parts = [bundle.instance, granularity_label, bundle.period_token]
+    return " · ".join(str(part).strip() for part in parts if str(part or "").strip())
+
+
+def _email_preheader(bundle: _TrendEmailBundle, copy: dict[str, str]) -> str:
+    finding_count = len(bundle.clusters)
+    first_title = bundle.clusters[0].title if bundle.clusters else bundle.title
+    if finding_count == 0:
+        separator = "：" if _email_locale_key(bundle.language_code) in {
+            "zh-CN",
+            "zh-TW",
+            "ja",
+        } else ": "
+        return f"{copy['brief']}{separator}{bundle.title}"
+    if _email_locale_key(bundle.language_code) == "zh-CN":
+        return f"本期{finding_count}项研究发现：{first_title}"
+    if _email_locale_key(bundle.language_code) == "zh-TW":
+        return f"本期 {finding_count} 項研究發現：{first_title}"
+    if _email_locale_key(bundle.language_code) == "ja":
+        return f"{finding_count}件の発見：{first_title}"
+    if _email_locale_key(bundle.language_code) == "ko":
+        return f"주요 발견 {finding_count}건: {first_title}"
+    noun = "finding" if finding_count == 1 else "findings"
+    return f"{finding_count} {noun}: {first_title}"
 
 
 def _render_email_button(
     *,
     url: str,
     label: str,
-    background: str,
-    foreground: str,
-    width: int,
-    margin_right: int = 0,
 ) -> str:
-    height = 40
+    height = 44
+    width = 200
+    background = "#16538c"
+    foreground = "#ffffff"
     url_attr = html.escape(url, quote=True)
     label_html = html.escape(label)
-    margin_style = f"margin-right:{margin_right}px;" if margin_right else ""
     anchor_style = (
         f"display:inline-block;background:{background};color:{foreground};"
-        "text-decoration:none;font:600 14px/1 Arial,sans-serif;"
-        "padding:12px 18px;border-radius:999px;"
-        f"{margin_style}mso-hide:all"
+        "text-decoration:none;font-family:Arial,Helvetica,sans-serif;"
+        "font-size:16px;font-weight:700;line-height:44px;"
+        "mso-line-height-rule:exactly;padding:0 20px;border-radius:4px;mso-hide:all"
     )
     return (
         "<!--[if mso]>"
@@ -664,10 +878,11 @@ def _render_email_button(
         'xmlns:w="urn:schemas-microsoft-com:office:word" '
         f'href="{url_attr}" '
         f'style="height:{height}px;v-text-anchor:middle;width:{width}px;" '
-        f'arcsize="50%" stroke="f" fillcolor="{background}">'
+        f'arcsize="8%" stroke="f" fillcolor="{background}">'
         "<w:anchorlock/>"
         f'<center style="color:{foreground};font-family:Arial,sans-serif;'
-        f'font-size:14px;font-weight:600;">{label_html}</center>'
+        "font-size:16px;font-weight:700;line-height:44px;"
+        f'mso-line-height-rule:exactly;">{label_html}</center>'
         "</v:roundrect>"
         "<![endif]-->"
         "<!--[if !mso]><!-->"
@@ -676,136 +891,123 @@ def _render_email_button(
     )
 
 
-def _render_cluster_card(cluster: _RenderedCluster) -> str:
-    evidence_html = ""
+def _render_finding(
+    cluster: _RenderedCluster,
+    *,
+    index: int,
+    copy: dict[str, str],
+) -> str:
+    sources_html = ""
     if cluster.evidence:
-        evidence_html = (
-            "<div style='margin-top:18px'>"
-            "<div style='font:600 11px/1.4 Arial,sans-serif;color:#58708a;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px'>Evidence</div>"
+        sources_html = (
+            "<div data-section='sources' style='margin:18px 0 0'>"
+            f"<h4 style='margin:0 0 8px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;mso-line-height-rule:at-least;font-weight:700;color:#27323a'>{html.escape(copy['sources'])}</h4>"
             + "".join(
                 (
-                    "<div style='margin:0 0 8px'>"
-                    f"<a href='{html.escape(entry.url, quote=True)}' style='color:#16538c;text-decoration:none;font:600 15px/1.5 Arial,sans-serif'>{html.escape(entry.title)}</a>"
-                    + (
-                        f"<div style='font:400 13px/1.6 Arial,sans-serif;color:#4f647a;margin-top:2px'>{html.escape(entry.reason)}</div>"
-                        if entry.reason
-                        else ""
-                    )
-                    + "</div>"
+                    "<div style='margin:0 0 7px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:24px;mso-line-height-rule:at-least'>"
+                    f"<a href='{html.escape(entry.url, quote=True)}' style='color:#16538c;text-decoration:underline;text-underline-offset:2px;word-break:break-word'>{html.escape(entry.title)}</a>"
+                    "</div>"
                 )
                 for entry in cluster.evidence
             )
             + "</div>"
         )
+    section_style = "margin:0;padding:0 0 28px"
+    if index > 0:
+        section_style += ";border-top:1px solid #d8d5cc;padding-top:28px"
     return (
-        "<tr><td style='padding:0 0 16px'>"
-        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse;border:1px solid #d7e2ec;border-radius:18px;background:#f7fbff'>"
-        "<tr><td style='padding:22px 24px'>"
-        "<div style='font:600 11px/1.4 Arial,sans-serif;color:#58708a;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px'>Cluster</div>"
-        f"<h3 style='margin:0 0 12px;font:600 22px/1.2 Georgia,Times New Roman,serif;color:#10273f'>{html.escape(cluster.title)}</h3>"
-        f"<div style='font:400 16px/1.75 Arial,sans-serif;color:#18324a'>{cluster.content_html}</div>"
-        f"{evidence_html}"
-        "</td></tr></table></td></tr>"
+        f"<div style='{section_style}'>"
+        f"<h3 style='margin:0 0 12px;font-family:Georgia,Times New Roman,serif;font-size:22px;line-height:29px;mso-line-height-rule:at-least;font-weight:700;color:#1d2a33'>{html.escape(cluster.title)}</h3>"
+        f"<div>{cluster.content_html}</div>"
+        f"{sources_html}"
+        "</div>"
     )
 
 
-def _render_html_email(*, bundle: _TrendEmailBundle, settings: Settings) -> str:
-    trends_index_relative_path = "trends/index.html"
-    primary_parts = Path(bundle.primary_relative_path).parts
-    if len(primary_parts) >= 2 and primary_parts[1] == "trends":
-        trends_index_relative_path = str(
-            Path(primary_parts[0]) / "trends" / "index.html"
-        )
-    meta_html = "".join(
-        (
-            "<tr>"
-            f"<td style='padding:0 8px 8px 0;font:600 11px/1.4 Arial,sans-serif;color:#58708a;text-transform:uppercase;letter-spacing:0.08em'>{html.escape(label)}</td>"
-            f"<td style='padding:0 0 8px;font:400 14px/1.5 Arial,sans-serif;color:#18324a'>{html.escape(value)}</td>"
-            "</tr>"
-        )
-        for label, value in _render_meta_rows(bundle)
+def _render_html_email(*, bundle: _TrendEmailBundle) -> str:
+    copy = _email_copy_for(bundle)
+    language_code = _email_language_code(bundle.language_code)
+    direction = _email_direction(bundle.language_code)
+    period_line = _email_period_line(bundle, copy)
+    preheader = _email_preheader(bundle, copy)
+    findings_html = "".join(
+        _render_finding(cluster, index=index, copy=copy)
+        for index, cluster in enumerate(bundle.clusters)
     )
-    cluster_cards = "".join(_render_cluster_card(cluster) for cluster in bundle.clusters)
-    topic_cta = ""
-    if bundle.topic_links:
-        topic_cta = " ".join(
-            f"<a href='{html.escape(topic['url'], quote=True)}' style='color:#16538c;text-decoration:none;font:600 13px/1.4 Arial,sans-serif'>{html.escape(topic['label'])}</a>"
-            for topic in bundle.topic_links[:3]
+    findings_section = ""
+    if findings_html:
+        findings_section = (
+            "<div style='margin:26px 0 0'>"
+            f"<h2 style='margin:0 0 22px;font-family:Arial,Helvetica,sans-serif;font-size:18px;line-height:26px;mso-line-height-rule:at-least;font-weight:700;color:#1d2a33'>{html.escape(copy['findings'])}</h2>"
+            f"{findings_html}"
+            "</div>"
         )
     return (
         "<!doctype html>"
-        "<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        f"<html lang='{html.escape(language_code, quote=True)}' dir='{direction}'><head>"
+        "<meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<meta name='x-apple-disable-message-reformatting'>"
         f"<title>{html.escape(bundle.subject)}</title>"
+        "<style>"
+        "body,table,td,a{-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%}"
+        "table,td{mso-table-lspace:0pt;mso-table-rspace:0pt}"
+        "table{border-collapse:collapse!important}"
+        "a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important}"
+        "@media only screen and (max-width:480px){"
+        ".email-gutter{padding:0!important}.email-shell{width:100%!important}"
+        ".email-content{padding:28px 22px!important}"
+        ".email-title{font-size:28px!important;line-height:35px!important}"
+        "}"
+        "</style>"
         "</head>"
-        "<body style='margin:0;padding:0;background:#edf3f8'>"
-        "<div style='display:none;max-height:0;overflow:hidden;opacity:0;color:transparent'>"
-        f"{html.escape(bundle.overview_text[:120])}"
+        "<body style='margin:0;padding:0;background:#f4f2ec'>"
+        "<div class='preheader' aria-hidden='true' style='display:none!important;max-height:0;max-width:0;overflow:hidden;opacity:0;color:transparent;font-size:1px;line-height:1px'>"
+        f"{html.escape(preheader)}"
         "</div>"
-        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse;background:#edf3f8'>"
-        "<tr><td align='center' style='padding:24px'>"
-        "<table role='presentation' width='640' cellspacing='0' cellpadding='0' style='width:100%;max-width:640px;border-collapse:collapse'>"
-        "<tr><td style='padding:0 0 16px'>"
-        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse;background:#10273f;border-radius:28px'>"
-        "<tr><td style='padding:30px 32px'>"
-        f"<div style='font:600 11px/1.4 Arial,sans-serif;color:#d2e6fb;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 12px'>{html.escape((bundle.instance + ' · ') if bundle.instance else '')}{html.escape(bundle.granularity.title())} trends · {html.escape(bundle.period_token)}</div>"
-        f"<h1 style='margin:0 0 14px;font:600 34px/1.12 Georgia,Times New Roman,serif;color:#ffffff'>{html.escape(bundle.title)}</h1>"
-        f"<div style='font:400 16px/1.7 Arial,sans-serif;color:#dbe9f6;margin:0 0 20px'>{html.escape(_email_excerpt(bundle.overview_text))}</div>"
-        f"{_render_email_button(url=bundle.primary_page_url, label='Open on site', background='#f7fbff', foreground='#10273f', width=128)}"
-        "</td></tr></table></td></tr>"
-        "<tr><td style='padding:0 0 16px'>"
-        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse;border:1px solid #d7e2ec;border-radius:18px;background:#ffffff'>"
-        f"<tr><td style='padding:22px 24px'><table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse'>{meta_html}</table></td></tr>"
-        "</table></td></tr>"
-        "<tr><td style='padding:0 0 16px'>"
-        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse;border:1px solid #d7e2ec;border-radius:18px;background:#ffffff'>"
-        "<tr><td style='padding:24px'>"
-        "<div style='font:600 11px/1.4 Arial,sans-serif;color:#58708a;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 10px'>Overview</div>"
-        f"<div style='font:400 16px/1.75 Arial,sans-serif;color:#18324a'>{bundle.overview_html}</div>"
-        "</td></tr></table></td></tr>"
-        f"{cluster_cards}"
-        "<tr><td style='padding:4px 0 0'>"
-        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' style='border-collapse:collapse'>"
-        "<tr><td style='padding:0 0 10px'>"
-        f"{_render_email_button(url=bundle.primary_page_url, label='Open trend page', background='#16538c', foreground='#ffffff', width=158, margin_right=10)}"
-        "</td></tr>"
-        "<tr><td style='font:400 13px/1.7 Arial,sans-serif;color:#4f647a'>"
-        f"<a href='{html.escape(_public_url(settings=settings, relative_path=trends_index_relative_path), quote=True)}' style='color:#16538c;text-decoration:none'>Open trends index</a>"
-        + (f" · {topic_cta}" if topic_cta else "")
-        + "</td></tr>"
-        "</table></td></tr>"
+        "<table role='presentation' width='100%' cellspacing='0' cellpadding='0' bgcolor='#f4f2ec' style='width:100%;background:#f4f2ec;border-collapse:collapse'>"
+        "<tr><td class='email-gutter' align='center' style='padding:24px 12px'>"
+        "<table class='email-shell' role='presentation' width='600' cellspacing='0' cellpadding='0' bgcolor='#ffffff' style='width:100%;max-width:600px;background:#ffffff;border:1px solid #d8d5cc;border-collapse:collapse'>"
+        "<tr><td class='email-content' style='padding:42px 48px'>"
+        "<div role='article' aria-roledescription='email'>"
+        f"<div style='margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:21px;mso-line-height-rule:at-least;font-weight:600;color:#58636d'>{html.escape(period_line)}</div>"
+        f"<h1 class='email-title' style='margin:0 0 22px;font-family:Georgia,Times New Roman,serif;font-size:32px;line-height:41px;mso-line-height-rule:at-least;font-weight:700;color:#1d2a33'>{html.escape(bundle.title)}</h1>"
+        f"<div>{bundle.overview_html}</div>"
+        f"{findings_section}"
+        "<div style='margin:4px 0 0;padding:28px 0 0;border-top:1px solid #d8d5cc'>"
+        f"{_render_email_button(url=bundle.primary_page_url, label=copy['read_full'])}"
+        "</div>"
+        "</div></td></tr>"
         "</table></td></tr></table></body></html>"
     )
 
 
 def _render_text_email(bundle: _TrendEmailBundle) -> str:
+    copy = _email_copy_for(bundle)
+    label_separator = (
+        "："
+        if _email_locale_key(bundle.language_code) in {"zh-CN", "zh-TW", "ja"}
+        else ": "
+    )
     lines = [
-        bundle.subject,
-        bundle.primary_page_url,
-        "",
         bundle.title,
+        _email_period_line(bundle, copy),
         "",
         bundle.overview_text,
     ]
-    for label, value in _render_meta_rows(bundle):
-        lines.append(f"{label}: {value}")
     if bundle.clusters:
         lines.append("")
-        lines.append("Clusters")
-        for cluster in bundle.clusters:
-            lines.append(f"- {cluster.title}")
-            lines.append(f"  {cluster.content_text}")
+        lines.append(copy["findings"])
+        for index, cluster in enumerate(bundle.clusters, start=1):
+            lines.append("")
+            lines.append(f"{index}. {cluster.title}")
+            lines.append(cluster.content_text)
             for entry in cluster.evidence:
-                lines.append(f"  Evidence: {entry.title} — {entry.url}")
-                if entry.reason:
-                    lines.append(f"  Why: {entry.reason}")
-    if bundle.topic_links:
-        lines.append("")
-        lines.append(
-            "Topics: "
-            + ", ".join(
-                f"{topic['label']} ({topic['url']})" for topic in bundle.topic_links
-            )
-        )
+                lines.append(
+                    f"{copy['source']}{label_separator}{entry.title} — {entry.url}"
+                )
+    lines.extend(
+        ["", f"{copy['full_brief']}{label_separator}{bundle.primary_page_url}"]
+    )
     return "\n".join(lines).strip() + "\n"
 
 
@@ -839,6 +1041,7 @@ def _render_overview_section(
         links_artifact=links_artifact,
         source_markdown_path=candidate.markdown_path,
         markdown_text=str(content.get("overview") or "").strip(),
+        direction=_email_direction(candidate.language_code),
     )
 
 
@@ -848,7 +1051,7 @@ def _render_cluster(
     links_artifact: dict[str, Any],
     source_markdown_path: Path,
     raw_cluster: dict[str, Any],
-    max_evidence: int,
+    direction: str,
 ) -> _RenderedCluster:
     cluster_markdown = str(raw_cluster.get("content") or "").strip()
     cluster_html, cluster_text = _render_markdown_with_site_links(
@@ -856,6 +1059,7 @@ def _render_cluster(
         links_artifact=links_artifact,
         source_markdown_path=source_markdown_path,
         markdown_text=cluster_markdown,
+        direction=direction,
     )
     evidence = [
         resolved
@@ -866,7 +1070,7 @@ def _render_cluster(
                 source_markdown_path=source_markdown_path,
                 entry=entry,
             )
-            for entry in list(raw_cluster.get("evidence") or [])[:max_evidence]
+            for entry in list(raw_cluster.get("evidence") or [])
             if isinstance(entry, dict)
         )
         if resolved is not None
@@ -887,19 +1091,52 @@ def _render_clusters(
     content: dict[str, Any],
 ) -> list[_RenderedCluster]:
     email = _normalized_email_config(settings)
-    max_clusters = int(email.max_clusters)
-    max_evidence = int(email.max_evidence_per_cluster)
-    return [
+    max_clusters = min(int(email.max_clusters), 3)
+    max_evidence = min(int(email.max_evidence_per_cluster), 2)
+    direction = _email_direction(candidate.language_code)
+    rendered_clusters = [
         _render_cluster(
             settings=settings,
             links_artifact=links_artifact,
             source_markdown_path=candidate.markdown_path,
             raw_cluster=raw_cluster,
-            max_evidence=max_evidence,
+            direction=direction,
         )
         for raw_cluster in list(content.get("clusters") or [])[:max_clusters]
         if isinstance(raw_cluster, dict)
     ]
+    seen_source_urls: set[str] = set()
+    deduplicated: list[_RenderedCluster] = []
+    for cluster in rendered_clusters:
+        unique_evidence: list[_ResolvedEvidenceEntry] = []
+        for entry in cluster.evidence:
+            source_key = _source_url_dedup_key(entry.url)
+            if source_key in seen_source_urls:
+                continue
+            seen_source_urls.add(source_key)
+            unique_evidence.append(entry)
+            if len(unique_evidence) >= max_evidence:
+                break
+        deduplicated.append(
+            _RenderedCluster(
+                title=cluster.title,
+                content_html=cluster.content_html,
+                content_text=cluster.content_text,
+                evidence=unique_evidence,
+            )
+        )
+    return deduplicated
+
+
+def _presentation_display_labels(presentation: dict[str, Any]) -> dict[str, str]:
+    raw_labels = presentation.get("display_labels")
+    if not isinstance(raw_labels, dict):
+        return {}
+    return {
+        str(key): str(value).strip()
+        for key, value in raw_labels.items()
+        if str(key).strip() and str(value).strip()
+    }
 
 
 def _bundle_with_hash(
@@ -918,14 +1155,15 @@ def _bundle_with_hash(
         title=bundle.title,
         overview_html=bundle.overview_html,
         overview_text=bundle.overview_text,
-        topics=bundle.topics,
-        topic_links=bundle.topic_links,
+        display_labels=bundle.display_labels,
         clusters=bundle.clusters,
         primary_relative_path=bundle.primary_relative_path,
         primary_page_url=bundle.primary_page_url,
         source_markdown_path=bundle.source_markdown_path,
         subject=bundle.subject,
-        content_hash=_hash_payload(_canonical_bundle_payload(bundle, settings=settings)),
+        content_hash=_hash_payload(
+            _canonical_bundle_payload(bundle, settings=settings)
+        ),
     )
 
 
@@ -954,16 +1192,9 @@ def _build_email_bundle(
         candidate=candidate,
         content=content,
     )
-    topic_links = _resolve_topic_links(
-        settings=settings,
-        links_artifact=links_artifact,
-        topics=candidate.topics,
-        language_code=candidate.language_code,
-    )
     subject = _build_email_subject(
         settings=settings,
-        granularity=candidate.granularity,
-        period_token=candidate.period_token,
+        title=candidate.title,
         instance=candidate.instance,
     )
     return _bundle_with_hash(
@@ -979,8 +1210,7 @@ def _build_email_bundle(
             title=candidate.title,
             overview_html=overview_html,
             overview_text=overview_text,
-            topics=candidate.topics,
-            topic_links=topic_links,
+            display_labels=_presentation_display_labels(candidate.presentation),
             clusters=_render_clusters(
                 settings=settings,
                 links_artifact=links_artifact,
@@ -1036,7 +1266,7 @@ def _write_email_artifacts(
     html_path = artifact_dir / "body.html"
     text_path = artifact_dir / "body.txt"
     manifest_path = artifact_dir / "manifest.json"
-    html_body = _render_html_email(bundle=bundle, settings=request.settings)
+    html_body = _render_html_email(bundle=bundle)
     text_body = _render_text_email(bundle)
     html_path.write_text(html_body, encoding="utf-8")
     text_path.write_text(text_body, encoding="utf-8")
@@ -1250,7 +1480,7 @@ def _email_batch_payloads(
 ) -> list[dict[str, object]]:
     if len(destinations) > RESEND_BATCH_MAX_RECIPIENTS:
         raise ValueError("EMAIL.to supports at most 100 recipients per Resend batch")
-    html_body = _render_html_email(bundle=bundle, settings=settings)
+    html_body = _render_html_email(bundle=bundle)
     text_body = _render_text_email(bundle)
     return [
         {

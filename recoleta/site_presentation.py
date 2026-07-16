@@ -100,8 +100,40 @@ def render_presentation_source_list(
             "</li>"
         )
     if not items:
-        return "<p>(none)</p>"
+        return ""
     return "<ul class='source-list'>" + "".join(items) + "</ul>"
+
+
+_SUMMARY_HEADING_ALIASES = {"summary", "摘要", "总结", "要約", "요약"}
+
+
+def _remove_repeated_leading_section_headings(soup: BeautifulSoup) -> None:
+    for section in soup.select("section.section-card"):
+        label = section.find("h2", class_="section-label", recursive=False)
+        if not isinstance(label, Tag):
+            continue
+        prose = label.find_next_sibling("div", class_="prose")
+        if not isinstance(prose, Tag):
+            continue
+        first_element = next(
+            (child for child in prose.children if isinstance(child, Tag)),
+            None,
+        )
+        if not isinstance(first_element, Tag) or first_element.name not in {
+            "h2",
+            "h3",
+            "h4",
+        }:
+            continue
+        label_text = " ".join(label.get_text(" ", strip=True).split()).casefold()
+        nested_text = " ".join(
+            first_element.get_text(" ", strip=True).split()
+        ).casefold()
+        if label_text == nested_text or {
+            label_text,
+            nested_text,
+        } <= _SUMMARY_HEADING_ALIASES:
+            first_element.decompose()
 
 
 def build_item_browser_body_html(
@@ -124,6 +156,7 @@ def build_item_browser_body_html(
 
     browser_body_html = build_trend_browser_body_html(sections=sections)
     soup = BeautifulSoup(browser_body_html, "html.parser")
+    _remove_repeated_leading_section_headings(soup)
     summary_grid = soup.select_one("section.summary-grid")
     if summary_grid is None:
         return str(soup)
@@ -140,6 +173,7 @@ def build_item_browser_body_html(
         classes.append("summary-grid-single")
     summary_grid["class"] = " ".join(classes)
     return str(soup)
+
 
 def _count_evidence_links(
     *,

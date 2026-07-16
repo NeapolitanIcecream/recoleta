@@ -101,7 +101,8 @@ def test_gh_deploy_creates_branch_snapshot_without_touching_main_worktree(
     assert deployed_manifest["pagination"] == {
         "card_page_size": 12,
         "dense_page_size": 24,
-        "topic_column_page_size": 6,
+        "topic_page_size": 12,
+        "topic_column_page_size": 12,
     }
 
     assert (local_repo / "README.md").exists()

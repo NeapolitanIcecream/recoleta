@@ -50,9 +50,9 @@ def test_write_obsidian_trend_note_renders_clusters_and_evidence_blocks(
     )
 
     text = note_path.read_text(encoding="utf-8")
-    assert "## Clusters" in text
+    assert "## Findings" in text
     assert "### Cluster A" in text
-    assert "#### Evidence" in text
+    assert "#### Sources" in text
     assert "- [Robometer: Scaling ...](http://arxiv.org/abs/2603.02115v1)" in text
     assert "Representative sources" not in text
     assert "## Highlights" not in text
@@ -149,7 +149,7 @@ def test_trends_day_rewrites_doc_id_refs_and_enriches_evidence_links(
     assert "../Inbox/" in md
     assert "https://example.com/robometer" not in md
     assert "[Robometer](" in md
-    assert "#### Evidence" in md
+    assert "#### 资料来源" in md
     assert result.doc_id > 0
 
 

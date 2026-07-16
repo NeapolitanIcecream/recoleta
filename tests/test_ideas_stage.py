@@ -348,6 +348,7 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
 
     def _fake_generate_bundle_title(**kwargs):  # type: ignore[no-untyped-def]
         assert kwargs["llm_model"] == "test/ideas-stage-model"
+        assert "Earlier release gate" in kwargs["prior_ideas_pack_md"]
         return (
             "Verification-first agent rollout",
             {
@@ -387,7 +388,7 @@ def test_ideas_stage_consumes_canonical_trend_pass_output_and_writes_projection(
         )
     )
     assert "# Verification-first agent rollout" in markdown
-    assert "## Summary" in markdown
+    assert "## 摘要" in markdown
     assert "## Auditable long-horizon eval workbench" in markdown
     assert "Best bet" not in markdown
     assert validate_presentation(sidecar) == []

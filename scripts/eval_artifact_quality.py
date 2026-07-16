@@ -20,8 +20,70 @@ _CANONICAL_TERMINAL_STATUSES = frozenset({"succeeded", "suppressed"})
 _UNIT_FIELD = {"trend": "clusters", "idea": "ideas"}
 _DEFAULT_NEAR_DUPLICATE_THRESHOLD = 0.5
 _LEXICAL_SHINGLE_SIZE = 3
+_TITLE_FRAME_LATIN_TOKENS = 2
+_TITLE_FRAME_DENSE_TOKENS = 5
+_OPENING_LATIN_TOKENS = 5
+_OPENING_DENSE_TOKENS = 8
+_BOILERPLATE_LATIN_TOKENS = 5
+_BOILERPLATE_DENSE_TOKENS = 8
+_SERIES_CANDIDATE_LIMIT = 20
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
 _TOKEN_RE = re.compile(r"[a-z0-9]+|[\u3400-\u9fff]|[^\W\d_]", re.IGNORECASE)
+_DENSE_SCRIPT_TOKEN_RE = re.compile(
+    r"^["
+    r"\u1100-\u11ff"  # Hangul Jamo
+    r"\u3040-\u30ff"  # Hiragana and Katakana
+    r"\u3130-\u318f"  # Hangul Compatibility Jamo
+    r"\u31f0-\u31ff"  # Katakana Phonetic Extensions
+    r"\u3400-\u9fff"  # CJK ideographs
+    r"\ua960-\ua97f"  # Hangul Jamo Extended-A
+    r"\uac00-\ud7af"  # Hangul syllables
+    r"\ud7b0-\ud7ff"  # Hangul Jamo Extended-B
+    r"\uff66-\uff9f"  # Halfwidth Katakana
+    r"]$"
+)
+_GENERIC_REASON_ZH_RE = re.compile(
+    r"^(?:该|这)?(?:论文|来源|研究|文档|笔记|摘要)?"
+    r"(?:报告|显示|描述|支持|说明)(?:了)?(?:该|这|本)?"
+    r"(?:观点|结论|趋势|方向|假设|论点|证据|结果|内容)[。.]?$"
+)
+_GENERIC_REASON_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "anchors",
+        "claim",
+        "cluster",
+        "context",
+        "describes",
+        "direction",
+        "document",
+        "evidence",
+        "example",
+        "finding",
+        "grounds",
+        "hypothesis",
+        "illustrates",
+        "item",
+        "note",
+        "paper",
+        "point",
+        "provides",
+        "rationale",
+        "reports",
+        "result",
+        "results",
+        "shows",
+        "source",
+        "study",
+        "summary",
+        "supports",
+        "supplies",
+        "the",
+        "this",
+        "trend",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +103,7 @@ class _PassOutputRow:
 class _EvidenceRef:
     doc_id: int
     chunk_index: int
+    reason: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +123,7 @@ class _ArtifactUnit:
     distinct_doc_ids: tuple[int, ...]
     same_doc_multi_chunk_doc_ids: tuple[int, ...]
     same_doc_multi_chunk_extra_refs: int
+    evidence_reasons: tuple[str, ...]
 
     @property
     def unit_id(self) -> str:
@@ -83,11 +147,25 @@ class _ArtifactUnit:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class _ArtifactRecord:
+    database: str
+    scope: str
+    artifact_kind: str
+    pass_output_id: int
+    granularity: str
+    period_start: str
+    period_end: str
+    title: str
+    summary: str
+
+
 @dataclass(slots=True)
 class _GroupEvaluation:
     report: dict[str, Any]
     trend_units: list[_ArtifactUnit]
     idea_units: list[_ArtifactUnit]
+    records: list[_ArtifactRecord]
 
 
 def _empty_diagnostics() -> Counter[str]:
@@ -196,6 +274,7 @@ def _read_database(
 def _coerce_evidence_ref(raw_ref: Any) -> _EvidenceRef | None:
     raw_doc_id: Any
     raw_chunk_index: Any
+    reason = ""
     if isinstance(raw_ref, bool):
         return None
     if isinstance(raw_ref, int | str):
@@ -204,6 +283,7 @@ def _coerce_evidence_ref(raw_ref: Any) -> _EvidenceRef | None:
     elif isinstance(raw_ref, dict):
         raw_doc_id = raw_ref.get("doc_id")
         raw_chunk_index = raw_ref.get("chunk_index", 0)
+        reason = " ".join(str(raw_ref.get("reason") or "").split()).strip()
     else:
         return None
     try:
@@ -213,7 +293,7 @@ def _coerce_evidence_ref(raw_ref: Any) -> _EvidenceRef | None:
         return None
     if doc_id <= 0 or chunk_index < 0:
         return None
-    return _EvidenceRef(doc_id=doc_id, chunk_index=chunk_index)
+    return _EvidenceRef(doc_id=doc_id, chunk_index=chunk_index, reason=reason)
 
 
 def _unit_evidence_refs(
@@ -284,28 +364,29 @@ def _build_unit(
         same_doc_multi_chunk_extra_refs=sum(
             len(chunks_by_doc[doc_id]) - 1 for doc_id in same_doc_multi_chunk_doc_ids
         ),
+        evidence_reasons=tuple(ref.reason for ref in refs if ref.reason),
     )
 
 
 def _parse_artifact_row(
     *, row: _PassOutputRow, diagnostics: Counter[str]
-) -> tuple[str, bool, list[_ArtifactUnit]]:
+) -> tuple[str, bool, list[_ArtifactUnit], _ArtifactRecord | None]:
     artifact_kind = _PASS_KIND_TO_ARTIFACT[row.pass_kind]
     try:
         payload = json.loads(row.payload_json)
     except TypeError, json.JSONDecodeError:
         diagnostics["malformed_payloads"] += 1
-        return artifact_kind, False, []
+        return artifact_kind, False, [], None
     if not isinstance(payload, dict):
         diagnostics["non_object_payloads"] += 1
-        return artifact_kind, False, []
+        return artifact_kind, False, [], None
     raw_units = payload.get(_UNIT_FIELD[artifact_kind])
     if not isinstance(raw_units, list):
         diagnostics["missing_units_list"] += 1
-        return artifact_kind, True, []
+        return artifact_kind, True, [], None
     if row.status == "suppressed":
         diagnostics["suppressed_units_ignored"] += len(raw_units)
-        return artifact_kind, True, []
+        return artifact_kind, True, [], None
     units: list[_ArtifactUnit] = []
     for unit_index, raw_unit in enumerate(raw_units, start=1):
         if not isinstance(raw_unit, dict):
@@ -320,7 +401,19 @@ def _parse_artifact_row(
                 diagnostics=diagnostics,
             )
         )
-    return artifact_kind, True, units
+    summary_field = "overview_md" if artifact_kind == "trend" else "summary_md"
+    record = _ArtifactRecord(
+        database=row.database,
+        scope=row.scope,
+        artifact_kind=artifact_kind,
+        pass_output_id=row.pass_output_id,
+        granularity=row.granularity,
+        period_start=row.period_start,
+        period_end=row.period_end,
+        title=_unit_text(payload, "title"),
+        summary=_unit_text(payload, summary_field),
+    )
+    return artifact_kind, True, units, record
 
 
 def _ratio(numerator: int, denominator: int) -> float:
@@ -514,6 +607,316 @@ def _weekly_day_near_duplicates(
     return pairs_compared, candidates
 
 
+def _tokens(value: str) -> list[str]:
+    normalized = _MARKDOWN_LINK_RE.sub(r"\1", str(value or "")).casefold()
+    return _TOKEN_RE.findall(normalized)
+
+
+def _uses_dense_script(tokens: Sequence[str]) -> bool:
+    if not tokens:
+        return False
+    dense_tokens = sum(
+        bool(_DENSE_SCRIPT_TOKEN_RE.fullmatch(token)) for token in tokens
+    )
+    return dense_tokens * 2 >= len(tokens)
+
+
+def _stem_title_frame_token(token: str) -> str:
+    normalized = token.casefold()
+    if not normalized.isascii() or not normalized.isalpha():
+        return normalized
+    if normalized.endswith("ing") and len(normalized) > 5:
+        normalized = normalized[:-3]
+    elif normalized.endswith("ed") and len(normalized) > 4:
+        normalized = normalized[:-2]
+    elif normalized.endswith("s") and len(normalized) > 4:
+        normalized = normalized[:-1]
+    if normalized.endswith("e") and len(normalized) > 3:
+        normalized = normalized[:-1]
+    return normalized
+
+
+def _title_frame(value: str) -> str:
+    tokens = _tokens(value)
+    if _uses_dense_script(tokens):
+        return "".join(tokens[:_TITLE_FRAME_DENSE_TOKENS])
+    return " ".join(
+        _stem_title_frame_token(token)
+        for token in tokens[:_TITLE_FRAME_LATIN_TOKENS]
+    )
+
+
+def _opening_ngram(value: str) -> str:
+    tokens = _tokens(value)
+    if _uses_dense_script(tokens):
+        return "".join(tokens[:_OPENING_DENSE_TOKENS])
+    return " ".join(tokens[:_OPENING_LATIN_TOKENS])
+
+
+def _record_sort_key(record: _ArtifactRecord) -> tuple[datetime, str, int]:
+    period = _parse_datetime(record.period_start)
+    return (
+        period or datetime.max.replace(tzinfo=UTC),
+        record.period_start,
+        record.pass_output_id,
+    )
+
+
+def _record_signature(*, value: str, signature_name: str) -> str:
+    if signature_name == "frame":
+        return _title_frame(value)
+    return _opening_ngram(value)
+
+
+def _adjacent_repetition_candidate(
+    *,
+    previous: _ArtifactRecord,
+    current: _ArtifactRecord,
+    artifact_kind: str,
+    granularity: str,
+    value_name: str,
+    signature_name: str,
+) -> tuple[bool, dict[str, Any] | None]:
+    previous_value = str(getattr(previous, value_name) or "")
+    current_value = str(getattr(current, value_name) or "")
+    previous_signature = _record_signature(
+        value=previous_value,
+        signature_name=signature_name,
+    )
+    current_signature = _record_signature(
+        value=current_value,
+        signature_name=signature_name,
+    )
+    if not previous_signature or not current_signature:
+        return False, None
+    if previous_signature != current_signature:
+        return True, None
+    return True, {
+        "artifact_kind": artifact_kind,
+        "granularity": granularity,
+        signature_name: current_signature,
+        "previous_pass_output_id": previous.pass_output_id,
+        "previous_period_start": previous.period_start,
+        "previous_value": _excerpt(previous_value),
+        "current_pass_output_id": current.pass_output_id,
+        "current_period_start": current.period_start,
+        "current_value": _excerpt(current_value),
+    }
+
+
+def _adjacent_signature_repetition(
+    records: Sequence[_ArtifactRecord],
+    *,
+    value_name: str,
+    signature_name: str,
+) -> dict[str, Any]:
+    grouped: dict[tuple[str, str], list[_ArtifactRecord]] = defaultdict(list)
+    for record in records:
+        grouped[(record.artifact_kind, record.granularity)].append(record)
+    compared = 0
+    candidates: list[dict[str, Any]] = []
+    for (artifact_kind, granularity), series in sorted(grouped.items()):
+        ordered = sorted(series, key=_record_sort_key)
+        for previous, current in zip(ordered, ordered[1:], strict=False):
+            is_comparable, candidate = _adjacent_repetition_candidate(
+                previous=previous,
+                current=current,
+                artifact_kind=artifact_kind,
+                granularity=granularity,
+                value_name=value_name,
+                signature_name=signature_name,
+            )
+            if not is_comparable:
+                continue
+            compared += 1
+            if candidate is not None:
+                candidates.append(candidate)
+    return {
+        "adjacent_pairs_compared": compared,
+        "repeated_pairs": len(candidates),
+        "repeated_pair_ratio": _ratio(len(candidates), compared),
+        "candidates": candidates[:_SERIES_CANDIDATE_LIMIT],
+    }
+
+
+def _boilerplate_features(value: str) -> set[tuple[str, ...]]:
+    tokens = _tokens(value)
+    size = (
+        _BOILERPLATE_DENSE_TOKENS
+        if _uses_dense_script(tokens)
+        else _BOILERPLATE_LATIN_TOKENS
+    )
+    if len(tokens) < size:
+        return set()
+    return {
+        tuple(tokens[index : index + size])
+        for index in range(len(tokens) - size + 1)
+    }
+
+
+def _render_phrase(tokens: tuple[str, ...]) -> str:
+    return "".join(tokens) if _uses_dense_script(tokens) else " ".join(tokens)
+
+
+def _boilerplate_report(units: Sequence[_ArtifactUnit]) -> dict[str, Any]:
+    feature_units: dict[
+        tuple[str, str, tuple[str, ...]], list[_ArtifactUnit]
+    ] = defaultdict(list)
+    for unit in units:
+        for feature in _boilerplate_features(unit.content):
+            feature_units[(unit.artifact_kind, unit.granularity, feature)].append(
+                unit
+            )
+    candidates: list[dict[str, Any]] = []
+    units_with_shared_phrases: set[str] = set()
+    for (artifact_kind, granularity, feature), matches in feature_units.items():
+        pass_output_ids = {match.pass_output_id for match in matches}
+        if len(pass_output_ids) < 2:
+            continue
+        unit_ids = sorted({match.unit_id for match in matches})
+        units_with_shared_phrases.update(unit_ids)
+        candidates.append(
+            {
+                "phrase": _render_phrase(feature),
+                "artifact_kind": artifact_kind,
+                "granularity": granularity,
+                "pass_outputs_total": len(pass_output_ids),
+                "units_total": len(unit_ids),
+                "unit_ids": unit_ids,
+            }
+        )
+    candidates.sort(
+        key=lambda candidate: (
+            -candidate["pass_outputs_total"],
+            -candidate["units_total"],
+            candidate["artifact_kind"],
+            candidate["phrase"],
+        )
+    )
+    return {
+        "units_total": len(units),
+        "units_with_shared_phrases": len(units_with_shared_phrases),
+        "unit_ratio": _ratio(len(units_with_shared_phrases), len(units)),
+        "candidate_phrases_total": len(candidates),
+        "candidates": candidates[:_SERIES_CANDIDATE_LIMIT],
+    }
+
+
+def _summary_overlap_report(
+    records: Sequence[_ArtifactRecord], units: Sequence[_ArtifactUnit]
+) -> dict[str, Any]:
+    units_by_output: dict[tuple[str, int], list[_ArtifactUnit]] = defaultdict(list)
+    for unit in units:
+        units_by_output[(unit.artifact_kind, unit.pass_output_id)].append(unit)
+    candidates: list[dict[str, Any]] = []
+    for record in records:
+        if not record.summary:
+            continue
+        matches = units_by_output.get((record.artifact_kind, record.pass_output_id), [])
+        if not matches:
+            continue
+        scored = [
+            (
+                _dice_similarity(
+                    record.summary,
+                    unit.content,
+                    shingle_size=_LEXICAL_SHINGLE_SIZE,
+                ),
+                unit,
+            )
+            for unit in matches
+        ]
+        score, closest = max(scored, key=lambda item: (item[0], item[1].unit_id))
+        candidates.append(
+            {
+                "score": score,
+                "artifact_kind": record.artifact_kind,
+                "pass_output_id": record.pass_output_id,
+                "granularity": record.granularity,
+                "period_start": record.period_start,
+                "title": record.title,
+                "closest_unit_id": closest.unit_id,
+                "closest_unit_title": closest.title,
+                "summary_excerpt": _excerpt(record.summary),
+                "unit_excerpt": _excerpt(closest.content),
+            }
+        )
+    candidates.sort(
+        key=lambda candidate: (
+            -candidate["score"],
+            candidate["artifact_kind"],
+            candidate["period_start"],
+            candidate["pass_output_id"],
+        )
+    )
+    scores = [float(candidate["score"]) for candidate in candidates]
+    return {
+        "artifacts_compared": len(candidates),
+        "mean_max_unit_overlap": round(sum(scores) / len(scores), 6) if scores else 0.0,
+        "max_unit_overlap": max(scores, default=0.0),
+        "candidates": candidates[:_SERIES_CANDIDATE_LIMIT],
+    }
+
+
+def _evidence_reason_is_generic(reason: str) -> bool:
+    normalized = " ".join(str(reason or "").split()).strip()
+    if not normalized or re.search(r"\d", normalized):
+        return False
+    if _GENERIC_REASON_ZH_RE.fullmatch(normalized):
+        return True
+    words = re.findall(r"[a-z]+", normalized.casefold())
+    return bool(words) and all(word in _GENERIC_REASON_WORDS for word in words)
+
+
+def _generic_source_annotations_report(
+    units: Sequence[_ArtifactUnit],
+) -> dict[str, Any]:
+    annotations: list[tuple[_ArtifactUnit, str]] = [
+        (unit, reason)
+        for unit in units
+        for reason in unit.evidence_reasons
+        if reason
+    ]
+    generic = [
+        {
+            "unit_id": unit.unit_id,
+            "artifact_kind": unit.artifact_kind,
+            "pass_output_id": unit.pass_output_id,
+            "period_start": unit.period_start,
+            "unit_title": unit.title,
+            "reason": reason,
+        }
+        for unit, reason in annotations
+        if _evidence_reason_is_generic(reason)
+    ]
+    return {
+        "annotations_total": len(annotations),
+        "generic_annotations": len(generic),
+        "generic_annotation_ratio": _ratio(len(generic), len(annotations)),
+        "candidates": generic[:_SERIES_CANDIDATE_LIMIT],
+    }
+
+
+def _series_quality_report(
+    *, records: Sequence[_ArtifactRecord], units: Sequence[_ArtifactUnit]
+) -> dict[str, Any]:
+    return {
+        "title_frame_repetition": _adjacent_signature_repetition(
+            records,
+            value_name="title",
+            signature_name="frame",
+        ),
+        "opening_repetition": _adjacent_signature_repetition(
+            records,
+            value_name="summary",
+            signature_name="opening_ngram",
+        ),
+        "boilerplate": _boilerplate_report(units),
+        "summary_overlap": _summary_overlap_report(records, units),
+        "generic_source_annotations": _generic_source_annotations_report(units),
+    }
+
+
 def _evaluate_group(
     *,
     database: str,
@@ -524,6 +927,7 @@ def _evaluate_group(
 ) -> _GroupEvaluation:
     trend_units: list[_ArtifactUnit] = []
     idea_units: list[_ArtifactUnit] = []
+    records: list[_ArtifactRecord] = []
     artifact_counts = Counter(
         {
             "trend_payloads": 0,
@@ -533,7 +937,7 @@ def _evaluate_group(
         }
     )
     for row in rows:
-        artifact_kind, valid_payload, units = _parse_artifact_row(
+        artifact_kind, valid_payload, units, record = _parse_artifact_row(
             row=row, diagnostics=diagnostics
         )
         artifact_counts[f"{artifact_kind}_payloads"] += 1
@@ -543,6 +947,8 @@ def _evaluate_group(
             trend_units.extend(units)
         else:
             idea_units.extend(units)
+        if record is not None:
+            records.append(record)
 
     all_units = [*trend_units, *idea_units]
     repeated = _repeated_support_sets(all_units)
@@ -573,6 +979,10 @@ def _evaluate_group(
         "repeated_support_sets": repeated,
         "weekly_day_near_duplicate_pairs_compared": pairs_compared,
         "weekly_day_near_duplicate_candidates": near_duplicates,
+        "series_quality": _series_quality_report(
+            records=records,
+            units=all_units,
+        ),
         "trend_units": [unit.report_dict() for unit in trend_units],
         "idea_units": [unit.report_dict() for unit in idea_units],
     }
@@ -580,6 +990,7 @@ def _evaluate_group(
         report=report,
         trend_units=trend_units,
         idea_units=idea_units,
+        records=records,
     )
 
 
@@ -592,6 +1003,93 @@ def _sum_named_values(
             if isinstance(value, int):
                 totals[name] += value
     return dict(sorted(totals.items()))
+
+
+def _aggregate_series_quality(groups: Sequence[_GroupEvaluation]) -> dict[str, Any]:
+    title_pairs = sum(
+        group.report["series_quality"]["title_frame_repetition"][
+            "adjacent_pairs_compared"
+        ]
+        for group in groups
+    )
+    title_repeated = sum(
+        group.report["series_quality"]["title_frame_repetition"]["repeated_pairs"]
+        for group in groups
+    )
+    opening_pairs = sum(
+        group.report["series_quality"]["opening_repetition"][
+            "adjacent_pairs_compared"
+        ]
+        for group in groups
+    )
+    opening_repeated = sum(
+        group.report["series_quality"]["opening_repetition"]["repeated_pairs"]
+        for group in groups
+    )
+    boilerplate_units = sum(
+        group.report["series_quality"]["boilerplate"]["units_total"]
+        for group in groups
+    )
+    boilerplate_shared = sum(
+        group.report["series_quality"]["boilerplate"][
+            "units_with_shared_phrases"
+        ]
+        for group in groups
+    )
+    overlap_compared = sum(
+        group.report["series_quality"]["summary_overlap"]["artifacts_compared"]
+        for group in groups
+    )
+    overlap_weighted_sum = sum(
+        group.report["series_quality"]["summary_overlap"][
+            "mean_max_unit_overlap"
+        ]
+        * group.report["series_quality"]["summary_overlap"]["artifacts_compared"]
+        for group in groups
+    )
+    annotations_total = sum(
+        group.report["series_quality"]["generic_source_annotations"][
+            "annotations_total"
+        ]
+        for group in groups
+    )
+    generic_annotations = sum(
+        group.report["series_quality"]["generic_source_annotations"][
+            "generic_annotations"
+        ]
+        for group in groups
+    )
+    return {
+        "title_frame_adjacent_pairs_compared": title_pairs,
+        "title_frame_repeated_pairs": title_repeated,
+        "title_frame_repeated_pair_ratio": _ratio(title_repeated, title_pairs),
+        "opening_adjacent_pairs_compared": opening_pairs,
+        "opening_repeated_pairs": opening_repeated,
+        "opening_repeated_pair_ratio": _ratio(opening_repeated, opening_pairs),
+        "boilerplate_units_total": boilerplate_units,
+        "boilerplate_units_with_shared_phrases": boilerplate_shared,
+        "boilerplate_unit_ratio": _ratio(boilerplate_shared, boilerplate_units),
+        "summary_overlap_artifacts_compared": overlap_compared,
+        "summary_overlap_mean_max_unit_overlap": (
+            round(overlap_weighted_sum / overlap_compared, 6)
+            if overlap_compared
+            else 0.0
+        ),
+        "summary_overlap_max_unit_overlap": max(
+            (
+                group.report["series_quality"]["summary_overlap"][
+                    "max_unit_overlap"
+                ]
+                for group in groups
+            ),
+            default=0.0,
+        ),
+        "source_annotations_total": annotations_total,
+        "generic_source_annotations": generic_annotations,
+        "generic_source_annotation_ratio": _ratio(
+            generic_annotations, annotations_total
+        ),
+    }
 
 
 def _aggregate_report(
@@ -628,6 +1126,7 @@ def _aggregate_report(
             len(group.report["weekly_day_near_duplicate_candidates"])
             for group in groups
         ),
+        "series_quality": _aggregate_series_quality(groups),
     }
 
 
@@ -661,7 +1160,7 @@ def evaluate_databases(
             )
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "inputs": resolved_paths,
         "methodology": {
             "canonical_selection": (
@@ -709,6 +1208,35 @@ def evaluate_databases(
                     "weekly idea period in the same database and scope."
                 ),
             },
+            "series_quality_signals": {
+                "title_frame_repetition": (
+                    "Compares the normalized leading frame of adjacent canonical titles "
+                    "within each artifact kind and granularity. English inflection is "
+                    "lightly normalized; dense-script titles use their leading characters."
+                ),
+                "opening_repetition": (
+                    "Compares the first five Latin-script tokens or eight dense-script "
+                    "characters of adjacent canonical summaries."
+                ),
+                "boilerplate": (
+                    "Reports five-token Latin-script or eight-character dense-script "
+                    "phrases shared by units from at least two canonical pass outputs "
+                    "of the same artifact kind and granularity."
+                ),
+                "summary_overlap": (
+                    "Reports the maximum lexical shingle overlap between each artifact "
+                    "summary and one of its own units."
+                ),
+                "generic_source_annotations": (
+                    "Reports evidence reasons made only from a small generic source-action "
+                    "vocabulary, plus exact generic Chinese forms. Reasons with numbers are "
+                    "not classified as generic."
+                ),
+                "interpretation": (
+                    "These are review signals, not publication gates. Candidate limits "
+                    "bound report size and do not turn a proxy into a quality judgment."
+                ),
+            },
         },
         "groups": [evaluation.report for evaluation in evaluations],
         "aggregate": _aggregate_report(
@@ -722,6 +1250,7 @@ def render_summary(report: dict[str, Any], *, output_path: Path | None) -> str:
     artifact_counts = aggregate["artifact_counts"]
     trend = aggregate["trend_support"]
     ideas = aggregate["idea_support"]
+    series = aggregate["series_quality"]
     lines = [
         "Artifact quality audit",
         (
@@ -755,6 +1284,20 @@ def render_summary(report: dict[str, Any], *, output_path: Path | None) -> str:
             f"{aggregate['weekly_day_near_duplicate_candidates_total']} / "
             f"{aggregate['weekly_day_near_duplicate_pairs_compared']} compared"
         ),
+        (
+            "Series repetition: title frames "
+            f"{series['title_frame_repeated_pairs']} / "
+            f"{series['title_frame_adjacent_pairs_compared']} adjacent | openings "
+            f"{series['opening_repeated_pairs']} / "
+            f"{series['opening_adjacent_pairs_compared']} adjacent | shared-phrase units "
+            f"{series['boilerplate_units_with_shared_phrases']} / "
+            f"{series['boilerplate_units_total']}"
+        ),
+        (
+            "Source annotations: generic "
+            f"{series['generic_source_annotations']} / "
+            f"{series['source_annotations_total']}"
+        ),
     ]
     if output_path is not None:
         lines.append(f"JSON: {output_path.expanduser().resolve()}")
@@ -764,8 +1307,8 @@ def render_summary(report: dict[str, Any], *, output_path: Path | None) -> str:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Measure structural evidence quality in canonical Recoleta Trend and Idea "
-            "pass outputs without model calls."
+            "Measure structural evidence and series-level writing quality in canonical "
+            "Recoleta Trend and Idea pass outputs without model calls."
         )
     )
     parser.add_argument(

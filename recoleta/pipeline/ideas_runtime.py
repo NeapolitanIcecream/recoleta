@@ -590,6 +590,7 @@ def _finalize_ideas_bundle_title(
             llm_model=model,
             summary_md=normalized_payload.summary_md,
             ideas=_bundle_title_candidate_ideas(normalized_payload=normalized_payload),
+            prior_ideas_pack_md=request.prior_ideas_pack_md,
             output_language=output_language,
             llm_connection=request.context.service._llm_connection,
         )

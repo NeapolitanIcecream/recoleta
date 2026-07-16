@@ -677,8 +677,8 @@ def test_materialize_outputs_writes_localized_note_trees_from_localized_outputs(
     assert trend_note.exists()
     assert idea_note.exists()
     assert "智能体系统" in trend_note.read_text(encoding="utf-8")
-    assert "## Overview" in trend_note.read_text(encoding="utf-8")
-    assert "## Summary" in idea_note.read_text(encoding="utf-8")
+    assert "## 概览" in trend_note.read_text(encoding="utf-8")
+    assert "## 摘要" in idea_note.read_text(encoding="utf-8")
     assert "提示词发布闸门" in idea_note.read_text(encoding="utf-8")
     assert (
         validate_presentation(

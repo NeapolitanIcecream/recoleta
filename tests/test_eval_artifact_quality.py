@@ -335,6 +335,185 @@ def test_newer_failed_output_does_not_replace_older_succeeded_artifact(
     assert group["row_diagnostics"]["non_terminal_filtered"] == 1
 
 
+def test_evaluate_databases_reports_series_level_writing_repetition(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "series-quality.db"
+    connection = _create_db(db_path)
+    periods = [
+        ("2026-04-06T00:00:00+00:00", "2026-04-07T00:00:00+00:00"),
+        ("2026-04-07T00:00:00+00:00", "2026-04-08T00:00:00+00:00"),
+        ("2026-04-08T00:00:00+00:00", "2026-04-09T00:00:00+00:00"),
+    ]
+    payloads = [
+        {
+            "title": "Code agents tighten release gates",
+            "overview_md": "Teams using coding agents now require traceable release evidence before rollout.",
+            "clusters": [
+                {
+                    "title": "Release evidence",
+                    "content_md": "Teams using coding agents now require traceable release evidence before rollout.",
+                    "evidence_refs": [
+                        {"doc_id": 10, "chunk_index": 0, "reason": "Shows the point."}
+                    ],
+                }
+            ],
+        },
+        {
+            "title": "Coding agents enter deployment checks",
+            "overview_md": "Teams using coding agents now face stricter deployment checks.",
+            "clusters": [
+                {
+                    "title": "Deployment checks",
+                    "content_md": "Teams using coding agents now require traceable release evidence before deployment.",
+                    "evidence_refs": [
+                        {
+                            "doc_id": 20,
+                            "chunk_index": 0,
+                            "reason": "Shows a 23% gain on SWE-bench.",
+                        }
+                    ],
+                }
+            ],
+        },
+        {
+            "title": "Runtime controls become auditable",
+            "overview_md": "Audit records link tool calls to policy decisions.",
+            "clusters": [
+                {
+                    "title": "Policy records",
+                    "content_md": "Signed records preserve each tool decision for review.",
+                    "evidence_refs": [],
+                }
+            ],
+        },
+    ]
+    for row_id, ((period_start, period_end), payload) in enumerate(
+        zip(periods, payloads, strict=True), start=1
+    ):
+        _insert_output(
+            connection,
+            row_id=row_id,
+            pass_kind="trend_synthesis",
+            granularity="day",
+            period_start=period_start,
+            period_end=period_end,
+            payload=payload,
+        )
+    connection.commit()
+    connection.close()
+
+    report = quality.evaluate_databases(db_paths=[db_path])
+
+    assert report["schema_version"] == 2
+    series = report["groups"][0]["series_quality"]
+    assert series["title_frame_repetition"]["adjacent_pairs_compared"] == 2
+    assert series["title_frame_repetition"]["repeated_pairs"] == 1
+    assert series["title_frame_repetition"]["candidates"][0]["frame"] == "cod agent"
+    assert series["opening_repetition"]["repeated_pairs"] == 1
+    assert series["boilerplate"]["units_with_shared_phrases"] == 2
+    assert any(
+        candidate["phrase"] == "teams using coding agents now"
+        for candidate in series["boilerplate"]["candidates"]
+    )
+    assert series["summary_overlap"]["artifacts_compared"] == 3
+    assert series["summary_overlap"]["candidates"][0]["score"] == 1.0
+    assert series["generic_source_annotations"]["annotations_total"] == 2
+    assert series["generic_source_annotations"]["generic_annotations"] == 1
+    assert report["aggregate"]["series_quality"]["title_frame_repeated_pairs"] == 1
+
+
+def test_evaluate_databases_treats_japanese_and_korean_as_dense_script(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "dense-script-quality.db"
+    connection = _create_db(db_path)
+    cases = [
+        (
+            "day",
+            "2026-04-06T00:00:00+00:00",
+            "2026-04-07T00:00:00+00:00",
+            "エージェント評価を監査する",
+            "評価結果を継続して記録する。",
+            "評価結果を記録中",
+        ),
+        (
+            "day",
+            "2026-04-07T00:00:00+00:00",
+            "2026-04-08T00:00:00+00:00",
+            "エージェント評価を記録する",
+            "評価結果を継続して比較する。",
+            "評価結果を記録中",
+        ),
+        (
+            "week",
+            "2026-04-06T00:00:00+00:00",
+            "2026-04-13T00:00:00+00:00",
+            "에이전트 평가를 기록한다",
+            "평가 결과를 지속해서 기록한다.",
+            "평가결과를기록함",
+        ),
+        (
+            "week",
+            "2026-04-13T00:00:00+00:00",
+            "2026-04-20T00:00:00+00:00",
+            "에이전트 평가를 비교한다",
+            "평가 결과를 지속해서 비교한다.",
+            "평가결과를기록함",
+        ),
+    ]
+    for row_id, (
+        granularity,
+        period_start,
+        period_end,
+        title,
+        overview,
+        content,
+    ) in enumerate(cases, start=1):
+        _insert_output(
+            connection,
+            row_id=row_id,
+            pass_kind="trend_synthesis",
+            granularity=granularity,
+            period_start=period_start,
+            period_end=period_end,
+            payload={
+                "title": title,
+                "overview_md": overview,
+                "clusters": [
+                    {
+                        "title": title,
+                        "content_md": content,
+                        "evidence_refs": [],
+                    }
+                ],
+            },
+        )
+    connection.commit()
+    connection.close()
+
+    report = quality.evaluate_databases(db_paths=[db_path])
+
+    series = report["groups"][0]["series_quality"]
+    title_frames = {
+        candidate["granularity"]: candidate["frame"]
+        for candidate in series["title_frame_repetition"]["candidates"]
+    }
+    openings = {
+        candidate["granularity"]: candidate["opening_ngram"]
+        for candidate in series["opening_repetition"]["candidates"]
+    }
+    phrases = {
+        candidate["granularity"]: candidate["phrase"]
+        for candidate in series["boilerplate"]["candidates"]
+    }
+
+    assert title_frames == {"day": "エージェン", "week": "에이전트평"}
+    assert openings == {"day": "評価結果を継続し", "week": "평가결과를지속해"}
+    assert phrases == {"day": "評価結果を記録中", "week": "평가결과를기록함"}
+    assert all(" " not in value for value in [*title_frames.values(), *openings.values(), *phrases.values()])
+
+
 def test_main_writes_json_report_and_prints_readable_summary(
     tmp_path: Path, capsys
 ) -> None:
@@ -353,4 +532,5 @@ def test_main_writes_json_report_and_prints_readable_summary(
     assert saved["aggregate"]["canonical_pass_outputs"] == 0
     stdout = capsys.readouterr().out
     assert "Artifact quality audit" in stdout
+    assert "Series repetition:" in stdout
     assert str(output_path.resolve()) in stdout

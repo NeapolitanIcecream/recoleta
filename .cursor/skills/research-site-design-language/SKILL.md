@@ -1,62 +1,203 @@
 ---
 name: research-site-design-language
-description: Preserve the research-facing design language for Recoleta site and published trend pages. Use when changing site visuals, UI copy, badges, cards, section hierarchy, or markdown-to-site rendering so fixed UI chrome stays English while long-form narrative copy can follow the source language.
+description: Guide Recoleta's reader-facing site, email, PDF, and published research surfaces toward clear editorial hierarchy, restrained visual design, and series-level prose quality without freezing a particular card, color, or hero treatment.
 ---
 
 # Research Site Design Language
 
-Use this skill when changing site visuals, UI copy, badges, card hierarchy, section ordering, or markdown-to-site rendering for research-facing pages.
+Use this skill when changing site or email visuals, UI copy, badges, cards,
+section hierarchy, markdown-to-site rendering, or reader-facing generation rules.
 
-## Core Rules
+## Product Posture
 
-- Keep fixed UI chrome in English: section titles, badges, controlled vocabulary, action labels, metadata pills, filters, and navigation.
-- Let long-form narrative content follow the source language.
-- Do not mix languages within the same semantic layer. If one badge set is English, all peer badges stay English.
-- Public site chrome should keep a direct repo-return CTA so readers can open the source repo or first-run path from the rendered site.
-- When a header includes language switching, treat the switcher as a utility control and keep the repo-return CTA visually subordinate rather than styling both as peer primary pills.
-- When the header already exposes the repo-return CTA, keep the home hero focused on in-product browsing and onboarding actions rather than repeating a GitHub pill there.
-- At medium widths, split dense header chrome into an intentional top utility row and a separate navigation row instead of relying on incidental link wrapping.
-- On the way from medium to mobile, let brand and utility controls separate into their own row before collapsing navigation into the full mobile grid.
-- First-contact promo assets should lead with the user-visible outcome before qualifiers such as `local-first` or detailed source/input taxonomy.
-- First-contact promo cards should show the shape of the produced artifact with nested surfaces or grouped sub-sections, not just a flat stack of left-aligned copy and pills.
-- Preserve research-native terms as written: paper titles, method names, benchmark names, dataset names, topic tags, and taxonomy labels.
-- Favor dense, scannable structure over marketing-style flourish. Comparative content should read like an analysis surface, not a landing page.
-- Manual trend email CTAs should use Outlook-safe VML fallbacks for branded buttons; variable-height card surfaces may degrade to square bordered blocks in Outlook rather than using fragile nested VML containers.
-- Reader-facing research surfaces must present finished writing, not the model's internal worksheet. Analysis structure may guide generation, but the public page should show only the final prose and supporting evidence.
-- Keep reader-facing block shapes sparse. Prefer a small repeated primitive such as `title`, `content`, and `evidence` over field-by-field cards that expose internal methodology labels.
-- Do not expose prompt-method labels such as `Best bet`, `Alternate`, `Thesis`, `Anti-thesis`, `Why now`, `What changed`, `Validation next step`, `Top shifts`, or `Counter-signal` as public section chrome unless product direction explicitly reinstates them.
-- Treat `Trends` and `Ideas` as peer collection surfaces: each should have its own index destination, parallel navigation affordance, and symmetric home-section labeling.
-- When `Trends` and `Ideas` appear side by side, keep the pair visually symmetric: equal-width columns, one stacked card column per side, and mirrored section chrome.
-- Bound growing collection surfaces with build-time static pagination. Preserve the canonical first-page URLs, keep entries newest-first, use relative links, and keep controls in English with `Previous`, `Next`, and `Page x of y` labels.
-- On topic entity pages, paginate the paired `Trends` and `Ideas` panels with one shared page number and equal per-panel limits so the two collection surfaces retain the same visual weight.
-- Use `Trends` and `Ideas` as the canonical peer collection labels on shared discovery surfaces. Do not keep legacy `Trend briefs` / `Idea briefs` chrome once the simplified reader-facing contract is in place.
-- Use `Overview` as the canonical page summary for index cards and detail hero dek copy. Historical comparison can sharpen that writing, but it should not reappear as a dedicated public `Evolution` surface.
-- On trend detail pages, keep the public reading surface centered on `Overview` plus supporting cluster blocks. If contradictory evidence matters, fold it into the finished prose of those remaining blocks instead of rendering a separate worksheet surface.
-- On `Ideas` detail pages, keep the page structure minimal: a summary block plus idea blocks. Each idea block should read like a short finished note with a title, prose body, and evidence, not a stack of explicit method fields.
-- On `Ideas` cards and detail pages, avoid legacy collection framing such as `Idea brief` or `Opportunities`. Use neutral chrome like `Ideas`, plain count strings, and supporting `Evidence`.
-- On `Ideas` grids, let cards grow to their own natural content height. Do not stretch shorter cards to match a taller neighbor; that visual rhythm clashes with the rest of the site.
-- For markdown-first `Ideas` detail flows, do not replace raw enum leakage with a different public worksheet. Hiding `User/job` while exposing `Role`, or hiding ranking enums while exposing `Best bet`, is still formalism if the reader sees the internal analysis template.
-- On `Ideas` cards and detail heroes, omit empty topic rows entirely instead of rendering placeholder chrome for missing topics.
-- On `Ideas` cards and detail heroes, keep metadata subordinate. If a metadata field is not directly useful to a reader deciding whether to open or trust the note, prefer removing it rather than inventing new pills or field blocks for it.
-- Topic and stream discovery surfaces should aggregate both trends and ideas so idea-only topics/streams stay navigable and linked, rather than degrading into unlabeled plain text.
-- Topic and stream entity pages should lead with a summary surface for the entity itself, then render symmetric `Trends` and `Ideas` collection panels below instead of pairing the entity name against only one collection.
-- If a stream label originates from a machine slug such as `embedded_ai` or `research-ops`, render it as a readable title in the UI chrome rather than exposing the raw slug.
+- Treat Recoleta as a research publication and reading tool. Evidence, findings,
+  and navigation take priority over product marketing.
+- Give each page one primary job. Do not make a research detail page double as a
+  landing page or make an email reproduce the whole website.
+- The current palette, card system, serif headings, gradients, and hero layouts
+  are implementation choices, not permanent design rules.
+- Share content models and terminology across web, email, and PDF, but design the
+  layout separately for each reading medium.
+- Prefer editorial selection over visual symmetry. Trends and Ideas remain peer
+  destinations, but they do not need equal card counts, mirrored columns, or
+  equal-height surfaces on every page.
 
-## Comparative Views
+## Editorial Hierarchy
 
-- Use historical comparison as internal analysis input or as supporting detail inside finished overview/cluster prose, not as a standalone reader-facing worksheet.
-- If historical deltas matter on cards or detail heroes, summarize them as direct narrative signal rather than emitting a separate comparison taxonomy block.
-- Keep PDF and HTML on the same simplified card hierarchy and terminology.
+- Show a summary once per reading surface. A card excerpt may derive from the
+  Overview or Summary, but a detail page or full email must not repeat the same
+  passage in both its hero and body.
+- Present finished writing, not the model's worksheet. Hiding rubric labels is
+  insufficient when every item still follows the same paragraph count, field
+  order, opening, or closing formula.
+- Let weak evidence produce a shorter artifact. Never add a third card, a fixed
+  closing paragraph, a pilot threshold, or a counterpoint only to complete a
+  template.
+- Titles should name the observed mechanism, result, object, or decision. Review
+  titles as a series and avoid recurring editorial frames such as `strongest signal`,
+  `now needs`, `is becoming`, `being judged`, or `earns trust`.
+- Distinguish Sources from Evidence. A linked paper is a source; call it evidence
+  only when the page states the result, limitation, or relationship that supports
+  the claim. Omit generic `Reports`, `Shows`, or `Describes` annotations. If no
+  source can be rendered, omit the source heading as well as placeholders such as
+  `(none)`.
+- Keep metadata only when it helps a reader choose, understand, or trust the
+  content. Do not expose pipeline status, internal enums, exclusive date bounds,
+  repeated counts, or duplicate topic lists.
+- Empty states describe the reader-visible fact, such as `No trends for this
+  period`. They must not expose filtering, retention, publishing, or suppression
+  workflow language.
 
-## Maintenance
+## Visual Language
 
-- Treat this skill as the canonical record of project-level design language for research-facing site surfaces.
-- If a change introduces a new fixed UI term, badge family, layout convention, or localization rule that should persist, update this skill in the same change.
-- If user feedback or product direction invalidates an existing rule, revise or remove the stale rule here before treating the new pattern as canonical.
-- Keep the skill concise: record stable project-wide rules, not one-off exceptions or temporary experiments.
+- Use a white reading canvas, neutral light-gray independent surfaces, quiet
+  rules, and deep blue as the recurring accent. Do not mix warm beige surfaces
+  with cool blue-gray text and controls. Add a decorative surface only when it
+  clarifies hierarchy.
+- Assign site colors through role-based tokens for canvas, surface, text, rules,
+  controls, focus, and interaction states. A quiet divider color must not double
+  as the only boundary for a control or focus state.
+- Do not combine gradient backgrounds, glass blur, large soft shadows, oversized
+  rounded corners, pill clouds, and card-within-card nesting as a default theme.
+  That combination resembles a generic generated SaaS page.
+- Use a card only for an independent object or interaction boundary. Use spacing,
+  headings, and rules for consecutive parts of one article.
+- Use rules only between adjacent peer content. Do not leave a terminal rule after
+  the last article section, stack nested and outer rules at one boundary, or
+  bracket an ordinary section heading with rules above and below.
+- Use pills for compact interactive filters or a small number of categorical
+  tags. Render dates, counts, language, and provenance as plain text when they do
+  not behave like controls.
+- Keep narrative reading order explicit. Long-form Trend and Idea detail content
+  should normally use one main column; do not use masonry or balanced CSS columns
+  when they make visual order differ from document order.
+- Keep body text at least 16px in normal web and email reading contexts, with a
+  line height near 1.5 to 1.7. Aim for roughly 45 to 75 Latin characters per line
+  and no more than about 40 CJK glyphs for sustained prose.
+- Give CJK display type its own metrics. Do not reuse tight negative tracking or
+  sub-1.0 line heights from Latin display headings.
+- Use small uppercase labels sparingly. Do not make 10px or 11px all-caps labels
+  carry information that a plain heading or metadata line could express.
+- Keep all small reader-facing text at a contrast ratio of at least 4.5:1 against
+  its rendered background.
+- Links inside prose and source lists must remain recognizable without relying
+  only on subtle color differences.
+
+## Site Surface Contracts
+
+- Home should help readers find the latest useful work. Prefer a compact latest
+  feed or editorially selected feature plus list over mirrored card walls,
+  product statistics, and duplicated archive previews.
+- Give the home introduction and latest-item section one direct heading each.
+  Do not stack synonymous kicker and title pairs, or describe an item as selected
+  or curated when the renderer only chooses the newest item by time.
+- Keep a direct repository or first-run path available, but do not interrupt every
+  detail page with a promotional card when the header or footer already provides
+  that route.
+- Collection pages may use restrained cards or rows. A linked title is usually
+  enough; avoid a repeated `Open brief` button on every entry.
+- Detail pages should lead with title, a compact date or stream line, and one
+  summary. Render findings as article sections and sources as compact lists.
+- On source-note pages, give authorship its own row and group short provenance,
+  publication date, and collection facts with semantic labels. Do not concatenate
+  long names and unrelated facts into one separator sentence or expose an
+  unexplained internal ranking score. Keep the title-area topic set small enough
+  to scan as one supporting group.
+- Keep the mobile header within two compact rows. Give detail-page titles a
+  restrained responsive scale of their own instead of inheriting a landing-page
+  display size; long research titles, metadata, and utilities should not consume
+  most of the initial viewport. At 390px and 1024px widths, the first
+  non-repeated body paragraph should normally begin within the initial viewport
+  on a representative detail page.
+- Trends and Ideas remain peer navigation destinations. Topic and stream pages
+  aggregate both so idea-only entities remain discoverable.
+- Convert machine slugs such as `embedded_ai` or `research-ops` to readable UI
+  labels. Do not apply slug humanization to research-native hyphenated names such
+  as `R-CNN`, `GPT-4o`, or `CLIP-based`.
+- Bound growing collections with static pagination. Preserve canonical first-page
+  URLs, newest-first order, relative links, and clear Previous/Next controls.
+
+## Email Surface Contract
+
+- Email is an edited research dispatch, not a miniature site or dashboard.
+- Use a content-bearing subject and a complementary preheader. Do not repeat the
+  sender name, date, summary, or topics in several blocks.
+- Select the strongest two or three findings for the message, with the smallest
+  useful source set. Deduplicate sources across the message before applying the
+  per-finding limit; URL paths and queries remain case-sensitive. Link to the site
+  for the complete artifact.
+- Use one primary CTA. Keep secondary navigation as ordinary descriptive links.
+  The message must remain coherent if rounded corners, background colors, and
+  decorative containers disappear.
+- Email chrome follows the message language. A Chinese message should not be
+  forced to expose `Window`, `Overview`, `Cluster`, and `Evidence` merely because
+  the website currently uses English chrome.
+- Keep the layout single-column and email-safe. Set `lang` and `dir`, preserve a
+  logical heading order, mark layout tables as presentational, use explicit
+  Outlook-safe line heights and spacing, and keep the primary touch target at
+  least 44px high.
+- Use an Outlook-safe VML fallback when a button is necessary, without making a
+  large rounded branded button part of the visual identity.
+- Treat plain text as a first-class edited output with readable link placement and
+  punctuation, not as HTML stripped into a debug transcript.
+
+## Language
+
+- Use one UI language within each page and peer control set. Fixed chrome follows
+  the selected site or message locale; English is only a fallback when a localized
+  label is unavailable, not a permanent design requirement.
+- On a two-language site, show one independent link to the alternate language,
+  named in that language and script. Do not expose raw locale codes or style the
+  current and alternate languages as pseudo-tabs. For three or more languages,
+  use a compact menu whose options form a semantic list and whose current option
+  is identified without relying only on color. Use `lang` and `hreflang`, avoid
+  flags, and keep language controls at least 44px high. Resolve language names
+  from CLDR autonyms rather than a short hard-coded locale table; fail the site
+  build with an actionable error when no native display name is available.
+- Localize only explicit chrome and metadata nodes. Never run UI phrase or count
+  replacement across article prose, excerpts, source reasons, or research titles.
+- Let long-form prose follow the selected output language. Translation may reflow
+  sentences and paragraphs to read naturally while preserving facts, numbers,
+  uncertainty, names, and links.
+- Preserve research-native names as written: paper titles, method names,
+  benchmarks, datasets, product names, and acronyms unless a stable translation
+  exists.
+
+## Anti-Slop Review
+
+- Review output as a rolling series, not only one artifact at a time. Compare
+  recent titles, first sentences, paragraph counts, section order, and closing
+  sentences for repeated skeletons.
+- Check semantic duplication separately from exact strings. An excerpt followed by
+  a paraphrased Overview can still repeat the same information.
+- Treat arbitrary sample sizes and decision thresholds as unsupported specificity
+  unless a source or an explicit editorial policy justifies them.
+- Count visible controls, labels, links, cards, and rendered page height during
+  visual review. Remove elements that do not help navigation, comprehension, or
+  trust.
+- Prefer a small positive writing contract plus corpus-level evaluation over a
+  growing prompt list of banned phrases.
 
 ## Validation
 
-- Check both desktop and mobile when changing visual hierarchy or density.
-- If the change touches renderer output, update tests so terminology and ordering stay specified.
-- Use Playwright or a local preview build when the user expects visual review rather than code-only reasoning.
+- Inspect representative real artifacts, not only synthetic short fixtures.
+- Check short and long English and Chinese samples at 1440px, 1024px, 390px, and
+  200% zoom. For email, also check 320px, 375px, and 600px widths.
+- Use Playwright or equivalent browser rendering for site changes. Validate email
+  in Outlook Classic, a modern Outlook client, Gmail, and Apple Mail when the
+  change affects production delivery.
+- Test stable reader contracts such as unique summary rendering, semantic heading
+  order, useful metadata, source identity deduplication, and mobile reflow. Avoid
+  tests that freeze ornamental markup or a particular card count.
+- Add rolling quality metrics for repeated title frames, opening n-grams,
+  boilerplate sentences, summary overlap, and generic source annotations. Use
+  English and Chinese golden sets plus periodic blind human review.
+
+## Maintenance
+
+- Treat this skill as the current design decision record, not a museum of every
+  layout exception.
+- When product direction changes a stable rule, replace the stale rule instead of
+  appending a contradictory bullet.
+- Keep rules about durable reader outcomes. Leave one-off implementation details in
+  plans, tests, or code comments.

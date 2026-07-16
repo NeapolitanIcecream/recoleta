@@ -40,6 +40,8 @@ def _prompt_notes() -> list[str]:
         "Use history_pack_md only as internal analysis context; if it sharpens the brief, weave the delta into overview_md or clusters instead of emitting a dedicated history section.",
         "If you mention a historical window in prose, rewrite history_pack_md into natural language and never copy raw prev_n tokens into the output.",
         "If history evidence is weak, omit the comparison instead of writing generic change-over-time filler.",
+        "Compare the proposed title and opening with recent outputs in history_pack_md; avoid reusing their grammatical frame unless continuity is the finding.",
+        "Write evidence_refs[].reason only when it identifies a concrete observation, metric, method, or limitation; otherwise omit it.",
     ]
 
 

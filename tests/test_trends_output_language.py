@@ -21,14 +21,14 @@ def test_trend_agent_instructions_include_output_language() -> None:
     )
     assert "at least two distinct item doc_id values" in instructions
     assert "multiple chunks from one document still count as one source" in instructions
-    assert "direct editorial judgment, not a topic inventory" in instructions
+    assert "state the specific finding rather than naming a topic category" in instructions
     assert "at most three named systems, papers, or benchmarks" in instructions
     assert (
         "Do not leave raw prev_n tokens in title, overview_md, or clusters[].content_md"
         in instructions
     )
     assert (
-        "A trend is an evidence-backed period delta, not a topic digest" in instructions
+        "The overview should state the finding, its scope, and any uncertainty" in instructions
     )
     assert (
         "continued momentum, or no material change are all valid findings"
@@ -39,6 +39,9 @@ def test_trend_agent_instructions_include_output_language() -> None:
         in instructions
     )
     assert "it is valid to publish no clusters" in instructions
+    assert "compare the title and opening with recent outputs" in instructions
+    assert "Do not give every period the same grammatical frame" in instructions
+    assert "omit evidence_refs[].reason" in instructions
     assert (
         "drill into the underlying item documents with get_doc_bundle" in instructions
     )
@@ -51,8 +54,8 @@ def test_trend_agent_instructions_include_output_language() -> None:
     assert "Use get_doc only for metadata" in instructions
     assert "cite only item documents that you actually inspected" in instructions
     assert "Do not use negative parallelism" in instructions
-    assert "Avoid false suspense" in instructions
-    assert "Avoid fractal summaries" in instructions
+    assert "Do not use suspense, rhetorical questions, or reveal-style contrasts" in instructions
+    assert "Do not preview, restate, and conclude the same point" in instructions
 
 
 def test_trends_empty_payload_localizes_for_chinese() -> None:

@@ -27,7 +27,12 @@ from recoleta.site_models import (
 
 SITE_CARD_PAGE_SIZE = 12
 SITE_DENSE_PAGE_SIZE = 24
-SITE_TOPIC_COLUMN_PAGE_SIZE = 6
+SITE_TOPIC_PAGE_SIZE = 12
+
+_SITE_FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="8" fill="#0e477d"/>
+  <path d="M18 48V16h15.5c8.4 0 13.5 4.2 13.5 11.3 0 5-2.7 8.5-7.5 10.2L48 48H38l-7.3-9.5H27V48h-9Zm9-17h6c3.3 0 5-1.2 5-3.7 0-2.4-1.7-3.6-5-3.6h-6V31Z" fill="#ffffff"/>
+</svg>"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,26 +193,30 @@ def render_site_page_shell(
         from_page=spec.page_path,
         to_page=spec.output_dir / "assets" / "site.css",
     )
+    favicon_href = site_href(
+        from_page=spec.page_path,
+        to_page=spec.output_dir / "assets" / "favicon.svg",
+    )
     index_href, trends_href, ideas_href, topics_href, archive_href = _page_nav_links(
         spec=spec,
         site_href=site_href,
     )
     return (
         "<!doctype html>"
-        "<html lang='zh-CN'>"
+        "<html lang='en'>"
         "<head>"
         "<meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
         f"<title>{html.escape(spec.title)}</title>"
-        "<meta name='theme-color' content='#10273f'>"
+        "<meta name='theme-color' content='#ffffff'>"
+        f"<link rel='icon' href='{favicon_href}' type='image/svg+xml'>"
         f"<link rel='stylesheet' href='{stylesheet_href}'>"
         "</head>"
         f"<body class='{spec.body_class}'>"
-        "<div class='site-bg'></div>"
         "<div class='site-shell'>"
         "<header class='site-header'>"
         "<div class='nav-brand-wrap'>"
-        f"<a class='nav-brand' href='{index_href}'>Recoleta Trends</a>"
+        f"<a class='nav-brand' href='{index_href}'>Recoleta</a>"
         f"{_nav_caption_html(spec.page_subtitle)}"
         "</div>"
         "<nav class='nav-links'>"
@@ -256,6 +265,9 @@ def _prepare_export_output_dir(
         (resolved_output_dir / name).mkdir(parents=True, exist_ok=True)
     (resolved_output_dir / "assets" / "site.css").write_text(
         site_css.strip() + "\n", encoding="utf-8"
+    )
+    (resolved_output_dir / "assets" / "favicon.svg").write_text(
+        _SITE_FAVICON_SVG.strip() + "\n", encoding="utf-8"
     )
     (resolved_output_dir / ".nojekyll").write_text("", encoding="utf-8")
 
@@ -591,15 +603,9 @@ def _write_detail_pages(
         topic_idea_documents = artifacts.idea_documents_by_topic.get(slug, [])
         paginations = _site_paginations(
             first_page_path=first_page_path,
-            total_pages=max(
-                _page_count(
-                    item_count=len(topic_documents),
-                    page_size=SITE_TOPIC_COLUMN_PAGE_SIZE,
-                ),
-                _page_count(
-                    item_count=len(topic_idea_documents),
-                    page_size=SITE_TOPIC_COLUMN_PAGE_SIZE,
-                ),
+            total_pages=_page_count(
+                item_count=len(topic_documents) + len(topic_idea_documents),
+                page_size=SITE_TOPIC_PAGE_SIZE,
             ),
         )
         topic_collection_pages[slug] = tuple(
@@ -618,7 +624,7 @@ def _write_detail_pages(
                     output_dir=output_dir,
                     topic_pages=artifacts.topic_pages,
                     pagination=pagination,
-                    page_size=SITE_TOPIC_COLUMN_PAGE_SIZE,
+                    page_size=SITE_TOPIC_PAGE_SIZE,
                 ),
             )
     return topic_collection_pages
@@ -665,6 +671,7 @@ def _single_language_export_files_manifest(
         "ideas_index": "ideas/index.html",
         "topics_index": "topics/index.html",
         "stylesheet": "assets/site.css",
+        "favicon": "assets/favicon.svg",
         "trends_index_pages": _relative_site_paths(
             output_dir=output_dir,
             paths=index_pages.trends_index_pages,
@@ -743,7 +750,8 @@ def _single_language_export_manifest(
         "pagination": {
             "card_page_size": SITE_CARD_PAGE_SIZE,
             "dense_page_size": SITE_DENSE_PAGE_SIZE,
-            "topic_column_page_size": SITE_TOPIC_COLUMN_PAGE_SIZE,
+            "topic_page_size": SITE_TOPIC_PAGE_SIZE,
+            "topic_column_page_size": SITE_TOPIC_PAGE_SIZE,
         },
         "files": _single_language_export_files_manifest(
             artifacts=artifacts,

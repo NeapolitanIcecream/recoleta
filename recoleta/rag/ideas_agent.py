@@ -254,6 +254,9 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " returns metadata only and does not count as reading evidence."
         " Multiple chunks from one document still count as one source. Search results"
         " and trend documents may guide discovery but do not count as evidence."
+        " Use evidence_refs[].reason only when it identifies a concrete observation,"
+        " metric, method, or limitation. When the connection is self-evident, omit"
+        " evidence_refs[].reason instead of writing a generic source annotation."
     )
     base += (
         " If the evidence is too weak, return an empty ideas list and explain that"
@@ -291,10 +294,9 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
     )
     base += (
         " In ordinary prose, separate source facts from your synthesis or inference."
-        " End with a cheap, falsifiable first test and an explicit kill threshold: a"
-        " measurable outcome that would cause the reader to stop or revise the idea."
-        " Do not present an editorial cutoff as a result supported by the sources;"
-        " label it as a pilot decision threshold when it is a proposed operating choice."
+        " Include the cheapest falsifiable check when it would change a real decision."
+        " Do not force a first test or decision threshold into every piece."
+        " Never invent a cutoff merely to complete a template."
     )
     base += (
         " Do not use internal rubric labels in public prose. Convert those checks into"
@@ -306,12 +308,10 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
         " prose body, and ideas[].evidence_refs for grounded supporting references."
     )
     base += (
-        " Keep each idea compact: normally three short paragraphs and no more than"
-        " about 220 English words or 450 non-whitespace characters for compact-script"
-        " prose such as Chinese, Japanese, or Korean. State the user and job once,"
-        " explain the cross-source inference once, then combine the concrete build,"
-        " first test, and kill threshold. Do not repeat source summaries or restate"
-        " the same rationale under multiple labels."
+        " Keep each idea compact and stop when its claim is complete."
+        " A short idea may need only one paragraph. Let the evidence determine the"
+        " paragraph count and sequence. Add another paragraph only for a distinct fact,"
+        " inference, decision, or test. Do not repeat source summaries or the rationale."
     )
     base += (
         " summary_md should summarize the set directly."
@@ -327,7 +327,9 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
     )
     base += (
         " When prior_ideas_pack_md is present, use it only to reject ideas that are"
-        " semantically the same as prior output. Never cite that pack as evidence."
+        " semantically the same as prior output. Compare its titles and openings before"
+        " drafting, and avoid reusing their grammatical frame unless continuity is the"
+        " finding. Never cite that pack as evidence."
     )
     base += (
         " Start from the item doc_id values already listed in the supplied evidence"
@@ -338,16 +340,8 @@ def _build_trend_ideas_instructions(*, output_language: str | None) -> str:
     )
     base += (
         " Do not let task language leak into public prose."
-        " Do not use formulas such as 'the strongest notes', 'this note',"
-        " 'the evidence is publishable', 'the immediate need is not', 'not another',"
-        " 'not X but Y', 'shifting from', 'turns from', 'rather than',"
-        " 'instead of', 'that makes', 'the near-term job is not',"
-        " 'the result does not say', 'away from X and toward Y',"
-        " 'X is not Y. It is Z.',"
-        " or 'a second reason to do this now'."
-        " State the direction directly instead of defining it against what it is not,"
-        " what it replaces, what old framing it departs from, or why the reader"
-        " should act now."
+        " State the direction directly. Do not manufacture urgency, contrast, or a"
+        " departure narrative when the evidence does not establish one."
         " Do not call the output publishable, grounded, retained, or strong."
     )
     base = f"{base}\n\n{reader_facing_ai_tropes_prompt()}"
@@ -392,9 +386,10 @@ def _trend_ideas_prompt_notes() -> list[str]:
         "Name the concrete operational pain or adoption blocker directly instead of using generic platform language.",
         "Use evidence_refs to cite at least two distinct item documents read with get_doc_bundle or read_chunk for each idea; get_doc metadata does not count, and multiple chunks from one document count once.",
         "Treat prior_ideas_pack_md only as a deduplication exclusion list; never cite it as evidence.",
-        "Each retained idea needs a specific user and job, a cross-source novelty basis, a falsifiable first test, and an observable kill threshold.",
-        "When a kill threshold is an editorial operating choice rather than a source result, call it a pilot decision threshold.",
-        "Keep each idea to about three short paragraphs: state the user/job and cross-source inference once, then combine the build, first test, and kill threshold without repeating source summaries.",
+        "Before drafting, compare titles and openings in prior_ideas_pack_md and avoid reusing their grammatical frame unless continuity is itself the finding.",
+        "Let the evidence determine the length and structure. A short idea may be one paragraph; use more only when each paragraph adds a distinct fact, inference, or decision.",
+        "Include a cheap falsifiable check when it would change a decision; do not invent a universal kill threshold or pilot cutoff.",
+        "Use evidence_refs[].reason only for a concrete observation, metric, method, or limitation; otherwise omit it.",
         "Do not restate the trend summary as the final output.",
         "Do not let task labels or collection labels leak into public prose.",
         "Do not coin new umbrella terms or marketing-style labels.",
@@ -402,8 +397,7 @@ def _trend_ideas_prompt_notes() -> list[str]:
         "Prefer direct, readable phrasing over compressed jargon.",
         "Keep paper titles, framework names, product names, and acronyms in their original form unless a widely accepted translation exists.",
         "Idea titles should read like factual descriptive labels, not slogans, coined categories, or rhetorical questions.",
-        "Do not use formulas such as 'the strongest notes', 'this note', 'the evidence is publishable', 'the immediate need is not', 'not another', 'not X but Y', 'shifting from', 'turns from', 'rather than', 'instead of', 'that makes', 'the near-term job is not', 'the result does not say', 'away from X and toward Y', 'X is not Y. It is Z.', or 'a second reason to do this now'.",
-        "State the direction directly instead of defining it against what it is not, what it replaces, what old framing it departs from, or why the reader should act now.",
+        "State the direction directly; do not manufacture urgency, contrast, or a departure narrative.",
         "Do not describe the output as publishable, grounded, retained, or strong.",
         "Return finished short prose in ideas[].content_md instead of labeled method fields.",
     ]
@@ -411,12 +405,15 @@ def _trend_ideas_prompt_notes() -> list[str]:
 
 def _build_trend_ideas_title_instructions(*, output_language: str | None) -> str:
     base = (
-        "You write bundle titles for retained sets of research directions."
+        "You write bundle titles for final sets of research directions."
         " Return an object with a single title field."
-        " Write a single bundle title for the retained set."
+        " Write a single bundle title for the final set."
         " The title must be a short literal noun phrase on one line."
-        " Name the shared theme across the retained ideas without repeating their"
+        " Name the shared theme across the final directions without repeating their"
         " wording or sounding like a task label."
+        " When prior_ideas_pack_md is supplied, compare its titles and openings and"
+        " choose a different grammatical frame unless continuity is the point."
+        " Use that pack only for repetition checks, never as evidence."
         " Do not use labels such as idea, ideas, notes, evidence-grounded, trend"
         " snapshot, opportunity, or why now."
         " Do not use counts, dates, colons, slogans, or rhetorical questions."
@@ -437,9 +434,10 @@ def build_trend_ideas_title_prompt_payload(
     *,
     summary_md: str,
     ideas: list[dict[str, str]],
+    prior_ideas_pack_md: str | None = None,
 ) -> dict[str, Any]:
-    return {
-        "task": "Write one short bundle title for the retained set. Return plain text in the title field.",
+    payload: dict[str, Any] = {
+        "task": "Write one short bundle title for the final set. Return plain text in the title field.",
         "summary_md": str(summary_md or "").strip(),
         "ideas": [
             {
@@ -449,6 +447,9 @@ def build_trend_ideas_title_prompt_payload(
             for idea in list(ideas or [])
         ],
     }
+    if str(prior_ideas_pack_md or "").strip():
+        payload["prior_ideas_pack_md"] = str(prior_ideas_pack_md).strip()
+    return payload
 
 
 def _require_distinct_evidence_documents(
@@ -761,6 +762,7 @@ def generate_trend_ideas_bundle_title(
     llm_model: str,
     summary_md: str,
     ideas: list[dict[str, str]],
+    prior_ideas_pack_md: str | None = None,
     output_language: str | None = None,
     llm_connection: LLMConnectionConfig | None = None,
 ) -> tuple[str, dict[str, Any]]:
@@ -770,7 +772,11 @@ def generate_trend_ideas_bundle_title(
         llm_connection=llm_connection,
     )
     prompt = json.dumps(
-        build_trend_ideas_title_prompt_payload(summary_md=summary_md, ideas=ideas),
+        build_trend_ideas_title_prompt_payload(
+            summary_md=summary_md,
+            ideas=ideas,
+            prior_ideas_pack_md=prior_ideas_pack_md,
+        ),
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -789,6 +795,7 @@ def generate_trend_ideas_bundle_title(
         },
         "estimated_cost_usd": estimated_cost_usd,
         "prompt_chars": len(prompt),
+        "prior_ideas_pack_chars": len(str(prior_ideas_pack_md or "")),
     }
     return result.output.title, debug
 
