@@ -189,7 +189,7 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
     assert "### Reward models" in trend_markdown
     assert f"[Robometer](../Inbox/{item_note_path.name})" in trend_markdown
     assert "https://example.com/robometer" not in trend_markdown
-    assert "#### Evidence" in trend_markdown
+    assert "#### Sources" in trend_markdown
     assert "Robometer: Scaling General-Purpose Robotic Reward Models" in trend_markdown
     assert f"(../Inbox/{item_note_path.name})" in trend_markdown
     assert trend_sidecar["source_markdown_path"] == f"Trends/{trend_note_path.name}"
@@ -206,6 +206,26 @@ def test_materialize_outputs_backfills_item_notes_rerenders_trend_links_and_keep
     ).read_text(encoding="utf-8")
     assert "Open original" in item_html
     assert "https://example.com/robometer" in item_html
+    item_page = BeautifulSoup(item_html, "html.parser")
+    item_metadata = item_page.select_one("dl.item-metadata")
+    assert item_metadata is not None
+    metadata_labels = [
+        node.get_text(" ", strip=True)
+        for node in item_metadata.select(":scope > .item-metadata-group > dt")
+    ]
+    metadata_values = [
+        node.get_text(" ", strip=True)
+        for node in item_metadata.select(":scope > .item-metadata-group > dd")
+    ]
+    assert list(zip(metadata_labels, metadata_values, strict=True)) == [
+        ("Authors", "Alice"),
+        ("Source", "RSS"),
+        ("Published", "2026-03-02"),
+    ]
+    published_time = item_metadata.select_one("time[datetime]")
+    assert published_time is not None
+    assert published_time.get("datetime") == "2026-03-02"
+    assert "Relevance" not in item_metadata.get_text(" ", strip=True)
 
     with Session(repository.engine) as session:
         item_after = session.exec(select(Item)).one()
@@ -814,7 +834,7 @@ def test_materialize_outputs_deduplicates_idea_evidence_by_document(
         for heading in soup.select("h2, h3, h4, h5, h6")
     ]
     assert idea_html.count(f"../items/{item_note_path.stem}.html") == 1
-    assert "Evidence" in evidence_headings
+    assert "Sources" in evidence_headings
     assert "(chunk 1)" not in idea_html
 
 

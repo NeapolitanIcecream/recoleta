@@ -8,6 +8,7 @@ dependencies = [
     "anthropic>=0.46.0",
     "apscheduler>=3.11.2",
     "arxiv>=2.4.0",
+    "babel>=2.18.0",
     "beautifulsoup4>=4.14.3",
     "feedparser>=6.0.12",
     "httpx>=0.28.1",

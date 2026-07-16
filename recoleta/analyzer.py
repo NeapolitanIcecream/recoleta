@@ -267,7 +267,7 @@ class LiteLLMAnalyzer:
             "  - Answer these questions explicitly:\n"
             "    1) What problem does it solve, and why does it matter?\n"
             "    2) What is the core method/mechanism? Explain in the simplest possible terms.\n"
-            "    3) What breakthrough results does it claim? Include numbers when available (metric/dataset/baseline/comparison).\n"
+            "    3) What results does it report? Include numbers when available (metric/dataset/baseline/comparison).\n"
             "  - Section requirements:\n"
             "    - Summary: 1-2 short sentences, no bullets.\n"
             "    - Problem: 1-3 bullets.\n"

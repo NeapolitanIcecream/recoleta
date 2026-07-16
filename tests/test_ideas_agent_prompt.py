@@ -38,8 +38,11 @@ def test_ideas_instructions_require_finished_prose_without_public_worksheet_fiel
     assert (
         "Direct adoption or productization of one paper is not enough." in instructions
     )
-    assert "explicit kill threshold" in instructions
     assert "separate source facts from your synthesis or inference" in instructions
+    assert "Do not force a first test or decision threshold into every piece." in instructions
+    assert "A short idea may need only one paragraph." in instructions
+    assert "Let the evidence determine the paragraph count and sequence." in instructions
+    assert "omit evidence_refs[].reason" in instructions
     assert "normally 6 to 8 documents" in instructions
     assert "Do not search again for material already listed there." in instructions
     assert (
@@ -48,11 +51,6 @@ def test_ideas_instructions_require_finished_prose_without_public_worksheet_fiel
     )
     assert "ideas[].content_md for the prose body" in instructions
     assert "Do not let task language leak into public prose." in instructions
-    assert "the strongest notes" in instructions
-    assert "the near-term job is not" in instructions
-    assert "the result does not say" in instructions
-    assert "away from X and toward Y" in instructions
-    assert "X is not Y. It is Z." in instructions
     assert (
         "Do not call the output publishable, grounded, retained, or strong."
         in instructions
@@ -61,8 +59,6 @@ def test_ideas_instructions_require_finished_prose_without_public_worksheet_fiel
         "Do not describe the set as ideas, notes, directions, pieces, or retained items inside summary_md."
         in instructions
     )
-    assert "shifting from" in instructions
-    assert "turns from" in instructions
     assert "Do not use negative parallelism" in instructions
     assert "why-now" not in instructions.lower()
     assert "opportunity" not in instructions.lower()
@@ -105,9 +101,11 @@ def test_ideas_prompt_payload_reinforces_reader_facing_contract() -> None:
         "Return finished short prose in ideas[].content_md instead of labeled method fields."
         in notes
     )
-    assert any(
-        note.startswith("Keep each idea to about three short paragraphs")
-        for note in notes
+    assert (
+        "Let the evidence determine the length and structure. A short idea may be one paragraph; use more only when each paragraph adds a distinct fact, inference, or decision." in notes
+    )
+    assert (
+        "Include a cheap falsifiable check when it would change a decision; do not invent a universal kill threshold or pilot cutoff." in notes
     )
     assert "Do not restate the trend summary as the final output." in notes
     assert (
@@ -121,9 +119,11 @@ def test_ideas_prompt_payload_reinforces_reader_facing_contract() -> None:
         "Treat prior_ideas_pack_md only as a deduplication exclusion list; never cite it as evidence."
         in notes
     )
-    assert any(
-        note.startswith("Do not use formulas such as 'the strongest notes'")
-        for note in notes
+    assert (
+        "Before drafting, compare titles and openings in prior_ideas_pack_md and avoid reusing their grammatical frame unless continuity is itself the finding." in notes
+    )
+    assert (
+        "Use evidence_refs[].reason only for a concrete observation, metric, method, or limitation; otherwise omit it." in notes
     )
 
 
@@ -132,7 +132,7 @@ def test_ideas_title_instructions_define_second_pass_bundle_title_contract() -> 
         output_language="Chinese (Simplified)"
     )
 
-    assert "Write a single bundle title for the retained set." in instructions
+    assert "Write a single bundle title for the final set." in instructions
     assert "The title must be a short literal noun phrase" in instructions
     assert (
         "Do not use labels such as idea, ideas, notes, evidence-grounded, trend snapshot, opportunity, or why now."
@@ -146,7 +146,7 @@ def test_ideas_title_instructions_define_second_pass_bundle_title_contract() -> 
     assert "Do not serialize JSON inside the title field." in instructions
 
 
-def test_ideas_title_prompt_payload_only_uses_final_summary_and_retained_ideas() -> (
+def test_ideas_title_prompt_payload_includes_recent_output_for_frame_comparison() -> (
     None
 ):
     payload = build_trend_ideas_title_prompt_payload(
@@ -161,11 +161,14 @@ def test_ideas_title_prompt_payload_only_uses_final_summary_and_retained_ideas()
                 "content_md": "Enforce tool policies in the live execution path.",
             },
         ],
+        prior_ideas_pack_md=(
+            "## Prior ideas exclusion pack\n- Earlier release gate opening\n"
+        ),
     )
 
     assert (
         payload["task"]
-        == "Write one short bundle title for the retained set. Return plain text in the title field."
+        == "Write one short bundle title for the final set. Return plain text in the title field."
     )
     assert payload["summary_md"] == (
         "Release controls and runtime checks now travel together."
@@ -180,6 +183,9 @@ def test_ideas_title_prompt_payload_only_uses_final_summary_and_retained_ideas()
             "content_md": "Enforce tool policies in the live execution path.",
         },
     ]
+    assert payload["prior_ideas_pack_md"].startswith(
+        "## Prior ideas exclusion pack"
+    )
 
 
 def test_bundle_title_validation_unwraps_nested_json_string() -> None:

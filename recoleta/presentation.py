@@ -33,15 +33,59 @@ _LANGUAGE_LABEL_TO_CODE = {
     "traditional chinese": "zh-TW",
 }
 
-_TREND_DISPLAY_LABELS = {
-    "overview": "Overview",
-    "clusters": "Clusters",
-    "evidence": "Evidence",
+_TREND_DISPLAY_LABELS_BY_LANGUAGE = {
+    "en": {
+        "overview": "Overview",
+        "clusters": "Findings",
+        "evidence": "Sources",
+    },
+    "zh-CN": {
+        "overview": "概览",
+        "clusters": "研究发现",
+        "evidence": "资料来源",
+    },
+    "zh-TW": {
+        "overview": "概覽",
+        "clusters": "研究發現",
+        "evidence": "資料來源",
+    },
+    "ja": {
+        "overview": "概要",
+        "clusters": "主な発見",
+        "evidence": "情報源",
+    },
+    "ko": {
+        "overview": "개요",
+        "clusters": "주요 발견",
+        "evidence": "출처",
+    },
 }
-_IDEA_DISPLAY_LABELS = {
-    "summary": "Summary",
-    "ideas": "Ideas",
-    "evidence": "Evidence",
+_IDEA_DISPLAY_LABELS_BY_LANGUAGE = {
+    "en": {
+        "summary": "Summary",
+        "ideas": "Research ideas",
+        "evidence": "Sources",
+    },
+    "zh-CN": {
+        "summary": "摘要",
+        "ideas": "研究想法",
+        "evidence": "资料来源",
+    },
+    "zh-TW": {
+        "summary": "摘要",
+        "ideas": "研究想法",
+        "evidence": "資料來源",
+    },
+    "ja": {
+        "summary": "要約",
+        "ideas": "研究アイデア",
+        "evidence": "情報源",
+    },
+    "ko": {
+        "summary": "요약",
+        "ideas": "연구 아이디어",
+        "evidence": "출처",
+    },
 }
 _DISALLOWED_EVIDENCE_KEYS = ("source_type", "confidence")
 
@@ -172,12 +216,20 @@ def _project_evidence(raw_sources: Any) -> list[dict[str, Any]]:
 
 
 def _canonical_language_code(value: str) -> str:
-    normalized = value.lower()
-    if normalized == "zh-cn":
-        return "zh-CN"
-    if normalized == "zh-tw":
-        return "zh-TW"
-    return value
+    parts = value.replace("_", "-").split("-")
+    canonical_parts: list[str] = []
+    for index, part in enumerate(parts):
+        if index == 0:
+            canonical_parts.append(part.lower())
+        elif len(part) == 4 and part.isalpha():
+            canonical_parts.append(part.title())
+        elif (len(part) == 2 and part.isalpha()) or (
+            len(part) == 3 and part.isdigit()
+        ):
+            canonical_parts.append(part.upper())
+        else:
+            canonical_parts.append(part.lower())
+    return "-".join(canonical_parts)
 
 
 def _normalized_language_code_candidate(value: Any) -> str | None:
@@ -210,14 +262,33 @@ def resolve_presentation_language_code(
     )
 
 
+def _display_labels_language_code(language_code: str | None) -> str | None:
+    normalized = resolve_presentation_language_code(language_code=language_code)
+    parts = str(normalized or "").lower().split("-")
+    primary = parts[0] if parts else ""
+    if primary == "zh":
+        if "hant" in parts or any(region in parts for region in {"hk", "mo", "tw"}):
+            return "zh-TW"
+        return "zh-CN"
+    if primary in {"ja", "ko"}:
+        return primary
+    return normalized
+
+
 def trend_display_labels(*, language_code: str | None = None) -> dict[str, str]:
-    _ = language_code
-    return dict(_TREND_DISPLAY_LABELS)
+    normalized = _display_labels_language_code(language_code)
+    labels = _TREND_DISPLAY_LABELS_BY_LANGUAGE.get(str(normalized or ""))
+    if labels is None and normalized:
+        labels = _TREND_DISPLAY_LABELS_BY_LANGUAGE.get(normalized.split("-", 1)[0])
+    return dict(labels or _TREND_DISPLAY_LABELS_BY_LANGUAGE["en"])
 
 
 def idea_display_labels(*, language_code: str | None = None) -> dict[str, str]:
-    _ = language_code
-    return dict(_IDEA_DISPLAY_LABELS)
+    normalized = _display_labels_language_code(language_code)
+    labels = _IDEA_DISPLAY_LABELS_BY_LANGUAGE.get(str(normalized or ""))
+    if labels is None and normalized:
+        labels = _IDEA_DISPLAY_LABELS_BY_LANGUAGE.get(normalized.split("-", 1)[0])
+    return dict(labels or _IDEA_DISPLAY_LABELS_BY_LANGUAGE["en"])
 
 
 def _trend_clusters_content(clusters: Sequence[Any] | None) -> list[dict[str, Any]]:
@@ -569,7 +640,7 @@ def validate_presentation(presentation: Mapping[str, Any]) -> list[str]:
     if surface_kind == "trend":
         _validate_display_labels(
             presentation.get("display_labels"),
-            expected_keys=set(_TREND_DISPLAY_LABELS),
+            expected_keys=set(_TREND_DISPLAY_LABELS_BY_LANGUAGE["en"]),
             field_path="display_labels",
             errors=errors,
         )
@@ -577,7 +648,7 @@ def validate_presentation(presentation: Mapping[str, Any]) -> list[str]:
     else:
         _validate_display_labels(
             presentation.get("display_labels"),
-            expected_keys=set(_IDEA_DISPLAY_LABELS),
+            expected_keys=set(_IDEA_DISPLAY_LABELS_BY_LANGUAGE["en"]),
             field_path="display_labels",
             errors=errors,
         )

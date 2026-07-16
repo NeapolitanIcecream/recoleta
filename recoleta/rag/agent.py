@@ -87,9 +87,11 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "Do not force a Top-N must-read section; that workflow is legacy and should only appear if the prompt explicitly requires it."
     )
     base += (
-        " Write the title as a direct editorial judgment, not a topic inventory. "
-        "Keep the opening overview short, lead with the period-level judgment, and avoid opening with a flat list of systems or papers. "
+        " In the title, state the specific finding rather than naming a topic category. "
+        "Keep the opening overview short and avoid opening with a flat list of systems or papers. "
         "Limit the opening overview to at most three named systems, papers, or benchmarks. "
+        "The overview should state the finding, its scope, and any uncertainty or evidence limit that changes how a reader should interpret it. "
+        "Do not fill these as three fixed slots; use the shortest natural structure for the evidence. "
         "Do not leave raw prev_n tokens in title, overview_md, or clusters[].content_md."
     )
     base += (
@@ -106,14 +108,14 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         "Avoid repetitive phrasing across overview and clusters; each section should add new value."
     )
     base += (
-        " A trend is an evidence-backed period delta, not a topic digest. "
+        " A trend brief reports what the evidence establishes in the current period, not a topic digest. "
         "When same-granularity history is available, compare the current evidence with it and state the supported result: "
         "a new or stronger signal, a weakening signal, continued momentum, or no material change are all valid findings. "
         "Never infer a move, turn, push, or shift from the current window alone. "
-        "When history is absent or too weak for a longitudinal claim, describe the result as a current signal, "
+        "When history is absent or too weak for a longitudinal claim, describe the observed state and its limits, "
         "not as change over time; it is valid to publish no clusters when no evidence-qualified trend exists. "
-        "Avoid formulaic 'from X to Y', 'less X and more Y', and 'not X but Y' contrasts unless the supplied history "
-        "and current item evidence directly establish that comparison."
+        "When history_pack_md is present, compare the title and opening with recent outputs before finalizing them. "
+        "Do not give every period the same grammatical frame or lead noun. Reuse a frame only when exact continuity is the finding."
     )
     base += (
         " Use any history change, contradictory evidence, or representative examples as internal analysis tools, "
@@ -124,6 +126,8 @@ def _build_trend_instructions(*, output_language: str | None) -> str:
         " Each cluster block must be a finished short note, not a worksheet. "
         "Use clusters[].title for a literal topic label, clusters[].content_md for the prose body, "
         "and clusters[].evidence_refs for grounded supporting references. "
+        "Use evidence_refs[].reason only when it names the specific observation, metric, method, or limitation that connects the source to the claim. "
+        "When the connection is self-evident, omit evidence_refs[].reason instead of writing a generic source annotation. "
         "Each cluster must cite at least two distinct item doc_id values with concrete chunk_index values; "
         "multiple chunks from one document still count as one source. "
         "If the active corpus contains only one item document, emit at most one cluster and clearly label it as a "

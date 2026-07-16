@@ -162,7 +162,8 @@ def test_materialize_outputs_uses_new_reader_facing_contracts(tmp_path: Path) ->
     assert validate_presentation(idea_sidecar) == []
 
     assert "## Overview" in trend_text
-    assert "## Clusters" in trend_text
+    assert "## Findings" in trend_text
+    assert "#### Sources" in trend_text
     assert "Top shifts" not in trend_text
     assert "Counter-signal" not in trend_text
     assert "Representative sources" not in trend_text
@@ -182,10 +183,11 @@ def test_materialize_outputs_uses_new_reader_facing_contracts(tmp_path: Path) ->
     assert "opportunities" not in idea_sidecar["content"]
 
     assert "Overview" in trend_html
-    assert "Clusters" in trend_html
+    assert "Findings" in trend_html
+    assert "Sources" in trend_html
     assert "Trend brief" not in trend_html
-    assert "Trends · 2026-W12" in trend_html
+    assert "2026-W12" in trend_html
     assert "Top shifts" not in trend_html
     assert "Summary" in idea_html
-    assert "Ideas" in idea_html
+    assert "Research ideas" in idea_html
     assert "Best bet" not in idea_html

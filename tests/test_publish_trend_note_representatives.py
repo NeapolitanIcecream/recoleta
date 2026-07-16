@@ -51,9 +51,9 @@ def test_write_markdown_trend_note_renders_new_public_contract(tmp_path: Path) -
     )
 
     assert "## Overview" in text
-    assert "## Clusters" in text
+    assert "## Findings" in text
     assert "### Release discipline" in text
-    assert "#### Evidence" in text
+    assert "#### Sources" in text
     assert "Top shifts" not in text
     assert "Counter-signal" not in text
     assert "Representative sources" not in text
@@ -82,7 +82,7 @@ def test_write_markdown_trend_note_renders_empty_clusters_list(tmp_path: Path) -
         clusters=[],
     )
 
-    assert "## Clusters\n- (none)" in note_path.read_text(encoding="utf-8")
+    assert "## Findings\n- (none)" in note_path.read_text(encoding="utf-8")
 
 
 def test_resolve_trend_note_href_uses_relative_paths_between_siblings() -> None:

@@ -180,8 +180,8 @@ def test_trends_week_published_markdown_locks_reader_facing_quality(
 
     assert re.search(r"\bdoc_id\b", md) is None
     assert re.search(r"\bchunk(?:_index)?\s*[:=]?\s*\d+\b", md, flags=re.I) is None
-    assert "## Clusters" in md
-    assert "#### Evidence" in md
+    assert "## 研究发现" in md
+    assert "#### 资料来源" in md
     assert "Representative sources" not in md
     assert re.search(r"^#{2,6}\s+Top-\d+\s+must-?read\b", md, flags=re.M | re.I) is None
     assert len(re.findall(r"\[[^\]]+\]\(\.\./Inbox/[^)]+\.md\)", md)) >= 3

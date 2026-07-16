@@ -68,7 +68,7 @@ def test_write_markdown_ideas_note_renders_new_public_contract(tmp_path: Path) -
     assert "# Verification-first agent rollout" in text
     assert "## Summary" in text
     assert "## Prompt release gate" in text
-    assert "### Evidence" in text
+    assert "### Sources" in text
     assert (
         "- Document 1: The trend note ties verification to rollout control."
     ) in text
@@ -137,6 +137,8 @@ def test_write_markdown_ideas_note_uses_resolved_language_code_in_frontmatter(
     text = note_path.read_text(encoding="utf-8")
 
     assert "language_code: zh-CN" in text
+    assert "## 摘要" in text
+    assert "### 资料来源" in text
 
 
 def test_write_markdown_ideas_note_rejects_unexpected_keyword_arguments(

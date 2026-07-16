@@ -16,6 +16,8 @@ import time
 from typing import Any
 from urllib.parse import quote, urlparse
 
+from babel import Locale
+from babel.core import UnknownLocaleError
 from bs4 import BeautifulSoup, Tag
 from loguru import logger
 from markdown_it import MarkdownIt
@@ -36,8 +38,6 @@ from recoleta.publish.trend_render_shared import (
     _normalize_obsidian_callouts_for_pdf,
     _split_yaml_frontmatter_text,
     _trend_date_token,
-    _trend_pdf_hero_dek,
-    _trend_pdf_topics_summary,
     sanitize_trend_title,
 )
 from recoleta.site_inputs import (
@@ -112,16 +112,6 @@ class _TopicCardRenderRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class _CollectionSectionRenderRequest:
-    title: str
-    count_text: str
-    cards_html: str
-    empty_copy: str
-    action_label: str | None = None
-    action_href: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
 class _TopicPageRenderRequest:
     topic: str
     topic_slug: str
@@ -146,15 +136,6 @@ class _TopicCardGridRenderRequest:
     idea_counter: Counter[str]
     offset: int = 0
     limit: int | None = None
-
-
-@dataclass(slots=True)
-class _TopicCardGridData:
-    topic_counter: Counter[str]
-    trend_counter: Counter[str]
-    idea_counter: Counter[str]
-    latest_by_topic: dict[str, TrendSiteDocument | IdeaSiteDocument]
-    label_by_slug: dict[str, str]
 
 
 def _export_single_language_trend_static_site(
@@ -372,12 +353,12 @@ def _presentation_labels(
     surface_kind: str,
     presentation: dict[str, Any],
 ) -> dict[str, str]:
-    merged = (
-        trend_display_labels(language_code="en")
+    language_code = str(presentation.get("language_code") or "").strip() or None
+    return (
+        trend_display_labels(language_code=language_code)
         if surface_kind == "trend"
-        else idea_display_labels(language_code="en")
+        else idea_display_labels(language_code=language_code)
     )
-    return merged
 
 
 def _humanize_source_type(value: str) -> str:
@@ -407,10 +388,21 @@ def _safe_excerpt(value: str, *, limit: int = 220) -> str:
     collapsed = re.sub(r"\s+([，。；：！？）】》])", r"\1", collapsed)
     if len(collapsed) <= limit:
         return collapsed
+    sentence_boundaries = [
+        match.end()
+        for match in re.finditer(
+            r"(?:[。！？]|[.!?](?=\s|$))",
+            collapsed[: limit + 1],
+        )
+        if match.end() >= max(80, limit // 2)
+    ]
+    if sentence_boundaries:
+        return collapsed[: sentence_boundaries[-1]].rstrip()
     boundary = collapsed.rfind(" ", 0, limit)
     if boundary < max(80, limit // 2):
         boundary = limit
-    return collapsed[:boundary].rstrip() + "…"
+    truncated = re.sub(r"[,;:，；：、]+$", "", collapsed[:boundary].rstrip()).rstrip()
+    return truncated + "…"
 
 
 def _section_excerpt(sections: list[Any]) -> str:
@@ -456,6 +448,19 @@ def _item_action_label(*, source: str | None, canonical_url: str) -> str:
     if _host_matches(host=host, domain="github.com"):
         return "Open GitHub"
     return "Open original"
+
+
+def _display_item_source(source: str | None) -> str:
+    cleaned = str(source or "").strip()
+    if not cleaned:
+        return "Item"
+    return {
+        "arxiv": "arXiv",
+        "hf_daily": "Hugging Face Daily",
+        "hn": "Hacker News",
+        "openreview": "OpenReview",
+        "rss": "RSS",
+    }.get(cleaned.lower(), cleaned)
 
 
 def _topic_slug(topic: str) -> str:
@@ -516,29 +521,6 @@ def _reject_legacy_stream_layout(path: Path, *, context: str) -> None:
         )
 
 
-def _repo_cta_links() -> str:
-    repo_href = html.escape(RECOLETA_REPO_URL, quote=True)
-    quickstart_href = html.escape(RECOLETA_QUICKSTART_URL, quote=True)
-    return (
-        f"<a class='action-link action-link-external' href='{repo_href}'>View repo</a>"
-        f"<a class='action-link secondary action-link-external' href='{quickstart_href}'>5-minute quickstart</a>"
-    )
-
-
-def _render_repo_cta_card() -> str:
-    return (
-        "<section class='repo-cta-card'>"
-        "<div class='section-kicker'>Built with Recoleta</div>"
-        "<h2 class='section-title'>Run your own research radar</h2>"
-        "<p class='repo-cta-copy'>"
-        "Turn arXiv, Hacker News, OpenReview, Hugging Face Daily Papers, and RSS "
-        "into local Markdown, Obsidian notes, Telegram digests, and a public site."
-        "</p>"
-        f"<div class='card-actions'>{_repo_cta_links()}</div>"
-        "</section>"
-    )
-
-
 _STREAM_DISPLAY_INITIALISMS = {
     "ai",
     "api",
@@ -546,6 +528,7 @@ _STREAM_DISPLAY_INITIALISMS = {
     "cv",
     "gpu",
     "llm",
+    "mcp",
     "ml",
     "nlp",
     "ocr",
@@ -554,6 +537,9 @@ _STREAM_DISPLAY_INITIALISMS = {
     "rl",
     "ui",
     "ux",
+    "vla",
+    "vlm",
+    "vln",
 }
 
 
@@ -573,11 +559,22 @@ def _display_site_instance(instance: str | None) -> str | None:
     return " ".join(tokens) if tokens else cleaned
 
 
-def _render_instance_meta_pill(instance: str | None) -> str:
-    display_instance = _display_site_instance(instance)
-    if display_instance is None:
+def _display_topic_label(topic: str) -> str:
+    cleaned = str(topic or "").strip()
+    if not cleaned:
         return ""
-    return f"<span class='meta-pill subdued'>{html.escape(display_instance)}</span>"
+    if "-" in cleaned and any(character.isupper() for character in cleaned):
+        return cleaned
+    normalized = re.sub(r"[_-]+", " ", cleaned).strip()
+    if normalized == cleaned and not cleaned.islower():
+        return cleaned
+    tokens = [
+        token.upper()
+        if token.lower() in _STREAM_DISPLAY_INITIALISMS
+        else token.capitalize()
+        for token in normalized.split()
+    ]
+    return " ".join(tokens) if tokens else cleaned
 
 
 def _resolve_site_instance(
@@ -687,25 +684,6 @@ def _format_collection_meta(
 ) -> str:
     mix = _format_collection_mix(trend_count=trend_count, idea_count=idea_count)
     return f"{mix} · latest window {latest_token}" if latest_token else mix
-
-
-def _site_date_range_label(
-    *,
-    period_start: datetime | None,
-    period_end: datetime | None,
-    fallback: str,
-) -> str:
-    if period_start is None and period_end is None:
-        return fallback
-    if period_start is None:
-        assert period_end is not None
-        return period_end.astimezone(timezone.utc).date().isoformat()
-    if period_end is None:
-        return period_start.astimezone(timezone.utc).date().isoformat()
-    return (
-        f"{period_start.astimezone(timezone.utc).date().isoformat()} "
-        f"to {period_end.astimezone(timezone.utc).date().isoformat()}"
-    )
 
 
 def _record_latest_document(
@@ -860,11 +838,13 @@ def _render_topic_link_pills(
         seen.add(slug)
         topic_page = topic_pages.get(slug)
         if topic_page is None:
-            pills.append(f"<span class='topic-pill'>{html.escape(cleaned)}</span>")
+            pills.append(
+                f"<span class='topic-pill'>{html.escape(_display_topic_label(cleaned))}</span>"
+            )
             continue
         href = _site_href(from_page=from_page, to_page=topic_page)
         pills.append(
-            f"<a class='topic-pill topic-pill-link' href='{href}'>{html.escape(cleaned)}</a>"
+            f"<a class='topic-pill topic-pill-link' href='{href}'>{html.escape(_display_topic_label(cleaned))}</a>"
         )
     return (
         "".join(pills)
@@ -885,42 +865,27 @@ def _render_trend_card(
     document: TrendSiteDocument,
     from_page: Path,
     topic_pages: dict[str, Path],
+    include_kind: bool = False,
 ) -> str:
     trend_href = _site_href(from_page=from_page, to_page=document.page_path)
-    pdf_href = (
-        _site_href(from_page=from_page, to_page=document.pdf_asset_path)
-        if document.pdf_asset_path is not None
-        else None
-    )
-    markdown_href = _site_href(
-        from_page=from_page, to_page=document.markdown_asset_path
-    )
     topic_links = _render_topic_link_pills(
         topics=document.topics[:4],
         from_page=from_page,
         topic_pages=topic_pages,
     )
-    meta_pills = [
-        f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"
-    ]
-    if instance_pill := _render_instance_meta_pill(document.instance):
-        meta_pills.append(instance_pill)
-    actions = [
-        f"<a class='action-link' href='{trend_href}'>Open brief</a>",
-        f"<a class='action-link secondary' href='{markdown_href}'>Markdown</a>",
-    ]
-    if pdf_href is not None:
-        actions.insert(1, f"<a class='action-link secondary' href='{pdf_href}'>PDF</a>")
+    meta_parts = [document.granularity.title(), document.period_token]
+    if include_kind:
+        meta_parts.insert(0, "Trend")
+    if display_instance := _display_site_instance(document.instance):
+        meta_parts.append(display_instance)
     return (
         "<article class='trend-card'>"
         "<div class='card-meta-row'>"
-        f"<div class='card-pill-row'>{''.join(meta_pills)}</div>"
-        f"<span class='meta-date'>{html.escape(document.period_token)}</span>"
+        f"<span class='meta-date'>{html.escape(' · '.join(meta_parts))}</span>"
         "</div>"
         f"<h2 class='card-title'><a href='{trend_href}'>{html.escape(document.title)}</a></h2>"
         f"<p class='card-excerpt'>{html.escape(document.excerpt)}</p>"
         f"<div class='topic-pill-row'>{topic_links}</div>"
-        f"<div class='card-actions'>{''.join(actions)}</div>"
         "</article>"
     )
 
@@ -932,7 +897,7 @@ def _render_topic_card(
     href = _site_href(from_page=request.page_path, to_page=request.topic_page_path)
     return (
         "<article class='topic-card'>"
-        f"<h2 class='topic-card-title'><a href='{href}'>{html.escape(request.topic)}</a></h2>"
+        f"<h2 class='topic-card-title'><a href='{href}'>{html.escape(_display_topic_label(request.topic))}</a></h2>"
         f"<div class='topic-card-meta'>{html.escape(_format_collection_meta(trend_count=request.trend_count, idea_count=request.idea_count, latest_token=request.latest_token))}</div>"
         "</article>"
     )
@@ -967,21 +932,6 @@ def _latest_collection_token(
         return "n/a"
     latest_document = max(documents, key=_rendered_document_sort_key)
     return latest_document.period_token or "n/a"
-
-
-def _collection_window_span(
-    documents: Sequence[TrendSiteDocument | IdeaSiteDocument],
-) -> str:
-    if not documents:
-        return ""
-    ordered_documents = sorted(
-        documents,
-        key=_rendered_document_sort_key,
-        reverse=True,
-    )
-    newest = ordered_documents[0].period_token or "n/a"
-    oldest = ordered_documents[-1].period_token or "n/a"
-    return f"{oldest} to {newest}"
 
 
 def _pagination_window(*, current_page: int, total_pages: int) -> list[int | None]:
@@ -1088,32 +1038,6 @@ def _paginated_document_title(*, title: str, pagination: SitePagination) -> str:
     return f"{title} · Page {pagination.current_page}"
 
 
-def _render_collection_section(
-    *,
-    request: _CollectionSectionRenderRequest,
-) -> str:
-    action_html = ""
-    if request.action_label is not None and request.action_href is not None:
-        action_html = (
-            f"<a class='action-link secondary' href='{request.action_href}'>"
-            f"{html.escape(request.action_label)}"
-            "</a>"
-        )
-    empty_html = f"<div class='empty-card'>{html.escape(request.empty_copy)}</div>"
-    return (
-        "<div class='home-section collection-section'>"
-        "<div class='section-heading-row'>"
-        f"<h2 class='section-title'>{html.escape(request.title)}</h2>"
-        "<div class='section-heading-actions'>"
-        f"<span class='meta-date'>{html.escape(request.count_text)}</span>"
-        f"{action_html}"
-        "</div>"
-        "</div>"
-        f"<div class='trend-grid'>{request.cards_html or empty_html}</div>"
-        "</div>"
-    )
-
-
 def _render_collection_summary_section(
     *,
     summary_label: str,
@@ -1123,6 +1047,11 @@ def _render_collection_summary_section(
     latest_token: str,
     pagination: SitePagination,
 ) -> str:
+    page_status = (
+        f"<span class='meta-date'>Page {pagination.current_page} of {pagination.total_pages}</span>"
+        if pagination.total_pages > 1
+        else ""
+    )
     return (
         "<section class='home-section collection-summary-section'>"
         "<div class='section-heading-row'>"
@@ -1130,7 +1059,7 @@ def _render_collection_summary_section(
         f"<div class='section-kicker'>{html.escape(summary_label)}</div>"
         f"<h1 class='section-title'>{html.escape(title)}</h1>"
         "</div>"
-        f"<span class='meta-date'>{html.escape(_paginated_count_text(count_text=_format_collection_mix(trend_count=trend_count, idea_count=idea_count), pagination=pagination))}</span>"
+        f"{page_status}"
         "</div>"
         "<div class='summary-stats'>"
         f"<div class='meta-panel'><div class='meta-panel-label'>Trends</div><div class='meta-panel-value'>{trend_count}</div></div>"
@@ -1139,26 +1068,6 @@ def _render_collection_summary_section(
         "</div>"
         "</section>"
     )
-
-
-def _trend_site_meta_rows(document: TrendSiteDocument) -> list[tuple[str, str]]:
-    topic_count = len([topic for topic in document.topics if str(topic).strip()])
-    rows = [
-        ("Window", document.period_token),
-        ("Granularity", document.granularity.title()),
-        ("Topics", str(topic_count) if topic_count > 0 else "None"),
-        (
-            "Coverage",
-            _site_date_range_label(
-                period_start=document.period_start,
-                period_end=document.period_end,
-                fallback=document.period_token,
-            ),
-        ),
-    ]
-    if display_instance := _display_site_instance(document.instance):
-        rows.insert(2, ("Instance", display_instance))
-    return rows
 
 
 def _render_archive_rows(*, documents: list[TrendSiteDocument], from_page: Path) -> str:
@@ -1219,14 +1128,6 @@ def _render_detail_page(
         from_page=document.page_path,
         topic_pages=topic_pages,
     )
-    meta_items = "".join(
-        "<div class='meta-panel'>"
-        f"<div class='meta-panel-label'>{html.escape(label)}</div>"
-        f"<div class='meta-panel-value'>{html.escape(value)}</div>"
-        "</div>"
-        for label, value in _trend_site_meta_rows(document)
-    )
-
     pager_items: list[str] = []
     if previous_document is not None:
         previous_href = _site_href(
@@ -1248,15 +1149,15 @@ def _render_detail_page(
             )
         )
 
-    action_links = [
-        f"<a class='action-link' href='{markdown_href}'>Source markdown</a>",
-    ]
+    action_links = [f"<a href='{markdown_href}'>Markdown source</a>"]
     if pdf_href is not None:
         action_links.insert(
-            0, f"<a class='action-link' href='{pdf_href}'>Download PDF</a>"
+            0, f"<a href='{pdf_href}'>PDF</a>"
         )
 
-    hero_dek = document.excerpt or _trend_pdf_hero_dek(document.frontmatter)
+    meta_parts = [document.granularity.title(), document.period_token]
+    if display_instance := _display_site_instance(document.instance):
+        meta_parts.append(display_instance)
     pager_html = (
         f"<section class='pager-row'>{''.join(pager_items)}</section>"
         if pager_items
@@ -1272,19 +1173,14 @@ def _render_detail_page(
         "</nav>"
         "<section class='detail-hero'>"
         "<div class='detail-hero-main'>"
-        f"<div class='hero-kicker'>Trends · {html.escape(document.period_token)}</div>"
+        "<div class='hero-kicker'>Trend</div>"
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
-        f"<p class='detail-dek'>{html.escape(hero_dek)}</p>"
-        f"<div class='detail-summary'>{html.escape(_trend_pdf_topics_summary(document.frontmatter))}</div>"
+        f"<p class='detail-meta'>{html.escape(' · '.join(meta_parts))}</p>"
         f"<div class='topic-pill-row'>{topic_links}</div>"
-        f"<div class='card-actions detail-actions'>{''.join(action_links)}</div>"
+        f"<div class='detail-utility'>{' · '.join(action_links)}</div>"
         "</div>"
-        "<aside class='detail-hero-side'>"
-        f"{meta_items}"
-        "</aside>"
         "</section>"
         f"<section class='detail-content'>{document.body_html}</section>"
-        f"{_render_repo_cta_card()}"
         f"{pager_html}"
     )
 
@@ -1317,37 +1213,61 @@ def _render_item_page(
         to_page=document.markdown_asset_path,
     )
     topic_links = _render_topic_link_pills(
-        topics=document.topics,
+        topics=document.topics[:5],
         from_page=document.page_path,
         topic_pages=topic_pages,
     )
-    meta_rows: list[tuple[str, str]] = [
-        ("Source", document.source or "Item"),
-        (
-            "Published",
-            document.published_at.astimezone(timezone.utc).date().isoformat()
-            if document.published_at is not None
-            else "Unknown",
-        ),
-    ]
-    if document.relevance_score is not None:
-        meta_rows.append(("Relevance", f"{document.relevance_score:.2f}"))
-    if document.authors:
-        authors_value = "; ".join(document.authors[:6])
-        if len(document.authors) > 6:
-            authors_value += "; …"
-        meta_rows.append(("Authors", authors_value))
-    if display_instance := _display_site_instance(document.instance):
-        meta_rows.insert(2, ("Instance", display_instance))
-    meta_items = "".join(
-        "<div class='meta-panel'>"
-        f"<div class='meta-panel-label'>{html.escape(label)}</div>"
-        f"<div class='meta-panel-value'>{html.escape(value)}</div>"
+    metadata_groups: list[str] = []
+    authors = [str(author).strip() for author in document.authors if str(author).strip()]
+    if authors:
+        authors_html = ", ".join(
+            f"<span class='item-author'>{html.escape(author)}</span>"
+            for author in authors[:6]
+        )
+        if len(authors) > 6:
+            authors_html += ", <span class='item-author-more'>et al.</span>"
+        metadata_groups.append(
+            "<div class='item-metadata-group item-metadata-authors'>"
+            "<dt>Authors</dt>"
+            f"<dd>{authors_html}</dd>"
+            "</div>"
+        )
+    metadata_groups.append(
+        "<div class='item-metadata-group item-metadata-fact'>"
+        "<dt>Source</dt>"
+        f"<dd>{html.escape(_display_item_source(document.source))}</dd>"
         "</div>"
-        for label, value in meta_rows
+    )
+    if document.published_at is not None:
+        published_date = (
+            document.published_at.astimezone(timezone.utc).date().isoformat()
+        )
+        published_html = (
+            f"<time datetime='{html.escape(published_date, quote=True)}'>"
+            f"{html.escape(published_date)}</time>"
+        )
+    else:
+        published_html = "Unknown"
+    metadata_groups.append(
+        "<div class='item-metadata-group item-metadata-fact'>"
+        "<dt>Published</dt>"
+        f"<dd>{published_html}</dd>"
+        "</div>"
+    )
+    if display_instance := _display_site_instance(document.instance):
+        metadata_groups.append(
+            "<div class='item-metadata-group item-metadata-fact'>"
+            "<dt>Collection</dt>"
+            f"<dd>{html.escape(display_instance)}</dd>"
+            "</div>"
+        )
+    item_metadata_html = (
+        "<dl class='detail-meta item-metadata'>"
+        f"{''.join(metadata_groups)}"
+        "</dl>"
     )
     action_links = [
-        f"<a class='action-link' href='{markdown_href}'>Source markdown</a>"
+        f"<a class='action-link secondary' href='{markdown_href}'>Markdown source</a>"
     ]
     if document.canonical_url:
         action_links.insert(
@@ -1370,18 +1290,14 @@ def _render_item_page(
         "</nav>"
         "<section class='detail-hero'>"
         "<div class='detail-hero-main'>"
-        "<div class='hero-kicker'>Recoleta Item Note</div>"
+        "<div class='hero-kicker'>Source note</div>"
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
-        f"<p class='detail-dek'>{html.escape(document.excerpt or 'Curated item note with summary and source metadata.')}</p>"
+        f"{item_metadata_html}"
         f"<div class='topic-pill-row'>{topic_links}</div>"
         f"<div class='card-actions detail-actions'>{''.join(action_links)}</div>"
         "</div>"
-        "<aside class='detail-hero-side'>"
-        f"{meta_items}"
-        "</aside>"
         "</section>"
         f"<section class='detail-content'>{document.body_html}</section>"
-        f"{_render_repo_cta_card()}"
     )
     return _render_site_page(
         SitePageShellInput(
@@ -1403,11 +1319,9 @@ def _render_idea_card(
     document: IdeaSiteDocument,
     from_page: Path,
     topic_pages: dict[str, Path],
+    include_kind: bool = False,
 ) -> str:
     idea_href = _site_href(from_page=from_page, to_page=document.page_path)
-    markdown_href = _site_href(
-        from_page=from_page, to_page=document.markdown_asset_path
-    )
     topic_links = (
         _render_topic_link_pills(
             topics=document.topics[:4],
@@ -1420,45 +1334,19 @@ def _render_idea_card(
     topic_links_html = (
         f"<div class='topic-pill-row'>{topic_links}</div>" if topic_links else ""
     )
-    meta_pills = [
-        f"<span class='meta-pill'>{html.escape(document.granularity.title())}</span>"
-    ]
-    if instance_pill := _render_instance_meta_pill(document.instance):
-        meta_pills.append(instance_pill)
-    if document.status and document.status != "succeeded":
-        meta_pills.append(
-            f"<span class='meta-pill subdued'>{html.escape(document.status.title())}</span>"
-        )
-    insight_parts: list[str] = []
-    if document.opportunity_count:
-        insight_parts.append(
-            f"{document.opportunity_count} idea{'s' if document.opportunity_count != 1 else ''}"
-        )
-    if document.evidence_count:
-        insight_parts.append(
-            f"{document.evidence_count} evidence link{'s' if document.evidence_count != 1 else ''}"
-        )
-    insight_html = (
-        "<div class='trend-insight-row'>"
-        f"<span class='trend-insight-copy'>{html.escape(' · '.join(insight_parts))}</span>"
-        "</div>"
-        if insight_parts
-        else ""
-    )
+    meta_parts = [document.granularity.title(), document.period_token]
+    if include_kind:
+        meta_parts.insert(0, "Idea")
+    if display_instance := _display_site_instance(document.instance):
+        meta_parts.append(display_instance)
     return (
         "<article class='trend-card'>"
         "<div class='card-meta-row'>"
-        f"<div class='card-pill-row'>{''.join(meta_pills)}</div>"
-        f"<span class='meta-date'>{html.escape(document.period_token)}</span>"
+        f"<span class='meta-date'>{html.escape(' · '.join(meta_parts))}</span>"
         "</div>"
         f"<h2 class='card-title'><a href='{idea_href}'>{html.escape(document.title)}</a></h2>"
         f"<p class='card-excerpt'>{html.escape(document.excerpt)}</p>"
-        f"{insight_html}"
         f"{topic_links_html}"
-        "<div class='card-actions'>"
-        f"<a class='action-link' href='{idea_href}'>Open brief</a>"
-        f"<a class='action-link secondary' href='{markdown_href}'>Markdown</a>"
-        "</div>"
         "</article>"
     )
 
@@ -1491,22 +1379,9 @@ def _render_idea_page(
     topic_links_html = (
         f"<div class='topic-pill-row'>{topic_links}</div>" if topic_links else ""
     )
-    meta_rows = [
-        ("Window", document.period_token),
-        ("Granularity", document.granularity.title()),
-        ("Ideas", str(document.opportunity_count or 0)),
-        ("Evidence", str(document.evidence_count or 0)),
-        ("Status", (document.status or "Unknown").title()),
-    ]
+    meta_parts = [document.granularity.title(), document.period_token]
     if display_instance := _display_site_instance(document.instance):
-        meta_rows.insert(2, ("Instance", display_instance))
-    meta_items = "".join(
-        "<div class='meta-panel'>"
-        f"<div class='meta-panel-label'>{html.escape(label)}</div>"
-        f"<div class='meta-panel-value'>{html.escape(value)}</div>"
-        "</div>"
-        for label, value in meta_rows
-    )
+        meta_parts.append(display_instance)
     content_html = (
         "<nav class='breadcrumbs'>"
         f"<a href='{breadcrumb_home}'>Home</a>"
@@ -1517,20 +1392,14 @@ def _render_idea_page(
         "</nav>"
         "<section class='detail-hero'>"
         "<div class='detail-hero-main'>"
-        f"<div class='hero-kicker'>Ideas · {html.escape(document.period_token)}</div>"
+        "<div class='hero-kicker'>Research idea</div>"
         f"<h1 class='detail-title'>{html.escape(document.title)}</h1>"
-        f"<p class='detail-dek'>{html.escape(document.excerpt or 'Collected ideas from this window.')}</p>"
+        f"<p class='detail-meta'>{html.escape(' · '.join(meta_parts))}</p>"
         f"{topic_links_html}"
-        "<div class='card-actions detail-actions'>"
-        f"<a class='action-link' href='{markdown_href}'>Source markdown</a>"
+        f"<div class='detail-utility'><a href='{markdown_href}'>Markdown source</a></div>"
         "</div>"
-        "</div>"
-        "<aside class='detail-hero-side'>"
-        f"{meta_items}"
-        "</aside>"
         "</section>"
         f"<section class='detail-content'>{document.body_html}</section>"
-        f"{_render_repo_cta_card()}"
     )
     return _render_site_page(
         SitePageShellInput(
@@ -1637,6 +1506,59 @@ def _render_ideas_index_page(
     )
 
 
+def _home_entry_kind(document: TrendSiteDocument | IdeaSiteDocument) -> str:
+    return "Trend" if isinstance(document, TrendSiteDocument) else "Idea"
+
+
+def _render_home_feature(
+    *,
+    document: TrendSiteDocument | IdeaSiteDocument,
+    page_path: Path,
+    topic_pages: dict[str, Path],
+) -> str:
+    href = _site_href(from_page=page_path, to_page=document.page_path)
+    topic_links = (
+        _render_topic_link_pills(
+            topics=document.topics[:3],
+            from_page=page_path,
+            topic_pages=topic_pages,
+        )
+        if document.topics
+        else ""
+    )
+    topic_html = (
+        f"<div class='topic-pill-row'>{topic_links}</div>" if topic_links else ""
+    )
+    return (
+        "<article class='home-feature'>"
+        "<div class='home-feature-meta'>"
+        f"<span>{_home_entry_kind(document)}</span>"
+        f"<time>{html.escape(document.period_token)}</time>"
+        "</div>"
+        f"<h2 class='home-feature-title'><a href='{href}'>{html.escape(document.title)}</a></h2>"
+        f"<p class='home-feature-excerpt'>{html.escape(document.excerpt)}</p>"
+        f"{topic_html}"
+        "</article>"
+    )
+
+
+def _render_home_feed_row(
+    *,
+    document: TrendSiteDocument | IdeaSiteDocument,
+    page_path: Path,
+) -> str:
+    href = _site_href(from_page=page_path, to_page=document.page_path)
+    return (
+        "<li class='latest-feed-row'>"
+        "<div class='latest-feed-meta'>"
+        f"<span>{_home_entry_kind(document)}</span>"
+        f"<time>{html.escape(document.period_token)}</time>"
+        "</div>"
+        f"<h3><a href='{href}'>{html.escape(document.title)}</a></h3>"
+        "</li>"
+    )
+
+
 def _render_home_page(
     *,
     documents: list[TrendSiteDocument],
@@ -1645,85 +1567,48 @@ def _render_home_page(
     topic_pages: dict[str, Path],
 ) -> str:
     page_path = output_dir / "index.html"
-    latest_cards = "".join(
-        _render_trend_card(
-            document=document,
-            from_page=page_path,
-            topic_pages=topic_pages,
-        )
-        for document in documents[:4]
+    latest_documents = sorted(
+        [*documents, *idea_documents],
+        key=_rendered_document_sort_key,
+        reverse=True,
     )
-    latest_idea_cards = "".join(
-        _render_idea_card(
-            document=document,
-            from_page=page_path,
-            topic_pages=topic_pages,
-        )
-        for document in idea_documents[:4]
-    )
-    topic_grid_data = _collect_home_page_topic_grid_data(
-        documents=documents,
-        idea_documents=idea_documents,
-    )
-
-    topic_cards = _render_topic_card_grid(
-        request=_TopicCardGridRenderRequest(
+    feature_html = (
+        _render_home_feature(
+            document=latest_documents[0],
             page_path=page_path,
             topic_pages=topic_pages,
-            label_by_slug=topic_grid_data.label_by_slug,
-            latest_by_topic=topic_grid_data.latest_by_topic,
-            topic_counter=topic_grid_data.topic_counter,
-            trend_counter=topic_grid_data.trend_counter,
-            idea_counter=topic_grid_data.idea_counter,
-            limit=12,
         )
+        if latest_documents
+        else "<p class='empty-card'>No research notes available yet.</p>"
     )
-
-    archive_preview = "".join(
-        "<li class='timeline-item'>"
-        f"<a href='{_site_href(from_page=page_path, to_page=document.page_path)}'>{html.escape(document.title)}</a>"
-        f"<span>{html.escape(document.period_token)}</span>"
-        "</li>"
-        for document in documents[:8]
+    feed_html = "".join(
+        _render_home_feed_row(document=document, page_path=page_path)
+        for document in latest_documents[1:13]
     )
-
-    generated_span = _collection_window_span([*documents, *idea_documents])
-
     content_html = (
-        "<section class='home-hero-card'>"
-        "<div class='home-hero-copy'>"
-        "<div class='hero-kicker'>Local-first AI research radar</div>"
-        "<h1 class='home-title'>Trends, ideas, and a public research site</h1>"
+        "<section class='home-intro'>"
+        "<h1 class='home-title'>Notes</h1>"
         "<p class='home-dek'>"
-        "Turn arXiv, Hacker News, OpenReview, Hugging Face Daily Papers, and RSS "
-        "into publishable research notes, trends, and ideas that stay local first."
+        "Evidence-led trends and practical ideas from recent technical work."
         "</p>"
-        "<div class='hero-actions'>"
-        f"<a class='action-link' href='{_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html')}'>Browse trends</a>"
-        f"<a class='action-link secondary' href='{_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html')}'>Browse ideas</a>"
-        f"<a class='action-link secondary action-link-external' href='{html.escape(RECOLETA_QUICKSTART_URL, quote=True)}'>5-minute quickstart</a>"
-        "</div>"
-        "</div>"
-        "<div class='hero-stats'>"
-        f"<div class='meta-panel'><div class='meta-panel-label'>Trends</div><div class='meta-panel-value'>{len(documents)}</div></div>"
-        f"<div class='meta-panel'><div class='meta-panel-label'>Ideas</div><div class='meta-panel-value'>{len(idea_documents)}</div></div>"
-        f"<div class='meta-panel'><div class='meta-panel-label'>Topics</div><div class='meta-panel-value'>{len(topic_pages)}</div></div>"
-        f"<div class='meta-panel'><div class='meta-panel-label'>Latest window</div><div class='meta-panel-value'>{html.escape(generated_span or 'n/a')}</div></div>"
+        "<div class='home-primary-links'>"
+        f"<a href='{_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html')}'>All trends</a>"
+        f"<a href='{_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html')}'>All ideas</a>"
+        f"<a class='action-link-external' href='{html.escape(RECOLETA_QUICKSTART_URL, quote=True)}'>Run Recoleta locally</a>"
         "</div>"
         "</section>"
-        "<section class='split-layout paired-collection-layout'>"
-        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Trends', count_text=_count_label(len(documents), singular='trend'), cards_html=latest_cards, empty_copy='No trends available yet.', action_label='Browse trends', action_href=_site_href(from_page=page_path, to_page=output_dir / 'trends' / 'index.html')))}"
-        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Ideas', count_text=_count_label(len(idea_documents), singular='idea'), cards_html=latest_idea_cards, empty_copy='No ideas available yet.', action_label='Browse ideas', action_href=_site_href(from_page=page_path, to_page=output_dir / 'ideas' / 'index.html')))}"
+        "<section class='home-latest' aria-labelledby='latest-heading'>"
+        "<div class='section-heading-row'>"
+        "<h2 class='section-title' id='latest-heading'>Latest</h2>"
+        "</div>"
+        f"{feature_html}"
         "</section>"
-        "<section class='home-section split-layout'>"
-        "<div>"
-        "<h2 class='section-title'>Topic radar</h2>"
-        f"<div class='topic-card-grid'>{topic_cards or '<div class="empty-card">No topics available yet.</div>'}</div>"
+        "<section class='home-feed' aria-labelledby='recent-heading'>"
+        "<div class='section-heading-row'>"
+        "<h2 class='section-title' id='recent-heading'>More recent notes</h2>"
+        f"<a href='{_site_href(from_page=page_path, to_page=output_dir / 'archive.html')}'>Trend archive</a>"
         "</div>"
-        "<div>"
-        "<h2 class='section-title'>Archive preview</h2>"
-        f"<ul class='timeline-list'>{archive_preview or '<li class="timeline-item empty">No archive entries yet.</li>'}</ul>"
-        "</div>"
+        f"<ol class='latest-feed'>{feed_html or '<li class="empty-card">No additional notes yet.</li>'}</ol>"
         "</section>"
     )
 
@@ -1740,59 +1625,6 @@ def _render_home_page(
             repo_url=RECOLETA_REPO_URL,
         )
     )
-
-
-def _collect_home_page_topic_grid_data(
-    *,
-    documents: list[TrendSiteDocument],
-    idea_documents: list[IdeaSiteDocument],
-) -> _TopicCardGridData:
-    data = _TopicCardGridData(
-        topic_counter=Counter(),
-        trend_counter=Counter(),
-        idea_counter=Counter(),
-        latest_by_topic={},
-        label_by_slug={},
-    )
-    _accumulate_topic_grid_documents(
-        documents=documents,
-        total_counter=data.topic_counter,
-        kind_counter=data.trend_counter,
-        latest_by_topic=data.latest_by_topic,
-        label_by_slug=data.label_by_slug,
-    )
-    _accumulate_topic_grid_documents(
-        documents=idea_documents,
-        total_counter=data.topic_counter,
-        kind_counter=data.idea_counter,
-        latest_by_topic=data.latest_by_topic,
-        label_by_slug=data.label_by_slug,
-    )
-    return data
-
-
-def _accumulate_topic_grid_documents(
-    *,
-    documents: list[TrendSiteDocument] | list[IdeaSiteDocument],
-    total_counter: Counter[str],
-    kind_counter: Counter[str],
-    latest_by_topic: dict[str, TrendSiteDocument | IdeaSiteDocument],
-    label_by_slug: dict[str, str],
-) -> None:
-    for document in documents:
-        for topic in document.topics:
-            cleaned = str(topic).strip()
-            if not cleaned:
-                continue
-            slug = _topic_slug(cleaned)
-            total_counter[slug] += 1
-            kind_counter[slug] += 1
-            label_by_slug.setdefault(slug, cleaned)
-            _record_latest_document(
-                latest_by_slug=latest_by_topic,
-                slug=slug,
-                document=document,
-            )
 
 
 def _render_topics_index_page(
@@ -1890,42 +1722,41 @@ def _render_topic_page_collections(
 ) -> str:
     start = (request.pagination.current_page - 1) * request.page_size
     stop = start + request.page_size
-    page_documents = request.documents[start:stop]
-    page_idea_documents = request.idea_documents[start:stop]
+    ordered_documents = sorted(
+        [*request.documents, *request.idea_documents],
+        key=_rendered_document_sort_key,
+        reverse=True,
+    )
+    page_documents = ordered_documents[start:stop]
     cards = "".join(
         _render_trend_card(
             document=document,
             from_page=page_path,
             topic_pages=request.topic_pages,
+            include_kind=True,
         )
-        for document in page_documents
-    )
-    idea_cards = "".join(
-        _render_idea_card(
+        if isinstance(document, TrendSiteDocument)
+        else _render_idea_card(
             document=document,
             from_page=page_path,
             topic_pages=request.topic_pages,
+            include_kind=True,
         )
-        for document in page_idea_documents
+        for document in page_documents
     )
     latest_token = _latest_collection_token(
         [*request.documents, *request.idea_documents]
     )
-    trend_empty_copy = (
-        "No trends available yet."
+    empty_copy = (
+        "No research notes for this topic."
         if request.pagination.current_page == 1
-        else "No trends on this page."
+        else "No research notes on this page."
     )
-    idea_empty_copy = (
-        "No ideas available yet."
-        if request.pagination.current_page == 1
-        else "No ideas on this page."
-    )
+    entries_html = cards or f"<div class='empty-card'>{html.escape(empty_copy)}</div>"
     return (
-        f"{_render_collection_summary_section(summary_label='Topic summary', title=request.topic, trend_count=request.total_documents, idea_count=request.total_idea_documents, latest_token=latest_token, pagination=request.pagination)}"
-        "<section class='split-layout paired-collection-layout'>"
-        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Trends', count_text=_count_label(request.total_documents, singular='trend'), cards_html=cards, empty_copy=trend_empty_copy))}"
-        f"{_render_collection_section(request=_CollectionSectionRenderRequest(title='Ideas', count_text=_count_label(request.total_idea_documents, singular='idea'), cards_html=idea_cards, empty_copy=idea_empty_copy))}"
+        f"{_render_collection_summary_section(summary_label='Topic summary', title=_display_topic_label(request.topic), trend_count=request.total_documents, idea_count=request.total_idea_documents, latest_token=latest_token, pagination=request.pagination)}"
+        "<section class='topic-feed'>"
+        f"<div class='trend-grid'>{entries_html}</div>"
         "</section>"
         f"{_render_collection_pagination(pagination=request.pagination, collection_label=f'{request.topic} topic')}"
     )
@@ -1940,6 +1771,7 @@ def _render_topic_page(
         request=request,
         legacy_kwargs=legacy_kwargs,
     )
+    display_topic = _display_topic_label(normalized_request.topic)
     page_path = normalized_request.pagination.page_path
     content_html = _render_topic_page_collections(
         request=normalized_request,
@@ -1948,12 +1780,12 @@ def _render_topic_page(
     return _render_site_page(
         SitePageShellInput(
             title=_paginated_document_title(
-                title=f"{normalized_request.topic} · Recoleta Trends",
+                title=f"{display_topic} · Recoleta Trends",
                 pagination=normalized_request.pagination,
             ),
             page_path=page_path,
             output_dir=normalized_request.output_dir,
-            page_heading=normalized_request.topic,
+            page_heading=display_topic,
             page_subtitle="",
             body_class="page-topic",
             active_nav="topics",
@@ -2002,42 +1834,50 @@ def _render_archive_page(
 
 _SITE_CSS = """
 :root {
-  --bg-top: #dce7f2;
-  --bg-bottom: #f7fafc;
-  --panel: rgba(255, 255, 255, 0.82);
-  --panel-strong: rgba(250, 252, 255, 0.94);
-  --line: rgba(17, 41, 71, 0.10);
-  --text: #162235;
-  --muted: #60748a;
-  --accent: #1d67c2;
-  --accent-soft: #eaf2fb;
-  --hero-start: #10273f;
-  --hero-end: #2a5f95;
-  --radius-xl: 30px;
-  --radius-lg: 22px;
-  --radius-md: 16px;
-  --shadow-lg: 0 22px 60px rgba(22, 40, 69, 0.10);
-  --shadow-md: 0 14px 36px rgba(22, 40, 69, 0.08);
+  --paper: #ffffff;
+  --surface: #f5f6f8;
+  --surface-hover: #edf2f7;
+  --popover: #ffffff;
+  --ink: #172033;
+  --text: #354052;
+  --muted: #5f6875;
+  --line: #e2e5ea;
+  --line-strong: #c8ced6;
+  --control-border: #7c8796;
+  --accent: #145da0;
+  --accent-dark: #0e477d;
+  --on-accent: #ffffff;
+  --focus-ring: #4f83bd;
+  --disabled-text: #667085;
+  --measure: 680px;
 }
 * {
   box-sizing: border-box;
 }
-html, body {
-  margin: 0;
-  min-height: 100%;
+html {
+  color-scheme: light;
+  background: var(--paper);
 }
 body {
-  color: var(--text);
-  background:
-    radial-gradient(circle at top left, rgba(255, 255, 255, 0.68), transparent 28%),
-    radial-gradient(circle at top right, rgba(29, 103, 194, 0.10), transparent 24%),
-    linear-gradient(180deg, var(--bg-top) 0%, #eaf1f7 35%, var(--bg-bottom) 100%);
-  font-family: "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", "Segoe UI", sans-serif;
+  min-height: 100%;
+  margin: 0;
   overflow-x: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", sans-serif;
+  font-size: 16px;
+  line-height: 1.62;
+  text-rendering: optimizeLegibility;
 }
 a {
   color: var(--accent);
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+a:hover {
+  color: var(--accent-dark);
 }
 img,
 svg,
@@ -2047,58 +1887,50 @@ iframe {
   height: auto;
 }
 .site-shell {
-  position: relative;
-  width: min(1240px, calc(100% - 32px));
+  width: min(1120px, calc(100% - 48px));
   margin: 0 auto;
-  padding: 22px 0 48px;
+  padding: 0 0 64px;
 }
 .site-header {
-  position: sticky;
-  top: 12px;
-  z-index: 20;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 20px;
-  padding: 16px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.42);
-  border-radius: 999px;
-  background: rgba(245, 248, 252, 0.72);
-  backdrop-filter: blur(18px);
-  box-shadow: var(--shadow-md);
+  gap: 28px;
+  min-height: 72px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--line-strong);
 }
 .nav-brand-wrap {
   min-width: 0;
 }
 .nav-brand {
-  display: inline-block;
-  color: #10273f;
-  font-family: "Songti SC", "STSong", Georgia, serif;
-  font-size: 24px;
-  letter-spacing: -0.03em;
+  color: var(--ink);
+  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", Georgia, serif;
+  font-size: 22px;
   font-weight: 700;
+  letter-spacing: -0.015em;
+  text-decoration: none;
+  white-space: nowrap;
 }
 .nav-caption {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
-.nav-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  min-width: 0;
-}
-.nav-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 14px;
-}
+.nav-links,
+.nav-actions,
 .nav-utility-cluster {
   display: flex;
   align-items: center;
+}
+.nav-links {
+  min-width: 0;
+  gap: 22px;
+}
+.nav-actions {
+  justify-content: flex-end;
+  gap: 16px;
+}
+.nav-utility-cluster {
   min-width: 0;
 }
 .nav-utility-cluster:empty {
@@ -2107,652 +1939,553 @@ iframe {
 .nav-link {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 10px 14px;
-  border-radius: 999px;
-  color: #2f4b69;
-  font-size: 13px;
+  min-height: 44px;
+  padding: 2px 0 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text);
+  font-size: 14px;
   font-weight: 600;
-}
-.nav-link.nav-link-external {
-  background: rgba(29, 103, 194, 0.10);
-  color: #1b579d;
-}
-.nav-link.nav-link-external::after,
-.action-link.action-link-external::after {
-  content: "\\2197";
-  display: inline-block;
-  margin-left: 0.45em;
-  font-size: 0.82em;
-  line-height: 1;
-}
-.nav-link.nav-link-repo {
-  position: relative;
-  padding: 8px 0;
-  border-radius: 0;
-  background: transparent;
-  color: #4a657f;
+  text-decoration: none;
   white-space: nowrap;
 }
-.nav-link.nav-link-repo.nav-link-external {
-  background: transparent;
-}
-.nav-link.nav-link-repo:hover {
-  color: #1b579d;
-}
-.nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo {
-  padding-left: 16px;
-}
-.nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 1px;
-  height: 22px;
-  transform: translateY(-50%);
-  background: rgba(17, 41, 71, 0.12);
-}
+.nav-link:hover,
 .nav-link.is-active {
-  background: rgba(29, 103, 194, 0.12);
-  color: #164e94;
+  border-bottom-color: var(--accent);
+  color: var(--accent-dark);
+}
+.nav-link-external::after,
+.action-link-external::after {
+  content: "↗";
+  margin-left: 0.35em;
+  font-size: 0.78em;
+}
+.nav-link-repo {
+  color: var(--muted);
 }
 .site-main {
   display: grid;
-  gap: 18px;
+  gap: 36px;
 }
 .page-hero,
-.home-hero-card,
-.detail-hero {
-  position: relative;
-  overflow: hidden;
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
+.home-intro {
+  padding: 40px 0 34px;
 }
 .page-hero {
-  padding: 28px 30px 26px;
-  border: 1px solid rgba(255, 255, 255, 0.20);
-  background:
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.18), transparent 34%),
-    linear-gradient(135deg, var(--hero-start) 0%, var(--hero-end) 100%);
-  color: #f5fbff;
+  border-bottom: 1px solid var(--line-strong);
 }
-.hero-kicker {
-  margin-bottom: 8px;
-  color: rgba(235, 242, 252, 0.82);
-  font-size: 11px;
+.hero-kicker,
+.section-kicker,
+.section-label,
+.idea-opportunity-label,
+.idea-meta-pill-label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.page-title,
+.home-title,
+.detail-title,
+.section-title,
+.card-title,
+.topic-card-title,
+.home-feature-title,
+.detail-content h2,
+.detail-content h3 {
+  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", Georgia, serif;
 }
 .page-title,
 .home-title,
 .detail-title {
   margin: 0;
-  font-family: "Songti SC", "STSong", Georgia, serif;
-  font-size: clamp(34px, 5vw, 54px);
-  line-height: 0.98;
-  letter-spacing: -0.04em;
+  color: var(--ink);
+  font-size: clamp(38px, 5.2vw, 64px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.08;
 }
-.home-hero-card,
-.detail-hero,
-.home-section,
-.detail-content,
-.repo-cta-card,
-.pager-row,
-.archive-block {
-  border: 1px solid rgba(255, 255, 255, 0.34);
-  background: var(--panel);
-  backdrop-filter: blur(16px);
+.home-intro {
+  max-width: 820px;
 }
-.home-hero-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.9fr);
-  gap: 20px;
-  padding: 24px;
+.home-title {
+  max-width: 17ch;
 }
-.home-dek,
-.detail-dek {
-  max-width: 70ch;
-  color: var(--muted);
-  font-size: 16px;
-  line-height: 1.6;
-}
-.hero-actions,
-.card-actions,
-.detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.home-hero-copy,
-.hero-stats,
-.detail-hero-main,
-.detail-hero-side,
-.trend-card,
-.topic-card,
-.pager-card {
-  min-width: 0;
-}
-.hero-actions {
-  margin-top: 18px;
-}
-.hero-stats,
-.detail-hero-side {
-  display: grid;
-  gap: 10px;
-}
-.detail-hero-main {
-  display: grid;
-  align-content: start;
-}
-.meta-panel {
-  padding: 14px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.46);
-  border-radius: var(--radius-md);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(245, 249, 253, 0.86));
-}
-.meta-panel-label {
-  margin-bottom: 6px;
-  color: #7187a0;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.meta-panel-value {
-  color: #1f3248;
-  font-size: 16px;
-  line-height: 1.35;
-  font-weight: 600;
-}
-.home-section,
-.detail-content,
-.repo-cta-card,
-.archive-block {
-  padding: 20px;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-}
-.repo-cta-card {
-  display: grid;
-  gap: 12px;
-}
-.repo-cta-card .section-title {
-  margin-bottom: 0;
-}
-.repo-cta-copy {
-  margin: 0;
-  max-width: 72ch;
-  color: #4f647a;
+.home-dek {
+  max-width: 62ch;
+  margin: 22px 0 0;
+  color: var(--text);
+  font-size: 18px;
   line-height: 1.65;
 }
-.split-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
-  gap: 18px;
+.home-primary-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  margin-top: 22px;
+}
+.home-primary-links a {
+  font-weight: 650;
+}
+.home-latest,
+.home-feed,
+.home-section,
+.collection-summary-section,
+.archive-block {
+  min-width: 0;
 }
 .section-heading-row {
   display: flex;
-  align-items: center;
+  align-items: end;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 16px;
 }
 .section-heading-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-}
-.summary-heading {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-.section-kicker {
-  color: #6a8098;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  gap: 12px;
 }
 .section-title {
-  margin: 0 0 12px;
-  color: #183453;
-  font-family: "Songti SC", "STSong", Georgia, serif;
-  font-size: 28px;
-  letter-spacing: -0.03em;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(26px, 3vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  line-height: 1.2;
 }
 .page-section-title {
-  margin-bottom: 18px;
+  font-size: clamp(34px, 4vw, 48px);
 }
-.summary-heading .section-title {
-  margin-bottom: 0;
+.meta-date,
+.topic-card-meta,
+.timeline-item span,
+.archive-item span,
+.latest-feed-meta,
+.home-feature-meta {
+  color: var(--muted);
+  font-size: 14px;
 }
-.paired-collection-layout {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
+.home-feature {
+  padding: clamp(24px, 4vw, 44px);
+  border-top: 3px solid var(--ink);
+  background: var(--surface);
 }
-.collection-summary-section {
+.home-feature-meta {
+  display: flex;
+  gap: 12px;
+}
+.home-feature-meta span,
+.latest-feed-meta span {
+  color: var(--accent-dark);
+  font-weight: 700;
+}
+.home-feature-title {
+  max-width: 22ch;
+  margin: 12px 0;
+  font-size: clamp(32px, 4.6vw, 52px);
+  letter-spacing: -0.028em;
+  line-height: 1.12;
+}
+.home-feature-title a,
+.card-title a,
+.topic-card-title a,
+.latest-feed-row h3 a,
+.timeline-item a,
+.archive-item a,
+.pager-card {
+  color: inherit;
+  text-decoration: none;
+}
+.home-feature-title a:hover,
+.card-title a:hover,
+.topic-card-title a:hover,
+.latest-feed-row h3 a:hover,
+.timeline-item a:hover,
+.archive-item a:hover,
+.pager-card:hover {
+  color: var(--accent-dark);
+}
+.home-feature-excerpt {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.68;
+}
+.latest-feed,
+.timeline-list,
+.archive-list,
+.source-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.latest-feed {
+  border-top: 1px solid var(--line-strong);
+}
+.latest-feed-row {
   display: grid;
-  gap: 16px;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 24px;
+  align-items: baseline;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
 }
-.summary-stats {
+.latest-feed-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.latest-feed-row h3 {
+  margin: 0;
+  font-family: "Songti SC", "STSong", "Noto Serif CJK SC", Georgia, serif;
+  font-size: 22px;
+  line-height: 1.32;
+}
+.trend-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-.collection-section {
-  display: grid;
-  gap: 14px;
-}
-.collection-section .trend-grid {
   grid-template-columns: 1fr;
 }
-.trend-grid,
-.topic-card-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+.trend-card {
+  min-width: 0;
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
 }
-.trend-card,
-.topic-card,
-.pager-card {
-  display: grid;
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background:
-    linear-gradient(180deg, var(--panel-strong) 0%, rgba(245, 249, 253, 0.92) 100%);
+.trend-card:first-child {
+  border-top-color: var(--line-strong);
 }
 .card-meta-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
 }
-.card-pill-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.card-title,
+.topic-card-title {
+  margin: 8px 0;
+  color: var(--ink);
+  font-size: 28px;
+  letter-spacing: -0.018em;
+  line-height: 1.22;
 }
-.meta-pill,
-.topic-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(29, 103, 194, 0.14);
-  background: rgba(29, 103, 194, 0.08);
-  color: #225693;
-  font-size: 12px;
-  font-weight: 600;
-}
-.nav-link,
-.meta-pill,
-.topic-pill,
-.action-link,
-.detail-summary {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: normal;
-}
-.meta-pill.subdued {
-  border-color: rgba(17, 41, 71, 0.08);
-  background: rgba(255, 255, 255, 0.65);
-  color: var(--muted);
+.card-excerpt {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.68;
 }
 .topic-pill-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 5px 16px;
+  margin-top: 12px;
 }
-.topic-pill-link:hover,
-.action-link:hover,
-.trend-card a:hover,
-.topic-card a:hover {
-  opacity: 0.85;
-}
-.nav-brand:focus-visible,
-.nav-link:focus-visible,
-.action-link:focus-visible,
-.topic-pill-link:focus-visible,
-.pager-card:focus-visible,
-.pagination-link:focus-visible,
-.breadcrumbs a:focus-visible,
-.language-switcher-link:focus-visible {
-  opacity: 1;
-  outline: 2px solid rgba(29, 103, 194, 0.36);
-  outline-offset: 3px;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92);
-}
-.meta-date {
-  color: #6e849d;
+.topic-pill,
+.meta-pill {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
   font-size: 13px;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  line-height: 1.5;
 }
-.card-title,
+.topic-pill-link {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.meta-pill.subdued {
+  color: var(--muted);
+}
+.topic-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--line-strong);
+  border-left: 1px solid var(--line);
+}
+.topic-card {
+  min-width: 0;
+  padding: 20px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+}
 .topic-card-title {
-  margin: 14px 0 10px;
-  color: #15253a;
-  font-family: "Songti SC", "STSong", Georgia, serif;
-  font-size: 26px;
-  line-height: 1.08;
-  letter-spacing: -0.03em;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  margin-top: 0;
+  font-size: 22px;
 }
-.card-title a,
-.topic-card-title a {
-  color: inherit;
+.collection-summary-section {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line-strong);
 }
-.card-excerpt {
-  margin: 0 0 14px;
-  color: #4f647a;
-  line-height: 1.62;
+.summary-heading {
+  min-width: 0;
 }
-.trend-insight-row,
-.detail-insight-row {
+.summary-stats {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  gap: 12px 28px;
+}
+.meta-panel {
+  display: flex;
   gap: 8px;
+  padding: 0;
 }
-.trend-insight-row {
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  border: 1px solid rgba(29, 103, 194, 0.12);
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(239, 245, 252, 0.92), rgba(247, 250, 254, 0.96));
+.meta-panel-label,
+.meta-panel-value {
+  font-size: 14px;
+  line-height: 1.5;
 }
-.trend-insight-badge,
-.detail-insight-badge {
+.meta-panel-label {
+  color: var(--muted);
+}
+.meta-panel-value {
+  color: var(--ink);
+  font-weight: 650;
+}
+.empty-card {
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+.action-link,
+.pagination-link {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: #1d67c2;
-  color: #f7fbff;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.trend-insight-copy,
-.detail-insight-copy {
-  color: #33506f;
-  font-size: 13px;
-  font-weight: 600;
-}
-.trend-card .card-actions,
-.detail-actions {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+  justify-content: center;
+  min-height: 44px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 650;
 }
 .action-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 999px;
-  background: #1d67c2;
-  color: white;
-  font-size: 13px;
-  font-weight: 700;
+  padding: 0;
+  background: transparent;
+  text-decoration: underline;
 }
-.action-link.secondary {
-  background: rgba(29, 103, 194, 0.10);
-  color: #1b579d;
+.card-actions,
+.hero-actions,
+.detail-actions,
+.detail-utility {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.detail-actions,
+.detail-utility {
+  margin-top: 14px;
+}
+.breadcrumbs,
+.detail-hero,
+.detail-content,
+.pager-row {
+  width: min(var(--measure), 100%);
+  margin-inline: auto;
 }
 .breadcrumbs {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
   align-items: center;
-  margin-bottom: 8px;
-  color: #7489a1;
+  margin-bottom: -18px;
+  color: var(--muted);
   font-size: 13px;
 }
 .detail-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.9fr);
-  gap: 18px;
-  padding: 22px;
+  padding: 18px 0 28px;
+  border-bottom: 1px solid var(--line-strong);
 }
-.detail-summary {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  margin-bottom: 6px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgba(29, 103, 194, 0.09);
-  color: #1c5da8;
+.detail-hero-main {
+  min-width: 0;
+}
+.detail-title {
+  max-width: 24ch;
+  font-size: clamp(38px, 5vw, 58px);
+}
+.detail-meta {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.item-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 24px;
+  max-width: 100%;
+}
+.item-metadata-group {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0 7px;
+  align-items: baseline;
+  min-width: 0;
+}
+.item-metadata-authors {
+  flex: 1 0 100%;
+  max-width: 100%;
+}
+.item-metadata dt,
+.item-metadata dd {
+  margin: 0;
+}
+.item-metadata dt {
+  color: var(--muted);
   font-size: 13px;
   font-weight: 700;
+  line-height: 1.5;
 }
-.detail-insight-row {
-  margin-bottom: 8px;
+.item-metadata dd {
+  min-width: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.item-metadata-fact dd,
+.item-author,
+.item-author-more {
+  white-space: nowrap;
+}
+.item-author {
+  display: inline-block;
+}
+.item-author-more {
+  color: var(--muted);
 }
 .detail-content {
-  padding: 0;
+  min-width: 0;
+  color: var(--text);
 }
 .detail-content .document-flow {
-  padding: 16px;
+  padding: 0;
 }
-.detail-content .summary-grid {
+.detail-content .summary-grid,
+.detail-content .idea-opportunity-grid,
+.detail-content .cluster-columns {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-.detail-content .summary-grid.summary-grid-single {
   grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.detail-content .surface-card,
+.detail-content .idea-opportunity-card,
+.detail-content .cluster-card {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 30px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+}
+.detail-content .document-flow > .surface-card:last-child,
+.detail-content .document-flow > .summary-grid:last-child > .surface-card:last-child,
+.detail-content .cluster-columns > .cluster-card:last-child,
+.detail-content .idea-opportunity-grid > .idea-opportunity-card:last-child {
+  border-bottom: 0;
+}
+.detail-content .summary-grid .surface-card:first-child,
+.detail-content > .document-flow > .surface-card:first-child {
+  padding-top: 0;
 }
 .detail-content .idea-section-head {
   display: flex;
-  align-items: center;
+  align-items: end;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-}
-.detail-content .surface-card {
-  margin-top: 14px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background:
-    linear-gradient(180deg, var(--panel-strong), rgba(244, 248, 252, 0.92));
-}
-.detail-content .summary-grid .surface-card {
-  margin-top: 0;
-}
-.detail-content .summary-card-primary {
-  background:
-    linear-gradient(180deg, rgba(235, 243, 253, 0.95), rgba(248, 251, 254, 0.96));
-}
-.detail-content .summary-card-secondary {
-  background:
-    linear-gradient(180deg, rgba(247, 250, 254, 0.95), rgba(251, 252, 254, 0.96));
+  gap: 16px;
+  margin-bottom: 8px;
 }
 .detail-content .idea-opportunities-section {
-  background:
-    radial-gradient(circle at top right, rgba(29, 103, 194, 0.08), transparent 30%),
-    linear-gradient(180deg, rgba(243, 248, 254, 0.96), rgba(250, 252, 255, 0.98));
-}
-.detail-content .idea-section-intro {
-  margin-bottom: 14px;
+  padding-bottom: 0;
 }
 .detail-content .idea-opportunity-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  align-items: start;
+  border-top: 0;
 }
 .detail-content .idea-opportunity-card {
-  display: grid;
-  gap: 14px;
   align-self: start;
-  padding: 18px;
-  border: 1px solid rgba(24, 52, 83, 0.10);
-  border-radius: 18px;
-  background:
-    linear-gradient(180deg, rgba(252, 254, 255, 0.98), rgba(247, 250, 254, 0.96));
 }
 .detail-content .idea-opportunity-head,
-.detail-content .idea-opportunity-body {
+.detail-content .idea-opportunity-body,
+.detail-content .idea-opportunity-block {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
-.detail-content .idea-opportunity-title {
-  margin: 0;
-  color: #183453;
-  font-family: "Songti SC", "STSong", Georgia, serif;
-  font-size: 24px;
-  line-height: 1.08;
+.detail-content .idea-opportunity-title,
+.detail-content .prose h3,
+.detail-content .cluster-card h3 {
+  margin: 0 0 12px;
+  color: var(--ink);
+  font-size: 27px;
+  letter-spacing: -0.012em;
+  line-height: 1.24;
 }
 .detail-content .idea-opportunity-meta-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 8px 18px;
 }
-.detail-content .idea-meta-pill {
-  background: rgba(255, 255, 255, 0.88);
-  border-color: rgba(24, 52, 83, 0.10);
-  color: #34506f;
-}
-.detail-content .idea-meta-pill-label {
-  color: #70849a;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.detail-content .idea-meta-pill,
+.detail-content .idea-opportunity-block-role {
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 .detail-content .idea-meta-pill-separator {
-  margin: 0 6px;
-  color: #9aabc0;
-}
-.detail-content .idea-opportunity-block {
-  display: grid;
-  gap: 6px;
-}
-.detail-content .idea-opportunity-block-role {
-  padding: 12px 14px;
-  border: 1px solid rgba(24, 52, 83, 0.10);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.82);
-}
-.detail-content .idea-opportunity-label {
-  color: #6a8098;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.detail-content .idea-opportunity-copy {
-  color: #213246;
-}
-.detail-content .idea-opportunity-role-value {
-  color: #34506f;
-  font-size: 14px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: normal;
-  display: block;
-}
-.detail-content .idea-opportunity-copy p,
-.detail-content .idea-opportunity-copy ul,
-.detail-content .idea-opportunity-copy ol {
-  margin: 0;
+  margin: 0 5px;
+  color: var(--line-strong);
 }
 .detail-content .idea-opportunity-block-evidence {
-  padding-top: 12px;
-  border-top: 1px dashed rgba(24, 52, 83, 0.12);
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
-.detail-content .idea-evidence-list ul,
-.detail-content .idea-evidence-list ol {
-  padding-inline-start: 1.08em;
-}
-.detail-content .highlight-card {
-  background:
-    linear-gradient(180deg, rgba(247, 250, 254, 0.95), rgba(241, 247, 253, 0.96));
-}
-.detail-content .section-label {
-  margin: 0 0 10px;
-  color: #6a8098;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
+.detail-content .idea-opportunity-role-value,
+.detail-content .idea-opportunity-copy,
 .detail-content .prose,
 .detail-content .cluster-body {
-  color: #213246;
-  font-size: 15px;
-  line-height: 1.66;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.7;
 }
 .detail-content .prose p,
-.detail-content .cluster-body p {
-  margin: 0 0 10px;
-}
-.detail-content .prose h3,
-.detail-content .cluster-card h3 {
-  margin: 14px 0 8px;
-  color: #16395c;
-  font-family: "Songti SC", "STSong", Georgia, serif;
-  font-size: 24px;
-  line-height: 1.08;
+.detail-content .cluster-body p,
+.detail-content .idea-opportunity-copy p {
+  margin: 0 0 1em;
 }
 .detail-content .prose h4,
 .detail-content .cluster-body h4 {
-  margin: 12px 0 7px;
-  color: #6e849d;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  margin: 24px 0 8px;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.4;
 }
 .detail-content .prose ul,
 .detail-content .prose ol,
 .detail-content .cluster-body ul,
-.detail-content .cluster-body ol {
-  margin: 8px 0 10px;
-  padding-inline-start: 1.08em;
+.detail-content .cluster-body ol,
+.detail-content .idea-opportunity-copy ul,
+.detail-content .idea-opportunity-copy ol {
+  margin: 10px 0 18px;
+  padding-inline-start: 1.4em;
 }
-.detail-content .prose li,
-.detail-content .cluster-body li {
-  margin: 0 0 7px;
-  padding-left: 0.12em;
+.detail-content li {
+  margin-bottom: 8px;
 }
 .detail-content .prose blockquote,
 .detail-content .cluster-body blockquote {
-  margin: 12px 0;
-  padding: 12px 14px;
-  border-left: 3px solid rgba(29, 103, 194, 0.42);
-  border-radius: 14px;
-  background: var(--accent-soft);
-  color: #24476d;
+  margin: 20px 0;
+  padding: 2px 0 2px 18px;
+  border-left: 3px solid var(--accent);
+  color: var(--text);
 }
 .detail-content .prose table,
 .detail-content .cluster-body table {
   display: block;
-  max-width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
   width: 100%;
-  margin: 12px 0;
+  max-width: 100%;
+  margin: 18px 0;
+  overflow-x: auto;
   border-collapse: collapse;
 }
 .detail-content .prose pre,
@@ -2764,68 +2497,80 @@ iframe {
 .detail-content .prose td,
 .detail-content .cluster-body th,
 .detail-content .cluster-body td {
-  padding: 8px;
-  border: 1px solid #d8e1eb;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
 }
 .detail-content .prose th,
 .detail-content .cluster-body th {
-  background: #eff5fa;
+  background: var(--surface);
 }
 .detail-content .topic-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
 }
-.detail-content .topic-pill {
-  justify-content: center;
-  min-height: 40px;
-  background: rgba(248, 251, 255, 0.98);
-  border: 1px solid #dbe4ef;
-  color: #425a74;
+.detail-source-list .source-list {
+  padding-left: 1.4em;
+  list-style: decimal;
 }
-.detail-content .cluster-columns {
-  column-count: 2;
-  column-gap: 14px;
+.source-list-item {
+  margin-bottom: 14px;
+  padding-left: 4px;
 }
-.detail-content .cluster-card {
-  display: inline-block;
-  width: 100%;
-  margin: 0 0 14px;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: rgba(251, 253, 255, 0.96);
-  break-inside: avoid;
+.source-list-title a {
+  font-weight: 650;
+}
+.source-list-meta {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 13px;
 }
 .pager-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  padding: 16px;
+  gap: 28px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-strong);
+}
+.pager-card {
+  display: block;
+  padding: 18px 0;
 }
 .pager-card span {
   display: block;
-  margin-bottom: 8px;
-  color: #6f859d;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 13px;
 }
 .pager-card strong {
-  color: #16304f;
   font-size: 18px;
-  line-height: 1.32;
+  line-height: 1.4;
+}
+.timeline-list,
+.archive-list {
+  display: grid;
+}
+.timeline-item,
+.archive-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  padding: 15px 0;
+  border-top: 1px solid var(--line);
+}
+.archive-block + .archive-block {
+  margin-top: 36px;
 }
 .collection-pagination {
   display: grid;
   grid-template-columns: minmax(96px, 1fr) auto minmax(96px, 1fr);
   align-items: center;
   gap: 12px;
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
+  margin-top: 26px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line-strong);
 }
 .pagination-center,
 .pagination-pages {
@@ -2834,39 +2579,32 @@ iframe {
   justify-content: center;
 }
 .pagination-pages {
-  gap: 6px;
+  gap: 5px;
 }
 .pagination-link,
 .pagination-ellipsis,
 .pagination-status {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 40px;
-  min-height: 40px;
-  padding: 0 12px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 700;
+  min-width: 42px;
+  min-height: 44px;
+  padding: 0 10px;
 }
 .pagination-link {
-  border: 1px solid rgba(29, 103, 194, 0.14);
-  background: rgba(248, 251, 255, 0.88);
-  color: #225693;
+  border: 1px solid var(--control-border);
+  background: var(--surface);
+  text-decoration: none;
 }
-.pagination-link:hover {
-  border-color: rgba(29, 103, 194, 0.28);
-  background: var(--accent-soft);
+.pagination-link:hover,
+.pagination-link.is-current {
+  border-color: var(--accent);
 }
 .pagination-link.is-current {
-  border-color: #1d67c2;
-  background: #1d67c2;
-  color: #ffffff;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 .pagination-link.is-disabled {
-  border-color: rgba(17, 41, 71, 0.08);
-  background: rgba(255, 255, 255, 0.46);
-  color: #93a2b2;
+  border-color: var(--line);
+  background: transparent;
+  color: var(--disabled-text);
 }
 .pagination-direction {
   min-width: 96px;
@@ -2878,210 +2616,208 @@ iframe {
   justify-self: end;
 }
 .pagination-ellipsis {
-  min-width: 28px;
-  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--muted);
 }
 .pagination-status {
   display: none;
-  color: #425a74;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
   white-space: nowrap;
 }
-.timeline-list,
-.archive-list {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.nav-brand:focus-visible,
+.nav-link:focus-visible,
+.action-link:focus-visible,
+.topic-pill-link:focus-visible,
+.pager-card:focus-visible,
+.pagination-link:focus-visible,
+.breadcrumbs a:focus-visible,
+.language-switcher-link:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
 }
-.timeline-item,
-.archive-item {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: rgba(251, 253, 255, 0.86);
+:lang(zh) .page-title,
+:lang(zh) .home-title,
+:lang(zh) .detail-title,
+:lang(zh) .section-title,
+:lang(zh) .card-title,
+:lang(zh) .topic-card-title,
+:lang(zh) .home-feature-title,
+:lang(ja) .page-title,
+:lang(ja) .home-title,
+:lang(ja) .detail-title,
+:lang(ja) .section-title,
+:lang(ja) .card-title,
+:lang(ja) .topic-card-title,
+:lang(ja) .home-feature-title,
+:lang(ko) .page-title,
+:lang(ko) .home-title,
+:lang(ko) .detail-title,
+:lang(ko) .section-title,
+:lang(ko) .card-title,
+:lang(ko) .topic-card-title,
+:lang(ko) .home-feature-title {
+  letter-spacing: 0;
+  line-height: 1.25;
 }
-.timeline-item a,
-.archive-item a {
-  color: #162f4d;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-.timeline-item span,
-.archive-item span,
-.topic-card-meta {
-  color: #6b8098;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-.empty-card {
-  padding: 24px;
-  border: 1px dashed rgba(17, 41, 71, 0.16);
-  border-radius: 18px;
-  color: var(--muted);
-}
-@media (max-width: 1080px) {
-  .home-hero-card,
-  .detail-hero,
-  .split-layout {
-    grid-template-columns: 1fr;
-  }
-  .trend-grid,
-  .topic-card-grid,
-  .summary-stats,
-  .detail-content .summary-grid,
-  .detail-content .idea-opportunity-grid,
-  .pager-row {
-    grid-template-columns: 1fr;
-  }
-}
-@media (max-width: 1040px) {
-  .site-header {
-    flex-wrap: wrap;
-    align-items: center;
-    column-gap: 14px;
-    row-gap: 12px;
-    padding: 14px 16px 16px;
-    border-radius: 30px;
-  }
-  .nav-brand-wrap {
-    flex: 1 1 auto;
-  }
-  .nav-brand {
-    font-size: 22px;
-    white-space: nowrap;
-  }
-  .nav-links {
-    order: 3;
-    flex: 1 1 100%;
-    gap: 8px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(17, 41, 71, 0.08);
-  }
-  .nav-links .nav-link {
-    padding: 8px 12px;
-    font-size: 12px;
-  }
-  .nav-actions {
-    flex: 0 0 auto;
-    margin-left: auto;
-    gap: 12px;
-  }
-  .nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo {
-    padding-left: 12px;
-  }
-  .nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo::before {
-    height: 18px;
-  }
-}
-@media (max-width: 820px) {
-  .site-header {
-    align-items: stretch;
-    row-gap: 10px;
-  }
-  .nav-brand-wrap {
-    width: 100%;
-    flex: 1 1 100%;
-  }
-  .nav-actions {
-    width: 100%;
-    margin-left: 0;
-    justify-content: space-between;
-    gap: 10px;
-  }
-  .nav-utility-cluster {
-    flex: 1 1 auto;
-  }
-  .nav-links {
-    padding-top: 8px;
-  }
-}
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .site-shell {
-    width: calc(100% - 16px);
-    max-width: 100%;
-    padding-top: 12px;
+    width: min(100% - 32px, 820px);
   }
   .site-header {
-    position: static;
-    flex-direction: column;
-    align-items: stretch;
-    border-radius: 24px;
-    padding: 16px;
+    grid-template-columns: 1fr auto;
+    gap: 0 20px;
+    min-height: 0;
+    padding: 14px 0 10px;
   }
   .nav-links {
-    width: 100%;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    gap: 20px;
+    overflow-x: auto;
+    padding-top: 5px;
+    scrollbar-width: none;
   }
-  .nav-actions {
-    width: 100%;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-  }
-  .nav-links .nav-link {
-    flex: 1 1 calc(50% - 5px);
-    justify-content: center;
-    text-align: center;
-  }
-  .nav-utility-cluster {
-    flex: 1 1 auto;
-  }
-  .nav-actions .nav-link.nav-link-repo {
-    flex: 0 0 auto;
-  }
-  .nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo {
-    padding-left: 0;
-  }
-  .nav-actions[data-has-language-switcher='true'] .nav-link.nav-link-repo::before {
+  .nav-links::-webkit-scrollbar {
     display: none;
   }
-  .page-hero,
-  .home-hero-card,
-  .home-section,
-  .detail-hero,
-  .detail-content,
-  .repo-cta-card,
-  .archive-block {
-    padding-left: 16px;
-    padding-right: 16px;
+  .nav-actions {
+    grid-column: 2;
+    grid-row: 1;
   }
-  .detail-content .document-flow {
-    padding: 12px 0 0;
+  .nav-brand-wrap {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .topic-card-grid {
+    grid-template-columns: 1fr;
+  }
+  .topic-card-grid {
+    border-left: 0;
+  }
+  .topic-card {
+    padding-inline: 0;
+    border-right: 0;
+  }
+}
+@media (max-width: 600px) {
+  .site-shell {
+    width: calc(100% - 28px);
+    padding-bottom: 44px;
+  }
+  .site-header {
+    margin-bottom: 16px;
+  }
+  .nav-brand {
+    font-size: 20px;
+  }
+  .nav-links {
+    gap: 18px;
+  }
+  .nav-link {
+    font-size: 13px;
+  }
+  .nav-link-repo {
+    min-height: 40px;
+    font-size: 13px;
+  }
+  .site-main {
+    gap: 28px;
+  }
+  .home-intro,
+  .page-hero {
+    padding: 24px 0 26px;
+  }
+  .page-title,
+  .home-title {
+    font-size: clamp(34px, 11vw, 46px);
+  }
+  .detail-title {
+    max-width: none;
+    font-size: clamp(1.75rem, 7.5vw, 2rem);
+    letter-spacing: -0.015em;
+    line-height: 1.16;
+  }
+  :lang(zh) .detail-title,
+  :lang(ja) .detail-title,
+  :lang(ko) .detail-title {
+    letter-spacing: 0;
+    line-height: 1.22;
+  }
+  .home-dek,
+  .home-feature-excerpt {
+    font-size: 16px;
+  }
+  .home-feature {
+    padding: 22px 18px;
+  }
+  .home-feature-title {
+    font-size: 32px;
   }
   .section-heading-row {
-    align-items: flex-start;
+    align-items: start;
   }
-  .section-heading-actions {
-    width: 100%;
-    justify-content: flex-start;
+  .collection-summary-section .section-heading-row {
+    flex-direction: column;
+    gap: 8px;
   }
-  .hero-actions .action-link,
-  .card-actions .action-link,
-  .detail-actions .action-link {
-    flex: 1 1 100%;
-    justify-content: center;
-  }
-  .detail-summary {
-    width: 100%;
-  }
-  .trend-insight-row,
-  .detail-insight-row {
-    align-items: flex-start;
-  }
-  .detail-content .topic-grid,
-  .detail-content .cluster-columns {
+  .latest-feed-row {
     grid-template-columns: 1fr;
-    column-count: 1;
+    gap: 5px;
+    padding: 16px 0;
+  }
+  .latest-feed-meta {
+    justify-content: flex-start;
+    gap: 12px;
+  }
+  .card-title {
+    font-size: 25px;
+  }
+  .breadcrumbs {
+    margin-bottom: -12px;
+  }
+  .detail-hero {
+    margin-bottom: -8px;
+    padding: 8px 0 16px;
+  }
+  .detail-hero .hero-kicker {
+    margin-bottom: 6px;
+  }
+  .detail-meta {
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .item-metadata {
+    gap: 7px 18px;
+  }
+  .item-metadata-group {
+    gap: 0 6px;
+  }
+  .item-metadata-authors {
+    margin-bottom: 1px;
+  }
+  .detail-hero .topic-pill-row,
+  .detail-actions,
+  .detail-utility {
+    margin-top: 10px;
+  }
+  .detail-content .surface-card,
+  .detail-content .idea-opportunity-card,
+  .detail-content .cluster-card {
+    padding: 24px 0;
+  }
+  .pager-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
   .timeline-item,
   .archive-item {
-    flex-direction: column;
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
   .collection-pagination {
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -3092,13 +2828,11 @@ iframe {
   }
   .pagination-status {
     display: inline-flex;
-    min-height: 44px;
     padding: 0 4px;
   }
   .pagination-direction {
     min-width: 0;
-    min-height: 44px;
-    padding: 0 12px;
+    padding-inline: 10px;
   }
 }
 """
@@ -3671,20 +3405,26 @@ def _trend_cluster_cards(
 ) -> list[str]:
     cards: list[str] = []
     for cluster in clusters:
+        evidence_entries = [
+            entry
+            for entry in list(cluster.get("evidence") or [])
+            if isinstance(entry, dict)
+        ]
         evidence_html = _render_presentation_source_list(
-            entries=[
-                entry
-                for entry in list(cluster.get("evidence") or [])
-                if isinstance(entry, dict)
-            ],
+            entries=evidence_entries,
             labels=labels,
         )
+        evidence_section = ""
+        if evidence_html:
+            evidence_section = (
+                f"<h4 class='section-label'>{html.escape(labels['evidence'])}</h4>"
+                f"<div class='prose detail-source-list'>{evidence_html}</div>"
+            )
         cards.append(
             "<article class='surface-card section-card cluster-card'>"
             f"<h3 class='section-title'>{html.escape(str(cluster.get('title') or 'Cluster').strip())}</h3>"
             f"<div class='prose'>{_render_presentation_markdown_html(cluster.get('content'))}</div>"
-            f"{_render_browser_section_label_html(labels['evidence'])}"
-            f"<div class='prose detail-source-list'>{evidence_html}</div>"
+            f"{evidence_section}"
             "</article>"
         )
     return cards
@@ -3764,6 +3504,16 @@ def _build_idea_body_from_presentation(
             if isinstance(entry, dict)
         ]
         evidence_count += len(evidence_entries)
+        evidence_html = _render_presentation_source_list(
+            entries=evidence_entries,
+            labels=labels,
+        )
+        evidence_section = ""
+        if evidence_html:
+            evidence_section = (
+                f"<h4 class='section-label'>{html.escape(labels['evidence'])}</h4>"
+                f"<div class='prose detail-source-list'>{evidence_html}</div>"
+            )
         cards.append(
             "<article class='idea-opportunity-card'>"
             "<div class='idea-opportunity-head'>"
@@ -3771,8 +3521,7 @@ def _build_idea_body_from_presentation(
             "</div>"
             "<div class='idea-opportunity-body'>"
             f"<div class='prose'>{_render_presentation_markdown_html(idea.get('content'))}</div>"
-            f"{_render_browser_section_label_html(labels['evidence'])}"
-            f"<div class='prose detail-source-list'>{_render_presentation_source_list(entries=evidence_entries, labels=labels)}</div>"
+            f"{evidence_section}"
             "</div>"
             "</article>"
         )
@@ -3985,74 +3734,646 @@ def _collect_site_html_files(output_dir: Path) -> set[str]:
 
 _LANGUAGE_SWITCHER_CSS = """
 .language-switcher {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: nowrap;
-  padding: 6px 8px 6px 12px;
-  border: 1px solid rgba(16, 39, 63, 0.08);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.58);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.40);
 }
-.language-switcher-label {
-  color: #6f859d;
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-}
-.language-switcher-links {
+.language-switcher-link,
+.language-switcher-trigger {
   display: inline-flex;
-  gap: 6px;
-  flex-wrap: nowrap;
+  align-items: center;
+  min-height: 44px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
 }
 .language-switcher-link {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  min-height: 34px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(16, 39, 63, 0.12);
-  background: rgba(247, 250, 253, 0.92);
-  color: #16304f;
-  font-size: 12px;
-  font-weight: 700;
+  min-width: 44px;
+  max-width: min(11rem, 35vw);
+  padding: 0 2px;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+.language-switcher-link > span,
+.language-switcher-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.language-switcher-link:hover {
+  color: var(--accent-dark);
+}
+.language-switcher-trigger:hover,
+.language-switcher-menu[open] .language-switcher-trigger {
+  border-color: var(--accent);
+  background: var(--popover);
+  color: var(--accent-dark);
+}
+.language-switcher-menu {
+  position: relative;
+}
+.language-switcher-trigger {
+  gap: 9px;
+  max-width: min(14rem, 40vw);
+  padding: 0 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  list-style: none;
+}
+.language-switcher-trigger::-webkit-details-marker {
+  display: none;
+}
+.language-switcher-trigger::after {
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentcolor;
+  border-bottom: 1.5px solid currentcolor;
+  content: "";
+  transform: rotate(45deg) translateY(-2px);
+  transform-origin: center;
+}
+.language-switcher-menu[open] .language-switcher-trigger::after {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+.language-switcher-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  width: max-content;
+  min-width: 190px;
+  max-height: calc(100vh - 120px);
+  margin: 0;
+  padding: 6px 0;
+  overflow-y: auto;
+  border: 1px solid var(--control-border);
+  background: var(--popover);
+  list-style: none;
+}
+.language-switcher-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 44px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.35;
   text-decoration: none;
 }
-@media (max-width: 1040px) {
-  .language-switcher {
-    gap: 8px;
-    padding: 5px 6px 5px 8px;
-  }
-  .language-switcher-label {
-    display: none;
-  }
-  .language-switcher-link {
-    min-height: 32px;
-    padding: 0 10px;
-  }
+.language-switcher-option:hover {
+  background: var(--surface-hover);
+  color: var(--accent-dark);
 }
-.language-switcher-link.is-active {
-  background: #16304f;
-  border-color: #16304f;
-  color: #f8fbff;
+.language-switcher-option.is-active {
+  color: var(--ink);
+  font-weight: 700;
 }
-@media (max-width: 760px) {
-  .language-switcher {
-    gap: 8px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
+.language-switcher-check {
+  color: var(--accent);
+  font-size: 15px;
+}
+.language-switcher-trigger:focus-visible,
+.language-switcher-option:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+@media (max-width: 600px) {
+  .language-switcher-trigger {
+    padding-inline: 8px;
   }
-  .language-switcher-label {
-    display: none;
+  .language-switcher-list {
+    min-width: 180px;
+    max-width: calc(100vw - 28px);
   }
 }
 """
+
+_SITE_CHROME_TRANSLATIONS: dict[str, dict[str, str]] = {
+    "zh-CN": {
+        "Language": "语言",
+        "Home": "首页",
+        "Trends": "趋势",
+        "Ideas": "想法",
+        "Topic": "主题",
+        "Topics": "主题",
+        "Archive": "归档",
+        "Notes": "笔记",
+        "Evidence-led trends and practical ideas from recent technical work.": "从近期技术资料中整理趋势与可执行的研究想法。",
+        "All trends": "全部趋势",
+        "All ideas": "全部想法",
+        "Run Recoleta locally": "在本地运行 Recoleta",
+        "Latest": "最新",
+        "More recent notes": "更多近期内容",
+        "Full archive": "完整归档",
+        "Trend archive": "趋势归档",
+        "Trend": "趋势",
+        "Idea": "想法",
+        "Item": "条目",
+        "Research idea": "研究想法",
+        "Summary": "摘要",
+        "Note": "笔记",
+        "Source note": "来源笔记",
+        "Markdown source": "Markdown 源文件",
+        "Source": "来源",
+        "Published": "发布日期",
+        "Collection": "栏目",
+        "Relevance": "相关度",
+        "Authors": "作者",
+        "Unknown": "未知",
+        "Open original": "打开原文",
+        "Open arXiv": "打开 arXiv",
+        "Open OpenReview": "打开 OpenReview",
+        "Open GitHub": "打开 GitHub",
+        "Newer": "较新",
+        "Older": "较早",
+        "Previous": "上一页",
+        "Next": "下一页",
+        "All tracked topics": "全部主题",
+        "Topic summary": "主题概况",
+        "Latest window": "最近一期",
+        "Browse trends": "浏览趋势",
+        "Browse ideas": "浏览想法",
+        "No research notes available yet.": "暂无研究笔记。",
+        "No additional notes yet.": "暂无其他内容。",
+        "No trends available yet.": "暂无趋势。",
+        "No trends on this page.": "本页没有趋势。",
+        "No ideas available yet.": "暂无想法。",
+        "No ideas on this page.": "本页没有想法。",
+        "No topics available yet.": "暂无主题。",
+        "No archive entries yet.": "暂无归档内容。",
+        "No research notes for this topic.": "该主题暂无研究笔记。",
+        "No research notes on this page.": "本页没有研究笔记。",
+        "No tracked topics": "暂无主题",
+        "Window": "时间",
+        "Granularity": "周期",
+        "Instance": "栏目",
+        "Coverage": "覆盖范围",
+    },
+    "zh-TW": {
+        "Language": "語言",
+        "Home": "首頁",
+        "Trends": "趨勢",
+        "Ideas": "想法",
+        "Topic": "主題",
+        "Topics": "主題",
+        "Archive": "歸檔",
+        "Notes": "筆記",
+        "Evidence-led trends and practical ideas from recent technical work.": "從近期技術資料中整理趨勢與可執行的研究想法。",
+        "All trends": "全部趨勢",
+        "All ideas": "全部想法",
+        "Run Recoleta locally": "在本機執行 Recoleta",
+        "Latest": "最新",
+        "More recent notes": "更多近期內容",
+        "Full archive": "完整歸檔",
+        "Trend archive": "趨勢歸檔",
+        "Trend": "趨勢",
+        "Idea": "想法",
+        "Item": "項目",
+        "Research idea": "研究想法",
+        "Summary": "摘要",
+        "Note": "筆記",
+        "Source note": "來源筆記",
+        "Markdown source": "Markdown 原始檔",
+        "Source": "來源",
+        "Published": "發布日期",
+        "Collection": "欄目",
+        "Relevance": "相關度",
+        "Authors": "作者",
+        "Unknown": "未知",
+        "Open original": "開啟原文",
+        "Open arXiv": "開啟 arXiv",
+        "Open OpenReview": "開啟 OpenReview",
+        "Open GitHub": "開啟 GitHub",
+        "Newer": "較新",
+        "Older": "較早",
+        "Previous": "上一頁",
+        "Next": "下一頁",
+        "All tracked topics": "全部主題",
+        "Topic summary": "主題概況",
+        "Latest window": "最近一期",
+        "Browse trends": "瀏覽趨勢",
+        "Browse ideas": "瀏覽想法",
+        "No research notes available yet.": "暫無研究筆記。",
+        "No additional notes yet.": "暫無其他內容。",
+        "No trends available yet.": "暫無趨勢。",
+        "No trends on this page.": "本頁沒有趨勢。",
+        "No ideas available yet.": "暫無想法。",
+        "No ideas on this page.": "本頁沒有想法。",
+        "No topics available yet.": "暫無主題。",
+        "No archive entries yet.": "暫無歸檔內容。",
+        "No research notes for this topic.": "該主題暫無研究筆記。",
+        "No research notes on this page.": "本頁沒有研究筆記。",
+        "No tracked topics": "暫無主題",
+        "Window": "時間",
+        "Granularity": "週期",
+        "Instance": "欄目",
+        "Coverage": "涵蓋範圍",
+    },
+    "ja": {
+        "Language": "言語",
+        "Home": "ホーム",
+        "Trends": "トレンド",
+        "Ideas": "アイデア",
+        "Topic": "トピック",
+        "Topics": "トピック",
+        "Archive": "アーカイブ",
+        "Notes": "ノート",
+        "Evidence-led trends and practical ideas from recent technical work.": "最近の技術資料から、根拠のあるトレンドと実践的なアイデアを整理します。",
+        "All trends": "すべてのトレンド",
+        "All ideas": "すべてのアイデア",
+        "Run Recoleta locally": "Recoleta をローカルで実行",
+        "Latest": "最新",
+        "More recent notes": "最近のノート",
+        "Full archive": "全アーカイブ",
+        "Trend archive": "トレンドアーカイブ",
+        "Trend": "トレンド",
+        "Idea": "アイデア",
+        "Item": "項目",
+        "Research idea": "研究アイデア",
+        "Summary": "要約",
+        "Note": "ノート",
+        "Source note": "資料ノート",
+        "Markdown source": "Markdown ソース",
+        "Source": "出典",
+        "Published": "公開日",
+        "Collection": "コレクション",
+        "Relevance": "関連度",
+        "Authors": "著者",
+        "Unknown": "不明",
+        "Open original": "原文を開く",
+        "Open arXiv": "arXiv を開く",
+        "Open OpenReview": "OpenReview を開く",
+        "Open GitHub": "GitHub を開く",
+        "Newer": "新しい記事",
+        "Older": "以前の記事",
+        "Previous": "前へ",
+        "Next": "次へ",
+        "All tracked topics": "すべてのトピック",
+        "Topic summary": "トピック概要",
+        "Latest window": "最新期間",
+        "Browse trends": "トレンドを見る",
+        "Browse ideas": "アイデアを見る",
+        "No research notes available yet.": "研究ノートはまだありません。",
+        "No additional notes yet.": "ほかのノートはまだありません。",
+        "No trends available yet.": "トレンドはまだありません。",
+        "No trends on this page.": "このページにはトレンドがありません。",
+        "No ideas available yet.": "アイデアはまだありません。",
+        "No ideas on this page.": "このページにはアイデアがありません。",
+        "No topics available yet.": "トピックはまだありません。",
+        "No archive entries yet.": "アーカイブはまだありません。",
+        "No research notes for this topic.": "このトピックの研究ノートはありません。",
+        "No research notes on this page.": "このページには研究ノートがありません。",
+        "No tracked topics": "トピックはありません",
+        "Window": "期間",
+        "Granularity": "集計単位",
+        "Instance": "配信元",
+        "Coverage": "対象範囲",
+    },
+    "ko": {
+        "Language": "언어",
+        "Home": "홈",
+        "Trends": "트렌드",
+        "Ideas": "아이디어",
+        "Topic": "주제",
+        "Topics": "주제",
+        "Archive": "아카이브",
+        "Notes": "노트",
+        "Evidence-led trends and practical ideas from recent technical work.": "최근 기술 자료에서 근거 있는 트렌드와 실용적인 아이디어를 정리합니다.",
+        "All trends": "모든 트렌드",
+        "All ideas": "모든 아이디어",
+        "Run Recoleta locally": "Recoleta 로컬 실행",
+        "Latest": "최신",
+        "More recent notes": "최근 노트",
+        "Full archive": "전체 아카이브",
+        "Trend archive": "트렌드 아카이브",
+        "Trend": "트렌드",
+        "Idea": "아이디어",
+        "Item": "항목",
+        "Research idea": "연구 아이디어",
+        "Summary": "요약",
+        "Note": "노트",
+        "Source note": "자료 노트",
+        "Markdown source": "Markdown 원문",
+        "Source": "출처",
+        "Published": "게시일",
+        "Collection": "컬렉션",
+        "Relevance": "관련도",
+        "Authors": "저자",
+        "Unknown": "알 수 없음",
+        "Open original": "원문 열기",
+        "Open arXiv": "arXiv 열기",
+        "Open OpenReview": "OpenReview 열기",
+        "Open GitHub": "GitHub 열기",
+        "Newer": "최신 글",
+        "Older": "이전 글",
+        "Previous": "이전",
+        "Next": "다음",
+        "All tracked topics": "모든 주제",
+        "Topic summary": "주제 요약",
+        "Latest window": "최근 기간",
+        "Browse trends": "트렌드 보기",
+        "Browse ideas": "아이디어 보기",
+        "No research notes available yet.": "아직 연구 노트가 없습니다.",
+        "No additional notes yet.": "아직 다른 노트가 없습니다.",
+        "No trends available yet.": "아직 트렌드가 없습니다.",
+        "No trends on this page.": "이 페이지에는 트렌드가 없습니다.",
+        "No ideas available yet.": "아직 아이디어가 없습니다.",
+        "No ideas on this page.": "이 페이지에는 아이디어가 없습니다.",
+        "No topics available yet.": "아직 주제가 없습니다.",
+        "No archive entries yet.": "아직 보관된 항목이 없습니다.",
+        "No research notes for this topic.": "이 주제의 연구 노트가 없습니다.",
+        "No research notes on this page.": "이 페이지에는 연구 노트가 없습니다.",
+        "No tracked topics": "추적 중인 주제가 없습니다",
+        "Window": "기간",
+        "Granularity": "집계 단위",
+        "Instance": "출처",
+        "Coverage": "범위",
+    },
+}
+
+_SITE_COUNT_LABELS = {
+    "zh-CN": {
+        "trend": "条趋势",
+        "idea": "个想法",
+        "topic": "个主题",
+        "entry": "项内容",
+    },
+    "zh-TW": {
+        "trend": "則趨勢",
+        "idea": "個想法",
+        "topic": "個主題",
+        "entry": "項內容",
+    },
+    "ja": {
+        "trend": "件のトレンド",
+        "idea": "件のアイデア",
+        "topic": "件のトピック",
+        "entry": "件",
+    },
+    "ko": {
+        "trend": "개 트렌드",
+        "idea": "개 아이디어",
+        "topic": "개 주제",
+        "entry": "개 항목",
+    },
+}
+
+
+def _site_chrome_locale(language_code: str) -> str | None:
+    normalized = language_code.strip().replace("_", "-").lower()
+    parts = [part for part in normalized.split("-") if part]
+    if not parts:
+        return None
+    primary = parts[0]
+    if primary == "zh":
+        if "hant" in parts or any(region in parts for region in {"hk", "mo", "tw"}):
+            return "zh-TW"
+        return "zh-CN"
+    if primary == "ja":
+        return "ja"
+    if primary == "ko":
+        return "ko"
+    return None
+
+
+def _localized_site_chrome_text(*, text: str, locale: str) -> str:
+    translated = _SITE_CHROME_TRANSLATIONS[locale].get(text)
+    if translated is not None:
+        return translated
+
+    count_labels = _SITE_COUNT_LABELS[locale]
+    count_nouns = {
+        "trend": "trend",
+        "trends": "trend",
+        "idea": "idea",
+        "ideas": "idea",
+        "topic": "topic",
+        "topics": "topic",
+        "entry": "entry",
+        "entries": "entry",
+    }
+
+    def _replace_count(match: re.Match[str]) -> str:
+        noun = count_nouns[match.group(2)]
+        return f"{match.group(1)} {count_labels[noun]}"
+
+    localized = re.sub(
+        r"\b(\d+) (trend|trends|idea|ideas|topic|topics|entry|entries)\b",
+        _replace_count,
+        text,
+    )
+    latest_window_label = _SITE_CHROME_TRANSLATIONS[locale]["Latest window"]
+    localized = re.sub(
+        r"\blatest window\b",
+        latest_window_label,
+        localized,
+        flags=re.IGNORECASE,
+    )
+    for kind in ("Trend", "Idea"):
+        translated_kind = _SITE_CHROME_TRANSLATIONS[locale].get(kind, kind)
+        if localized.startswith(f"{kind} ·"):
+            localized = translated_kind + localized[len(kind) :]
+
+    metadata_labels = ("Source", "Published", "Relevance", "Authors", "Instance")
+    for label in metadata_labels:
+        translated_label = _SITE_CHROME_TRANSLATIONS[locale].get(label, label)
+        localized = re.sub(
+            rf"(^| · ){re.escape(label)}:",
+            lambda match, value=translated_label: f"{match.group(1)}{value}:",
+            localized,
+        )
+
+    go_to_page_match = re.fullmatch(r"Go to page (\d+)", localized)
+    if go_to_page_match:
+        page_number = go_to_page_match.group(1)
+        if locale in {"zh-CN", "zh-TW"}:
+            return f"前往第 {page_number} 页" if locale == "zh-CN" else f"前往第 {page_number} 頁"
+        if locale == "ja":
+            return f"{page_number} ページへ"
+        return f"{page_number}페이지로 이동"
+
+    pagination_match = re.fullmatch(r"(.+) pagination", localized)
+    if pagination_match:
+        collection_label = pagination_match.group(1)
+        if collection_label.endswith(" topic"):
+            topic_label = _SITE_CHROME_TRANSLATIONS[locale].get("Topic", "Topic")
+            collection_label = f"{collection_label[:-6]} {topic_label}".strip()
+        else:
+            collection_label = _SITE_CHROME_TRANSLATIONS[locale].get(
+                collection_label,
+                collection_label,
+            )
+        if locale in {"zh-CN", "zh-TW"}:
+            return f"{collection_label}分页"
+        if locale == "ja":
+            return f"{collection_label}のページ移動"
+        return f"{collection_label} 페이지 탐색"
+
+    def _replace_page_range(match: re.Match[str]) -> str:
+        current, total = match.groups()
+        if locale == "zh-CN":
+            return f"第 {current} / {total} 页"
+        if locale == "zh-TW":
+            return f"第 {current} / {total} 頁"
+        if locale == "ja":
+            return f"{current} / {total} ページ"
+        return f"{current} / {total} 페이지"
+
+    localized = re.sub(r"Page (\d+) of (\d+)", _replace_page_range, localized)
+
+    def _replace_page_number(match: re.Match[str]) -> str:
+        page_number = match.group(1)
+        if locale == "zh-CN":
+            return f"第 {page_number} 页"
+        if locale == "zh-TW":
+            return f"第 {page_number} 頁"
+        if locale == "ja":
+            return f"{page_number} ページ"
+        return f"{page_number} 페이지"
+
+    localized = re.sub(r"\bPage (\d+)\b", _replace_page_number, localized)
+
+    period_labels = {
+        "zh-CN": {"Day": "日", "Week": "周", "Month": "月"},
+        "zh-TW": {"Day": "日", "Week": "週", "Month": "月"},
+        "ja": {"Day": "日", "Week": "週", "Month": "月"},
+        "ko": {"Day": "일", "Week": "주", "Month": "월"},
+    }[locale]
+    for source, target in period_labels.items():
+        localized = re.sub(rf"^{source}(?= · )", target, localized)
+        localized = localized.replace(f" · {source} ·", f" · {target} ·")
+    return localized
+
+
+_SITE_CHROME_TEXT_SELECTORS = (
+    ".site-header",
+    ".language-switcher",
+    ".hero-kicker",
+    ".home-title",
+    ".home-dek",
+    ".home-primary-links",
+    ".home-latest > .section-heading-row",
+    ".home-feed > .section-heading-row",
+    ".home-feature-meta",
+    ".latest-feed-meta",
+    ".page-section-title",
+    ".section-kicker",
+    ".meta-date",
+    ".detail-meta",
+    ".detail-utility",
+    ".detail-actions",
+    ".page-item .detail-content .section-label",
+    ".breadcrumbs",
+    ".pager-card",
+    ".topic-card-meta",
+    ".meta-panel-label",
+    ".collection-pagination",
+    ".archive-item > span",
+    ".empty-card",
+    ".meta-pill.subdued",
+)
+
+
+def _localize_site_document_title(*, soup: BeautifulSoup, locale: str) -> None:
+    title_tag = soup.find("title")
+    body_tag = soup.find("body")
+    if title_tag is None or body_tag is None:
+        return
+    raw_title = title_tag.get_text()
+    title_parts = raw_title.split(" · ")
+    raw_body_classes = body_tag.get("class")
+    if isinstance(raw_body_classes, list):
+        body_classes = {str(class_name) for class_name in raw_body_classes}
+    elif isinstance(raw_body_classes, str):
+        body_classes = set(raw_body_classes.split())
+    else:
+        body_classes = set()
+    collection_label_by_class = {
+        "page-trends": "Trends",
+        "page-ideas": "Ideas",
+        "page-topics": "Topics",
+        "page-archive": "Archive",
+    }
+    for body_class, label in collection_label_by_class.items():
+        if body_class in body_classes and title_parts and title_parts[0] == label:
+            title_parts[0] = _SITE_CHROME_TRANSLATIONS[locale][label]
+            break
+    if title_parts and re.fullmatch(r"Page \d+", title_parts[-1]):
+        title_parts[-1] = _localized_site_chrome_text(
+            text=title_parts[-1],
+            locale=locale,
+        )
+    title_tag.string = " · ".join(title_parts)
+
+
+def _localize_site_chrome(*, soup: BeautifulSoup, language_code: str) -> None:
+    locale = _site_chrome_locale(language_code)
+    if locale is None:
+        return
+    nodes: list[Any] = []
+    aria_tags: list[Tag] = []
+    seen_nodes: set[int] = set()
+    seen_aria_tags: set[int] = set()
+    for container in soup.select(", ".join(_SITE_CHROME_TEXT_SELECTORS)):
+        for node in container.find_all(string=True):
+            if id(node) not in seen_nodes:
+                seen_nodes.add(id(node))
+                nodes.append(node)
+        if container.has_attr("aria-label") and id(container) not in seen_aria_tags:
+            seen_aria_tags.add(id(container))
+            aria_tags.append(container)
+        for tag in container.select("[aria-label]"):
+            if id(tag) not in seen_aria_tags:
+                seen_aria_tags.add(id(tag))
+                aria_tags.append(tag)
+    for node in nodes:
+        parent = node.parent
+        if parent is not None and parent.name in {"script", "style"}:
+            continue
+        raw = str(node)
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        localized = _localized_site_chrome_text(text=stripped, locale=locale)
+        if localized != stripped:
+            node.replace_with(raw.replace(stripped, localized, 1))
+    for tag in aria_tags:
+        aria_label = str(tag.get("aria-label") or "").strip()
+        if aria_label:
+            tag["aria-label"] = _localized_site_chrome_text(
+                text=aria_label,
+                locale=locale,
+            )
+    _localize_site_document_title(soup=soup, locale=locale)
+
+
+def _native_language_name(language_code: str) -> str:
+    normalized = language_code.strip().replace("_", "-").lower()
+    primary = normalized.split("-", 1)[0]
+    error_message = (
+        f"Unsupported site language code {language_code!r}: "
+        "no native display name is available"
+    )
+    if primary == "und":
+        raise ValueError(error_message)
+    try:
+        locale = Locale.parse(normalized.replace("-", "_"), sep="_")
+        native_name = str(locale.get_display_name(locale) or "").strip()
+    except (UnknownLocaleError, ValueError) as exc:
+        raise ValueError(error_message) from exc
+    if primary == "zh":
+        return "繁體中文" if _site_chrome_locale(language_code) == "zh-TW" else "简体中文"
+    if not native_name:
+        raise ValueError(error_message)
+    return native_name
 
 
 def _render_language_switcher_fragment(
@@ -4063,23 +4384,25 @@ def _render_language_switcher_fragment(
     language_code_by_slug: dict[str, str],
 ) -> Tag:
     switcher_soup = BeautifulSoup("", "html.parser")
-    container = switcher_soup.new_tag("div")
+    container = switcher_soup.new_tag("nav")
     container["class"] = "language-switcher"
-    label = switcher_soup.new_tag("span")
-    label["class"] = "language-switcher-label"
-    label.string = "Language"
-    container.append(label)
-    links = switcher_soup.new_tag("div")
-    links["class"] = "language-switcher-links"
-    for language_slug, language_code in language_code_by_slug.items():
+    container["aria-label"] = "Language"
+    current_page_path = (
+        PurePosixPath(current_language_slug) / current_page_relative_path
+    )
+
+    def _build_language_link(
+        *,
+        language_slug: str,
+        language_code: str,
+        class_name: str,
+        is_current: bool = False,
+    ) -> Tag:
         target_relative_path = (
             current_page_relative_path
             if current_page_relative_path
             in page_paths_by_language.get(language_slug, set())
             else "index.html"
-        )
-        current_page_path = (
-            PurePosixPath(current_language_slug) / current_page_relative_path
         )
         target_page_path = PurePosixPath(language_slug) / target_relative_path
         anchor = switcher_soup.new_tag(
@@ -4089,24 +4412,95 @@ def _render_language_switcher_fragment(
                 start=str(current_page_path.parent),
             ),
         )
-        classes = ["language-switcher-link"]
-        if language_slug == current_language_slug:
+        classes = [class_name]
+        if is_current:
             classes.append("is-active")
+            anchor["aria-current"] = "page"
         anchor["class"] = " ".join(classes)
         anchor["data-language-code"] = language_slug
-        anchor.string = language_code
-        links.append(anchor)
-    container.append(links)
+        anchor["hreflang"] = language_code
+        name = switcher_soup.new_tag("span")
+        name["lang"] = language_code
+        name["dir"] = "auto"
+        name.string = _native_language_name(language_code)
+        anchor.append(name)
+        if is_current:
+            check = switcher_soup.new_tag("span")
+            check["class"] = "language-switcher-check"
+            check["aria-hidden"] = "true"
+            check.string = "✓"
+            anchor.append(check)
+        return anchor
+
+    if len(language_code_by_slug) == 2:
+        alternate_slug, alternate_code = next(
+            (slug, code)
+            for slug, code in language_code_by_slug.items()
+            if slug != current_language_slug
+        )
+        container.append(
+            _build_language_link(
+                language_slug=alternate_slug,
+                language_code=alternate_code,
+                class_name="language-switcher-link",
+            )
+        )
+    else:
+        menu = switcher_soup.new_tag("details")
+        menu["class"] = "language-switcher-menu"
+        trigger = switcher_soup.new_tag("summary")
+        trigger["class"] = "language-switcher-trigger"
+        current_code = language_code_by_slug.get(
+            current_language_slug,
+            current_language_slug,
+        )
+        current_name = switcher_soup.new_tag("span")
+        current_name["lang"] = current_code
+        current_name["dir"] = "auto"
+        current_name.string = _native_language_name(current_code)
+        trigger.append(current_name)
+        menu.append(trigger)
+
+        language_list = switcher_soup.new_tag("ul")
+        language_list["class"] = "language-switcher-list"
+        for language_slug, language_code in language_code_by_slug.items():
+            item = switcher_soup.new_tag("li")
+            item.append(
+                _build_language_link(
+                    language_slug=language_slug,
+                    language_code=language_code,
+                    class_name="language-switcher-option",
+                    is_current=language_slug == current_language_slug,
+                )
+            )
+            language_list.append(item)
+        menu.append(language_list)
+        container.append(menu)
 
     script = switcher_soup.new_tag("script")
     script.string = (
         "(function(){"
-        "var links=document.querySelectorAll('.language-switcher-link[data-language-code]');"
+        "var links=document.querySelectorAll('.language-switcher [data-language-code]');"
         "for(var i=0;i<links.length;i+=1){"
         "links[i].addEventListener('click',function(){"
         "try{localStorage.setItem('recoleta-language-code',this.getAttribute('data-language-code')||'');}catch(_err){}"
         "});"
         "}"
+        "var menus=document.querySelectorAll('details.language-switcher-menu');"
+        "document.addEventListener('click',function(event){"
+        "for(var j=0;j<menus.length;j+=1){"
+        "if(menus[j].open&&!menus[j].contains(event.target)){menus[j].open=false;}"
+        "}"
+        "});"
+        "document.addEventListener('keydown',function(event){"
+        "if(event.key!=='Escape'){return;}"
+        "for(var j=0;j<menus.length;j+=1){"
+        "if(menus[j].open){menus[j].open=false;"
+        "var summary=menus[j].querySelector('summary');"
+        "if(summary){summary.focus();}"
+        "}"
+        "}"
+        "});"
         "})();"
     )
     fragment = switcher_soup.new_tag("div")
@@ -4177,6 +4571,7 @@ def _apply_site_language_override_to_page(
                         language_code_by_slug=spec.language_code_by_slug,
                     ),
                 )
+    _localize_site_chrome(soup=soup, language_code=spec.language_code)
     rendered_html = str(soup).replace(
         f'<html lang="{spec.language_code}">',
         f"<html lang='{spec.language_code}'>",
@@ -4308,6 +4703,9 @@ def export_trend_static_site(
         raise ValueError(
             "default_language_code must match one discovered language root"
         )
+
+    for language_code, _language_slug, _root_paths in valid_language_inputs:
+        _native_language_name(language_code)
 
     resolved_output_dir = output_dir.expanduser().resolve()
     prepare_started = time.perf_counter()

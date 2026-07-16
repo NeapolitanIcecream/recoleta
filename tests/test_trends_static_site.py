@@ -12,9 +12,19 @@ from recoleta.presentation import presentation_sidecar_path
 from recoleta.site import (
     RECOLETA_QUICKSTART_URL,
     RECOLETA_REPO_URL,
+    _build_idea_body_from_presentation,
+    _build_trend_body_from_presentation,
+    _display_topic_label,
     _item_action_label,
+    _localize_site_chrome,
+    _localized_site_chrome_text,
+    _native_language_name,
+    _render_language_switcher_fragment,
+    _safe_excerpt,
+    _site_chrome_locale,
     export_trend_static_site,
 )
+from recoleta.site_presentation import build_item_browser_body_html
 from recoleta.passes.trend_ideas import TrendIdeasPayload
 from recoleta.publish import write_markdown_ideas_note, write_markdown_trend_note
 from recoleta.storage import Repository
@@ -113,26 +123,86 @@ def _read_html(path: Path) -> BeautifulSoup:
     return BeautifulSoup(path.read_text(encoding="utf-8"), "html.parser")
 
 
+def test_two_language_switcher_names_only_the_available_destination() -> None:
+    fragment = _render_language_switcher_fragment(
+        current_language_slug="en",
+        current_page_relative_path="trends/example.html",
+        page_paths_by_language={
+            "en": {"trends/example.html"},
+            "zh-cn": {"trends/example.html"},
+        },
+        language_code_by_slug={"en": "en", "zh-cn": "zh-CN"},
+    )
+
+    switcher = fragment.select_one("nav.language-switcher")
+    link = fragment.select_one(".language-switcher-link")
+    assert isinstance(switcher, Tag)
+    assert switcher["aria-label"] == "Language"
+    assert isinstance(link, Tag)
+    assert link.get_text(" ", strip=True) == "简体中文"
+    assert link["hreflang"] == "zh-CN"
+    assert link.select_one("[lang='zh-CN'][dir='auto']") is not None
+    assert link["href"] == "../../zh-cn/trends/example.html"
+    assert fragment.select_one("[aria-current]") is None
+
+
+def test_many_language_switcher_uses_a_native_name_menu() -> None:
+    fragment = _render_language_switcher_fragment(
+        current_language_slug="en",
+        current_page_relative_path="trends/example.html",
+        page_paths_by_language={
+            "en": {"trends/example.html"},
+            "zh-cn": {"index.html"},
+            "fr": {"trends/example.html"},
+        },
+        language_code_by_slug={"en": "en", "zh-cn": "zh-CN", "fr": "fr"},
+    )
+
+    menu = fragment.select_one("details.language-switcher-menu")
+    current = fragment.select_one(".language-switcher-option[aria-current='page']")
+    assert isinstance(menu, Tag)
+    assert menu.select_one("summary").get_text(" ", strip=True) == "English"  # type: ignore[union-attr]
+    assert [
+        label.get_text(" ", strip=True)
+        for label in menu.select("ul.language-switcher-list a > span[lang][dir='auto']")
+    ] == ["English", "简体中文", "français"]
+    assert isinstance(current, Tag)
+    assert current.select_one("[lang='en'][dir='auto']") is not None
+    assert [link["data-language-code"] for link in menu.select("a")] == [
+        "en",
+        "zh-cn",
+        "fr",
+    ]
+    assert [link["hreflang"] for link in menu.select("a")] == [
+        "en",
+        "zh-CN",
+        "fr",
+    ]
+    assert [link["href"] for link in menu.select("a")] == [
+        "example.html",
+        "../../zh-cn/index.html",
+        "../../fr/trends/example.html",
+    ]
+
+
+def test_native_language_names_use_cldr_autonyms() -> None:
+    assert _native_language_name("fr") == "français"
+    assert _native_language_name("pt-BR") == "português (Brasil)"
+    assert _native_language_name("zh-Hant-TW") == "繁體中文"
+
+
+@pytest.mark.parametrize("language_code", ["xx", "und"])
+def test_native_language_names_reject_unknown_codes(language_code: str) -> None:
+    with pytest.raises(ValueError, match=language_code):
+        _native_language_name(language_code)
+
+
 def _page_titles(paths: list[Path], *, selector: str) -> list[str]:
     return [
         node.get_text(" ", strip=True)
         for path in paths
         for node in _read_html(path).select(selector)
     ]
-
-
-def _collection_card_titles(page_path: Path, *, heading: str) -> list[str]:
-    for section in _read_html(page_path).select(".collection-section"):
-        section_heading = section.select_one(".section-title")
-        if (
-            isinstance(section_heading, Tag)
-            and section_heading.get_text(" ", strip=True) == heading
-        ):
-            return [
-                node.get_text(" ", strip=True)
-                for node in section.select(".trend-card .card-title")
-            ]
-    raise AssertionError(f"{page_path}: collection section not found: {heading}")
 
 
 def _assert_pager(
@@ -264,6 +334,139 @@ def test_item_action_label_ignores_partial_domain_suffix_matches() -> None:
     )
 
 
+def test_safe_excerpt_prefers_complete_sentences_and_cleans_trailing_punctuation() -> None:
+    complete_sentence = "A" * 90 + ". " + "B" * 100
+    assert _safe_excerpt(complete_sentence, limit=120) == "A" * 90 + "."
+
+    hard_cut = "x" * 100 + "," + "y" * 100
+    assert _safe_excerpt(hard_cut, limit=101) == "x" * 100 + "…"
+
+    cjk_sentences = "甲" * 50 + "。" + "乙" * 50 + "。" + "丙" * 100
+    assert _safe_excerpt(cjk_sentences, limit=130) == (
+        "甲" * 50 + "。" + "乙" * 50 + "。"
+    )
+
+
+def test_display_topic_label_preserves_research_names_with_hyphens() -> None:
+    assert _display_topic_label("R-CNN") == "R-CNN"
+    assert _display_topic_label("GPT-4o") == "GPT-4o"
+    assert _display_topic_label("CLIP-based") == "CLIP-based"
+    assert _display_topic_label("agent-memory") == "Agent Memory"
+    assert _display_topic_label("mcp") == "MCP"
+
+
+def test_localized_site_chrome_handles_plural_entries_and_compound_metadata() -> None:
+    assert _site_chrome_locale("zh-Hant-TW") == "zh-TW"
+    assert _site_chrome_locale("zh-Hans-CN") == "zh-CN"
+    assert _site_chrome_locale("JA") == "ja"
+    assert (
+        _localized_site_chrome_text(
+            text="0 entries · latest window 2026-W28",
+            locale="zh-CN",
+        )
+        == "0 项内容 · 最近一期 2026-W28"
+    )
+    assert (
+        _localized_site_chrome_text(
+            text="25 trends · Page 2 of 3",
+            locale="zh-CN",
+        )
+        == "25 条趋势 · 第 2 / 3 页"
+    )
+
+
+def test_site_chrome_localization_is_scoped_and_handles_compound_chrome() -> None:
+    soup = BeautifulSoup(
+        """
+        <html lang='en'>
+          <head><title>Trends · Recoleta Trends · Page 2</title></head>
+          <body class='page-trends'>
+            <nav class='site-header'><a class='nav-link'>Trends</a></nav>
+            <p class='detail-meta'>Source: arXiv · Published: 2026-07-01 · Authors: A</p>
+            <nav class='collection-pagination' aria-label='Trends pagination'>
+              <a aria-label='Go to page 2'>2</a>
+            </nav>
+            <p class='prose'>The paper names 3 trends and a latest window baseline.</p>
+          </body>
+        </html>
+        """,
+        "html.parser",
+    )
+
+    _localize_site_chrome(soup=soup, language_code="zh-Hans-CN")
+
+    assert soup.title is not None
+    assert soup.title.get_text() == "趋势 · Recoleta Trends · 第 2 页"
+    assert soup.select_one(".detail-meta").get_text(" ", strip=True) == (  # type: ignore[union-attr]
+        "来源: arXiv · 发布日期: 2026-07-01 · 作者: A"
+    )
+    pagination = soup.select_one(".collection-pagination")
+    page_link = soup.select_one(".collection-pagination a")
+    assert isinstance(pagination, Tag)
+    assert isinstance(page_link, Tag)
+    assert pagination.get("aria-label") == "趋势分页"
+    assert page_link.get("aria-label") == "前往第 2 页"
+    assert "The paper names 3 trends and a latest window baseline." in soup.get_text(
+        " ", strip=True
+    )
+
+    item_soup = BeautifulSoup(
+        "<body class='page-item'><section class='detail-content'>"
+        "<h2 class='section-label'>Summary</h2></section></body>",
+        "html.parser",
+    )
+    _localize_site_chrome(soup=item_soup, language_code="zh-CN")
+    assert item_soup.select_one(".section-label").get_text(strip=True) == "摘要"  # type: ignore[union-attr]
+
+
+def test_presentation_bodies_omit_empty_source_placeholders() -> None:
+    trend_html, _excerpt = _build_trend_body_from_presentation(
+        presentation={
+            "language_code": "en",
+            "content": {
+                "overview": "A scoped finding.",
+                "clusters": [
+                    {"title": "Finding", "content": "Details.", "evidence": []}
+                ],
+            },
+        }
+    )
+    idea_result = _build_idea_body_from_presentation(
+        presentation={
+            "language_code": "en",
+            "content": {
+                "summary": "A scoped idea.",
+                "ideas": [{"title": "Idea", "content": "Details.", "evidence": []}],
+            },
+        }
+    )
+
+    assert "Sources" not in trend_html
+    assert "Sources" not in idea_result.body_html
+    assert "(none)" not in trend_html
+    assert "(none)" not in idea_result.body_html
+
+
+def test_item_body_omits_repeated_summary_heading() -> None:
+    rendered = build_item_browser_body_html(
+        body_html="unused",
+        extract_trend_pdf_sections=lambda **_kwargs: ("Title", [object()]),
+        build_trend_browser_body_html=lambda **_kwargs: (
+            "<div class='document-flow'><section class='summary-grid'>"
+            "<section class='surface-card section-card summary-card'>"
+            "<h2 class='section-label'>Summary</h2>"
+            "<div class='prose'><h3>摘要</h3><p>保留正文。</p></div>"
+            "</section></section></div>"
+        ),
+    )
+    soup = BeautifulSoup(rendered, "html.parser")
+    paragraph = soup.select_one(".summary-card .prose p")
+
+    assert soup.select_one(".summary-card .prose h3") is None
+    assert isinstance(paragraph, Tag)
+    assert paragraph.get_text(strip=True) == "保留正文。"
+
+
 def test_export_trend_static_site_paginates_top_level_collections_without_loss(
     paginated_site: Path,
 ) -> None:
@@ -329,8 +532,8 @@ def test_export_trend_static_site_paginates_top_level_collections_without_loss(
     assert len(topic_titles) == 26
     assert len(set(topic_titles)) == 26
     assert set(topic_titles) == {
-        "shared-topic",
-        *(f"topic-{index:02d}" for index in range(_PAGINATION_TREND_TOTAL)),
+        "Shared Topic",
+        *(f"Topic {index:02d}" for index in range(_PAGINATION_TREND_TOTAL)),
     }
     assert [len(_read_html(path).select(".topic-card")) for path in topics_pages] == [
         24,
@@ -423,7 +626,8 @@ def test_export_trend_static_site_paginates_top_level_collections_without_loss(
     assert manifest["pagination"] == {
         "card_page_size": 12,
         "dense_page_size": 24,
-        "topic_column_page_size": 6,
+        "topic_page_size": 12,
+        "topic_column_page_size": 12,
     }
     assert manifest["files"]["trends_index"] == "trends/index.html"
     assert manifest["files"]["ideas_index"] == "ideas/index.html"
@@ -454,7 +658,6 @@ def test_export_trend_static_site_paginates_top_level_collections_without_loss(
         "topics/shared-topic/page/2/index.html",
         "topics/shared-topic/page/3/index.html",
         "topics/shared-topic/page/4/index.html",
-        "topics/shared-topic/page/5/index.html",
     ]
 
     page_boundary_detail = _read_html(
@@ -468,7 +671,7 @@ def test_export_trend_static_site_paginates_top_level_collections_without_loss(
     assert pager_cards[1].get("href") == "day--2026-01-13--trend--12.html"
 
 
-def test_export_trend_static_site_paginates_topic_columns_with_shared_page_number(
+def test_export_trend_static_site_merges_topic_entries_newest_first_without_loss(
     paginated_site: Path,
 ) -> None:
     topic_pages = [paginated_site / "topics" / "shared-topic.html"] + [
@@ -478,41 +681,55 @@ def test_export_trend_static_site_paginates_topic_columns_with_shared_page_numbe
         / "page"
         / str(page_number)
         / "index.html"
-        for page_number in range(2, 6)
+        for page_number in range(2, 5)
     ]
     assert all(path.exists() for path in topic_pages)
 
-    trend_titles = [
-        title
-        for page_path in topic_pages
-        for title in _collection_card_titles(page_path, heading="Trends")
+    pages = [_read_html(page_path) for page_path in topic_pages]
+    cards = [card for page in pages for card in page.select(".topic-feed .trend-card")]
+    titles = [
+        node.get_text(" ", strip=True)
+        for card in cards
+        if isinstance((node := card.select_one(".card-title")), Tag)
     ]
-    idea_titles = [
-        title
-        for page_path in topic_pages
-        for title in _collection_card_titles(page_path, heading="Ideas")
+    assert len(titles) == _PAGINATION_TREND_TOTAL + _PAGINATION_IDEA_TOTAL
+    assert len(set(titles)) == len(titles)
+    assert set(titles) == {
+        *(f"Trend {index:02d}" for index in range(_PAGINATION_TREND_TOTAL)),
+        *(f"Idea {index:02d}" for index in range(_PAGINATION_IDEA_TOTAL)),
+    }
+    assert [len(page.select(".topic-feed .trend-card")) for page in pages] == [
+        12,
+        12,
+        12,
+        2,
     ]
-    assert trend_titles == [
-        f"Trend {index:02d}" for index in reversed(range(_PAGINATION_TREND_TOTAL))
+    meta_labels = [
+        node.get_text(" ", strip=True)
+        for card in cards
+        if isinstance((node := card.select_one(".meta-date")), Tag)
     ]
-    assert idea_titles == [
-        f"Idea {index:02d}" for index in reversed(range(_PAGINATION_IDEA_TOTAL))
-    ]
-    assert [
-        len(_collection_card_titles(path, heading="Trends")) for path in topic_pages
-    ] == [6, 6, 6, 6, 1]
-    assert [
-        len(_collection_card_titles(path, heading="Ideas")) for path in topic_pages
-    ] == [6, 6, 1, 0, 0]
+    assert sum(label.startswith("Trend ·") for label in meta_labels) == 25
+    assert sum(label.startswith("Idea ·") for label in meta_labels) == 13
+    period_tokens = [label.rsplit(" · ", 1)[-1] for label in meta_labels]
+    assert period_tokens == sorted(period_tokens, reverse=True)
 
     for page_number, page_path in enumerate(topic_pages, start=1):
         page = _read_html(page_path)
-        page_text = page.get_text(" ", strip=True)
-        assert "25 trends" in page_text
-        assert "13 ideas" in page_text
+        summary_stats = {
+            panel.select_one(".meta-panel-label").get_text(" ", strip=True): panel.select_one(  # type: ignore[union-attr]
+                ".meta-panel-value"
+            ).get_text(" ", strip=True)  # type: ignore[union-attr]
+            for panel in page.select(".summary-stats .meta-panel")
+        }
+        assert summary_stats["Trends"] == "25"
+        assert summary_stats["Ideas"] == "13"
         summary_meta = page.select_one(".collection-summary-section .meta-date")
         assert isinstance(summary_meta, Tag)
-        assert f"Page {page_number} of 5" in summary_meta.get_text(" ", strip=True)
+        assert f"Page {page_number} of 4" in summary_meta.get_text(" ", strip=True)
+        assert "trends" not in summary_meta.get_text(" ", strip=True)
+        assert "ideas" not in summary_meta.get_text(" ", strip=True)
+        assert page.select_one(".paired-collection-layout") is None
         previous_href = None
         if page_number == 2:
             previous_href = "../../../shared-topic.html"
@@ -530,7 +747,7 @@ def test_export_trend_static_site_paginates_topic_columns_with_shared_page_numbe
         _assert_pager(
             page_path=page_path,
             current_page=page_number,
-            total_pages=5,
+            total_pages=4,
             previous_href=previous_href,
             next_href=next_href,
         )
@@ -558,7 +775,7 @@ def test_export_trend_static_site_renders_new_trend_and_idea_contracts(
         period_end=datetime(2026, 2, 26, tzinfo=UTC),
         run_id="run-site-1",
         overview_md="Agent workflows are getting more production-ready.",
-        topics=["agents", "tooling"],
+        topics=["agents", "embedded_ai"],
         clusters=[
             {
                 "title": "Release discipline",
@@ -637,10 +854,11 @@ def test_export_trend_static_site_renders_new_trend_and_idea_contracts(
 
     assert manifest["trends_total"] == 1
     assert "Overview" in trend_html
-    assert "Clusters" in trend_html
-    assert "Evidence" in trend_html
+    assert "Findings" in trend_html
+    assert "Sources" in trend_html
     assert "Trend brief" not in trend_html
-    assert "Trends · 2026-02-25" in trend_html
+    assert "<div class='hero-kicker'>Trend</div>" in trend_html
+    assert "Day · 2026-02-25" in trend_html
     assert "Top shifts" not in trend_html
     assert "Counter-signal" not in trend_html
     assert "Representative sources" not in trend_html
@@ -657,16 +875,54 @@ def test_export_trend_static_site_renders_new_trend_and_idea_contracts(
     assert "Best bet" not in ideas_html
     assert "Alternate" not in ideas_html
     assert "Anti-thesis" not in ideas_html
+    index_page = BeautifulSoup(index_html, "html.parser")
+    trend_page = BeautifulSoup(trend_html, "html.parser")
+    idea_page = BeautifulSoup(ideas_html, "html.parser")
     assert "Agent systems" in index_html
-    assert "Latest window" in index_html
+    assert len(index_page.select(".home-feature")) == 1
+    assert len(index_page.select(".latest-feed-row")) == 1
+    assert index_page.select(".home-intro > .hero-kicker") == []
+    assert [
+        node.get_text(" ", strip=True)
+        for node in index_page.select(".home-intro > .home-title")
+    ] == ["Notes"]
+    assert index_page.select(".home-latest .section-kicker") == []
+    assert [
+        node.get_text(" ", strip=True)
+        for node in index_page.select(".home-latest .section-title")
+    ] == ["Latest"]
+    assert index_page.select_one(".paired-collection-layout") is None
+    assert "Latest window" not in index_html
+    assert "1 trend · 1 idea" not in index_html
+    assert "Open brief" not in index_html
+    assert "embedded_ai" not in index_page.get_text(" ", strip=True)
+    assert "Embedded AI" in index_page.get_text(" ", strip=True)
     assert "Trend briefs" not in index_html
     assert "Idea briefs" not in index_html
     assert "Trends" in index_html
     assert "Ideas" in index_html
+    assert trend_page.get_text(" ", strip=True).count(
+        "Agent workflows are getting more production-ready."
+    ) == 1
+    assert idea_page.get_text(" ", strip=True).count(
+        "Structured release controls now feel overdue."
+    ) == 1
+    assert trend_page.select_one(".detail-hero-side") is None
+    assert idea_page.select_one(".detail-hero-side") is None
+    assert trend_page.select_one(".repo-cta-card") is None
+    assert idea_page.select_one(".repo-cta-card") is None
+    assert {node.name for node in trend_page.select(".cluster-card .section-label")} == {
+        "h4"
+    }
     assert "align-items: start;" in site_css
     assert "align-self: start;" in site_css
     assert RECOLETA_REPO_URL in index_html
     assert RECOLETA_QUICKSTART_URL in index_html
+    favicon_path = site_dir / "assets" / "favicon.svg"
+    favicon_link = index_page.select_one("link[rel~='icon']")
+    assert favicon_path.exists()
+    assert isinstance(favicon_link, Tag)
+    assert favicon_link.get("href") == "assets/favicon.svg"
     assert all(
         _read_html(page_path).select_one("nav.collection-pagination") is None
         for page_path in single_page_collections
@@ -795,8 +1051,9 @@ def test_export_trend_static_site_idea_markdown_fallback_uses_current_shape_only
     assert "Summary" in ideas_html
     assert "Prompt release gate" in ideas_html
     assert "Evidence" in ideas_html
-    assert "<div class='meta-panel-label'>Ideas</div><div class='meta-panel-value'>1</div>" in ideas_html
-    assert "<div class='meta-panel-label'>Evidence</div><div class='meta-panel-value'>1</div>" in ideas_html
+    assert "<div class='meta-panel-label'>Ideas</div>" not in ideas_html
+    assert "<div class='meta-panel-label'>Evidence</div>" not in ideas_html
+    assert "<div class='meta-panel-label'>Status</div>" not in ideas_html
     assert "idea-opportunity-meta-row" not in ideas_html
     assert "idea-opportunity-block" not in ideas_html
     assert "<div class='idea-opportunity-label'>Why now</div>" not in ideas_html
@@ -806,6 +1063,43 @@ def test_export_trend_static_site_idea_markdown_fallback_uses_current_shape_only
         not in ideas_html
     )
     assert "Opportunities" not in ideas_html
+
+
+def test_multilingual_export_validates_language_names_before_resetting_output(
+    tmp_path: Path,
+) -> None:
+    notes_root = tmp_path / "notes"
+    for trend_doc_id, title, language_code, output_dir in [
+        (301, "Known language", "en", notes_root),
+        (302, "Unknown language", "xx", notes_root / "Localized" / "xx"),
+    ]:
+        write_markdown_trend_note(
+            output_dir=output_dir,
+            trend_doc_id=trend_doc_id,
+            title=title,
+            granularity="day",
+            period_start=datetime(2026, 3, 1, tzinfo=UTC),
+            period_end=datetime(2026, 3, 2, tzinfo=UTC),
+            run_id=f"run-site-language-{language_code}",
+            overview_md="## Overview\n\nResearch note.\n",
+            topics=["agents"],
+            clusters=[],
+            language_code=language_code,
+        )
+
+    site_dir = tmp_path / "site"
+    site_dir.mkdir()
+    sentinel = site_dir / "existing-output.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported site language code 'xx'"):
+        export_trend_static_site(
+            input_dir=notes_root,
+            output_dir=site_dir,
+            default_language_code="en",
+        )
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"
 
 
 def test_export_trend_static_site_metrics_recorder_uses_low_cardinality_step_names(
@@ -876,3 +1170,43 @@ def test_export_trend_static_site_metrics_recorder_uses_low_cardinality_step_nam
         step_name for step_name, _duration_ms, _metadata in calls
     }
     assert all(duration_ms >= 0 for _step_name, duration_ms, _metadata in calls)
+
+    english_home = _read_html(site_dir / "en" / "index.html")
+    chinese_home = _read_html(site_dir / "zh-cn" / "index.html")
+    english_html = english_home.select_one("html")
+    chinese_html = chinese_home.select_one("html")
+    assert isinstance(english_html, Tag)
+    assert isinstance(chinese_html, Tag)
+    assert english_html["lang"] == "en"
+    assert chinese_html["lang"] == "zh-CN"
+    assert [
+        node.get_text(" ", strip=True)
+        for node in english_home.select(".nav-links .nav-link")
+    ] == ["Home", "Trends", "Ideas", "Topics", "Archive"]
+    assert [
+        node.get_text(" ", strip=True)
+        for node in chinese_home.select(".nav-links .nav-link")
+    ] == ["首页", "趋势", "想法", "主题", "归档"]
+    assert [
+        node.get_text(" ", strip=True)
+        for node in english_home.select(".home-intro > .home-title")
+    ] == ["Notes"]
+    assert [
+        node.get_text(" ", strip=True)
+        for node in chinese_home.select(".home-intro > .home-title")
+    ] == ["笔记"]
+    assert [
+        node.get_text(" ", strip=True)
+        for node in english_home.select(".home-latest .section-title")
+    ] == ["Latest"]
+    assert [
+        node.get_text(" ", strip=True)
+        for node in chinese_home.select(".home-latest .section-title")
+    ] == ["最新"]
+    assert english_home.select(".home-intro > .hero-kicker") == []
+    assert chinese_home.select(".home-intro > .hero-kicker") == []
+    assert english_home.select(".home-latest .section-kicker") == []
+    assert chinese_home.select(".home-latest .section-kicker") == []
+    assert "Overview" not in _read_html(
+        next((site_dir / "zh-cn" / "trends").glob("*.html"))
+    ).get_text(" ", strip=True)

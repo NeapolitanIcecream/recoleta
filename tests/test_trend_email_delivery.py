@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import Any, Callable, TypedDict
 from unittest.mock import ANY
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 import pytest
 from typer.testing import CliRunner
 
@@ -22,6 +22,7 @@ from recoleta.models import (
     DELIVERY_STATUS_FAILED,
     DELIVERY_STATUS_SENT,
 )
+from recoleta.presentation import presentation_sidecar_path
 from recoleta.publish import write_markdown_note, write_markdown_trend_note
 from recoleta.publish.item_note_writer import ItemNoteSpec
 from recoleta.site import TrendSiteInputSpec, export_trend_static_site
@@ -117,6 +118,7 @@ def _set_email_env(
     output_dir: Path,
     recipients: list[str] | None = None,
     granularities: list[str] | None = None,
+    language_code: str | None = None,
 ) -> Settings:
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
@@ -130,6 +132,7 @@ def _set_email_env(
                 "from_email": "updates@example.com",
                 "to": recipients or ["alice@example.com", "bob@example.com"],
                 "granularities": granularities or ["day"],
+                **({"language_code": language_code} if language_code else {}),
             }
         ),
     )
@@ -183,6 +186,9 @@ def _write_email_fixture(
     instance: str | None = None,
     granularities: tuple[str, ...] = ("day",),
     overview_md: str | None = None,
+    title: str | None = None,
+    cluster_titles: list[str] | None = None,
+    language_code: str | None = None,
 ) -> EmailFixture:
     output_dir = tmp_path / "notes"
     repository = Repository(db_path=tmp_path / "recoleta.db")
@@ -229,18 +235,19 @@ def _write_email_fixture(
         ),
     }
     for granularity in granularities:
-        period_start, period_end, title = period_specs[granularity]
+        period_start, period_end, default_title = period_specs[granularity]
+        resolved_title = title or default_title
         trend_doc = repository.upsert_document_for_trend(
             granularity=granularity,
             period_start=period_start,
             period_end=period_end,
-            title=title,
+            title=resolved_title,
         )
         assert trend_doc.id is not None
         trend_note_path = write_markdown_trend_note(
             output_dir=output_dir,
             trend_doc_id=int(trend_doc.id),
-            title=title,
+            title=resolved_title,
             granularity=granularity,
             period_start=period_start,
             period_end=period_end,
@@ -255,7 +262,7 @@ def _write_email_fixture(
             topics=["agents", "tooling"],
             clusters=[
                 {
-                    "title": "Release discipline",
+                    "title": cluster_title,
                     "content_md": (
                         "Verification moved into the shipping path with "
                         f"[linked evidence]({relative_item_href})."
@@ -271,7 +278,13 @@ def _write_email_fixture(
                         }
                     ],
                 }
+                for cluster_title in (
+                    cluster_titles
+                    if cluster_titles is not None
+                    else ["Release discipline"]
+                )
             ],
+            language_code=language_code,
         )
         if instance is not None:
             raw = trend_note_path.read_text(encoding="utf-8")
@@ -331,7 +344,7 @@ def _fake_preview_batch_result(*, tmp_path: Path, instance: str = "default") -> 
                 text_path=preview_dir / "body.txt",
                 primary_page_url="https://public.example/recoleta/trends/example",
                 content_hash="hash-123",
-                subject="[Recoleta] Day trends · 2026-02-25",
+                subject="[Recoleta] Agent systems day",
                 trend_doc_id=123,
                 period_token="2026-02-25",
             )
@@ -372,7 +385,7 @@ def _fake_send_batch_result(
                     else None
                 ),
                 content_hash="hash-123" if with_artifacts else None,
-                subject="[Recoleta] Day trends · 2026-02-25" if with_artifacts else None,
+                subject="[Recoleta] Agent systems day" if with_artifacts else None,
                 trend_doc_id=123 if with_artifacts else None,
                 period_token="2026-02-25" if with_artifacts else None,
                 error=error,
@@ -437,7 +450,9 @@ def test_build_trend_email_preview_writes_preview_artifacts_and_site_first_links
 ) -> None:
     fixture = _write_email_fixture(tmp_path=tmp_path)
     output_dir = Path(fixture["output_dir"])
-    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    settings = _set_email_env(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir
+    )
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
 
@@ -452,28 +467,52 @@ def test_build_trend_email_preview_writes_preview_artifacts_and_site_first_links
     text_body = entry.text_path.read_text(encoding="utf-8")
     assert "https://public.example/recoleta/trends/" in html_body
     assert "https://public.example/recoleta/items/" in html_body
-    assert "Open on site" in html_body
+    assert entry.subject == "[Recoleta] Agent systems day"
+    assert "Read the full brief" in html_body
     assert "Agent systems" in text_body
     manifest = json.loads(entry.manifest_path.read_text(encoding="utf-8"))
     assert manifest["content_hash"] == entry.content_hash
     assert manifest["primary_page_url"] == entry.primary_page_url
 
 
-def test_build_trend_email_preview_marks_truncated_hero_overview_with_ellipsis(
+def test_build_trend_email_preview_omits_instance_from_subject(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(
+        tmp_path=tmp_path,
+        instance="Software Intelligence",
+    )
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+
+    assert entry.subject == "[Recoleta] Agent systems day"
+    assert "Software Intelligence" not in entry.subject
+
+
+def test_build_trend_email_preview_renders_summary_once_with_semantic_outline(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     overview = (
-        "Agent workflows are increasingly shaped by repository-scale execution, "
-        "tool-mediated verification, and delivery controls that keep longer "
-        "engineering tasks grounded in observable progress. The strongest signal "
-        "this window is that agent systems are moving from isolated prompt demos "
-        "toward release paths where evidence, retries, and operator review are "
-        "part of the default loop."
+        "Repository-scale execution now depends on verification that remains "
+        "visible throughout the release path."
     )
     fixture = _write_email_fixture(tmp_path=tmp_path, overview_md=overview)
     output_dir = Path(fixture["output_dir"])
-    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    settings = _set_email_env(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir
+    )
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
 
@@ -482,36 +521,184 @@ def test_build_trend_email_preview_marks_truncated_hero_overview_with_ellipsis(
 
     html_body = entry.html_path.read_text(encoding="utf-8")
     soup = BeautifulSoup(html_body, "html.parser")
-    hero_title = soup.find("h1")
-    assert hero_title is not None
-    assert hero_title.get_text(strip=True) == "Agent systems day"
-    hero_excerpt = hero_title.find_next_sibling("div")
-    assert hero_excerpt is not None
-    assert hero_excerpt.get_text(strip=True).endswith("…")
-    assert overview in soup.get_text(" ", strip=True)
+    headings = [heading.name for heading in soup.find_all(["h1", "h2", "h3"])]
+    assert headings == ["h1", "h2", "h3"]
+    assert soup.find("h1").get_text(strip=True) == "Agent systems day"  # type: ignore[union-attr]
+    assert soup.find("h2").get_text(strip=True) == "Findings"  # type: ignore[union-attr]
+    assert soup.get_text(" ", strip=True).count(overview) == 1
+    preheader = soup.select_one(".preheader")
+    assert preheader is not None
+    assert overview not in preheader.get_text(" ", strip=True)
+    assert "Release discipline" in preheader.get_text(" ", strip=True)
 
 
-def test_build_trend_email_preview_keeps_short_hero_overview_unmarked(
+def test_build_trend_email_preview_uses_title_preheader_without_findings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path, cluster_titles=[])
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+    soup = BeautifulSoup(entry.html_path.read_text(encoding="utf-8"), "html.parser")
+    preheader = soup.select_one(".preheader")
+
+    assert isinstance(preheader, Tag)
+    assert preheader.get_text(" ", strip=True) == "Research brief: Agent systems day"
+    assert soup.find("h2") is None
+
+
+def test_build_trend_email_preview_selects_three_findings_and_deduplicates_sources(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(
+        tmp_path=tmp_path,
+        cluster_titles=["First", "Second", "Third", "Fourth"],
+    )
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    result = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    entry = _preview_entry(result)
+
+    html_body = entry.html_path.read_text(encoding="utf-8")
+    soup = BeautifulSoup(html_body, "html.parser")
+    assert [heading.get_text(strip=True) for heading in soup.find_all("h3")] == [
+        "First",
+        "Second",
+        "Third",
+    ]
+    source_links = [
+        anchor
+        for anchor in soup.find_all("a")
+        if anchor.get_text(strip=True) == "Grounded runtime checks"
+    ]
+    assert len(source_links) == 1
+
+
+def test_build_trend_email_preview_deduplicates_before_filling_source_limit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(
+        tmp_path=tmp_path,
+        cluster_titles=["First", "Second"],
+    )
+    output_dir = Path(fixture["output_dir"])
+    note_path = Path(fixture["trend_note_paths"]["day"])
+    sidecar_path = presentation_sidecar_path(note_path=note_path)
+    presentation = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    clusters = presentation["content"]["clusters"]
+    clusters[0]["evidence"] = [
+        {
+            "title": "Upper path",
+            "url": "HTTPS://EXAMPLE.com/Path?Q=One#first",
+        },
+        {
+            "title": "Second source",
+            "url": "https://example.com/second",
+        },
+    ]
+    clusters[1]["evidence"] = [
+        {
+            "title": "Duplicate fragment",
+            "url": "https://example.COM/Path?Q=One#second",
+        },
+        {
+            "title": "Lower path",
+            "url": "https://example.com/path?Q=One#third",
+        },
+        {
+            "title": "Third source",
+            "url": "https://example.com/third",
+        },
+    ]
+    sidecar_path.write_text(
+        json.dumps(presentation, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+    soup = BeautifulSoup(entry.html_path.read_text(encoding="utf-8"), "html.parser")
+    finding_headings = soup.find_all("h3")
+    assert len(finding_headings) == 2
+    first_finding = finding_headings[0].parent
+    second_finding = finding_headings[1].parent
+    assert isinstance(first_finding, Tag)
+    assert isinstance(second_finding, Tag)
+
+    assert [
+        anchor.get_text(" ", strip=True)
+        for anchor in first_finding.select("[data-section='sources'] a")
+    ] == ["Upper path", "Second source"]
+    assert [
+        anchor.get_text(" ", strip=True)
+        for anchor in second_finding.select("[data-section='sources'] a")
+    ] == ["Lower path", "Third source"]
+
+
+def test_build_trend_email_preview_normalizes_legacy_english_section_labels(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     fixture = _write_email_fixture(tmp_path=tmp_path)
     output_dir = Path(fixture["output_dir"])
-    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    note_path = Path(fixture["trend_note_paths"]["day"])
+    sidecar_path = presentation_sidecar_path(note_path=note_path)
+    presentation = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    presentation["display_labels"] = {
+        "overview": "Overview",
+        "clusters": "Clusters",
+        "evidence": "Evidence",
+    }
+    sidecar_path.write_text(
+        json.dumps(presentation, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+    )
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
 
-    result = build_trend_email_preview(settings=settings, site_output_dir=site_dir)
-    entry = _preview_entry(result)
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+    soup = BeautifulSoup(entry.html_path.read_text(encoding="utf-8"), "html.parser")
+    headings = [
+        heading.get_text(" ", strip=True)
+        for heading in soup.find_all(["h2", "h3", "h4"])
+    ]
 
-    html_body = entry.html_path.read_text(encoding="utf-8")
-    soup = BeautifulSoup(html_body, "html.parser")
-    hero_title = soup.find("h1")
-    assert hero_title is not None
-    assert hero_title.get_text(strip=True) == "Agent systems day"
-    hero_excerpt = hero_title.find_next_sibling("div")
-    assert hero_excerpt is not None
-    assert hero_excerpt.get_text(strip=True).endswith(".")
+    assert "Findings" in headings
+    assert "Sources" in headings
+    assert "Clusters" not in headings
+    assert "Evidence" not in headings
 
 
 def test_build_trend_email_preview_renders_outlook_safe_cta_buttons(
@@ -520,7 +707,9 @@ def test_build_trend_email_preview_renders_outlook_safe_cta_buttons(
 ) -> None:
     fixture = _write_email_fixture(tmp_path=tmp_path)
     output_dir = Path(fixture["output_dir"])
-    settings = _set_email_env(monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir)
+    settings = _set_email_env(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir
+    )
     site_dir = tmp_path / "site"
     export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
 
@@ -529,15 +718,219 @@ def test_build_trend_email_preview_renders_outlook_safe_cta_buttons(
     assert isinstance(entry, trend_email_module.TrendEmailPreviewEntryResult)
 
     html_body = entry.html_path.read_text(encoding="utf-8")
-    assert html_body.count("<v:roundrect") == 2
-    assert html_body.count("<!--[if mso]>") == 2
-    assert html_body.count("<!--[if !mso]><!-->") == 2
-    assert 'arcsize="50%"' in html_body
-    assert 'fillcolor="#f7fbff"' in html_body
+    assert html_body.count("<v:roundrect") == 1
+    assert html_body.count("<!--[if mso]>") == 1
+    assert html_body.count("<!--[if !mso]><!-->") == 1
+    assert 'style="height:44px;' in html_body
+    assert 'arcsize="8%"' in html_body
     assert 'fillcolor="#16538c"' in html_body
     assert "mso-hide:all" in html_body
-    assert html_body.count("Open on site") == 2
-    assert html_body.count("Open trend page") == 2
+    assert "mso-line-height-rule:exactly" in html_body
+    assert html_body.count("Read the full brief") == 2
+
+
+def test_build_trend_email_preview_uses_accessible_responsive_email_markup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+    html_body = entry.html_path.read_text(encoding="utf-8")
+    soup = BeautifulSoup(html_body, "html.parser")
+
+    assert soup.html is not None
+    assert soup.html.get("lang") == "en"
+    assert soup.html.get("dir") == "ltr"
+    assert soup.find("meta", attrs={"name": "viewport"}) is not None
+    assert all(table.get("role") == "presentation" for table in soup.find_all("table"))
+    assert "@media only screen and (max-width:480px)" in html_body
+    assert "font-size:16px" in html_body
+    assert "line-height:27px" in html_body
+    assert "word-break:break-word" in html_body
+    assert "linear-gradient" not in html_body
+    assert "box-shadow" not in html_body
+
+
+def test_build_trend_email_preview_localizes_chrome_and_plain_text_for_chinese(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(
+        tmp_path=tmp_path,
+        title="智能体交付开始依赖运行时检查",
+        overview_md="仓库级执行需要在整个交付路径中保留可核查的运行证据。",
+        cluster_titles=["验证进入发布路径"],
+        language_code="zh-CN",
+    )
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        language_code="zh-CN",
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+    html_body = entry.html_path.read_text(encoding="utf-8")
+    text_body = entry.text_path.read_text(encoding="utf-8")
+    soup = BeautifulSoup(html_body, "html.parser")
+
+    assert entry.subject == "[Recoleta] 智能体交付开始依赖运行时检查"
+    assert soup.html is not None and soup.html.get("lang") == "zh-CN"
+    assert soup.find("h2").get_text(strip=True) == "研究发现"  # type: ignore[union-attr]
+    assert "阅读完整报告" in html_body
+    assert "研究发现" in text_body
+    assert "来源：Grounded runtime checks" in text_body
+    assert "Read" not in text_body
+
+
+@pytest.mark.parametrize(
+    ("language_code", "expected_html_lang", "expected_heading"),
+    [
+        ("zh-Hant-TW", "zh-Hant-TW", "研究發現"),
+        ("zh-Hans-CN", "zh-Hans-CN", "研究发现"),
+        ("JA", "ja", "主な発見"),
+    ],
+)
+def test_build_trend_email_preview_normalizes_extended_language_tags(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    language_code: str,
+    expected_html_lang: str,
+    expected_heading: str,
+) -> None:
+    fixture = _write_email_fixture(
+        tmp_path=tmp_path,
+        language_code=language_code,
+    )
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        language_code=language_code,
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+    soup = BeautifulSoup(entry.html_path.read_text(encoding="utf-8"), "html.parser")
+
+    assert soup.html is not None
+    assert soup.html.get("lang") == expected_html_lang
+    finding_heading = soup.find("h2")
+    assert isinstance(finding_heading, Tag)
+    assert finding_heading.get_text(" ", strip=True) == expected_heading
+
+
+def test_build_trend_email_preview_uses_rtl_markdown_edges(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(
+        tmp_path=tmp_path,
+        overview_md="- عنصر أول\n- عنصر ثان\n\n> اقتباس موثّق",
+        language_code="AR",
+    )
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        language_code="AR",
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+    soup = BeautifulSoup(entry.html_path.read_text(encoding="utf-8"), "html.parser")
+    listing = soup.find("ul")
+    quote = soup.find("blockquote")
+
+    assert soup.html is not None and soup.html.get("dir") == "rtl"
+    assert isinstance(listing, Tag)
+    assert isinstance(quote, Tag)
+    assert "padding:0 24px 0 0" in str(listing.get("style") or "")
+    quote_style = str(quote.get("style") or "")
+    assert "padding:0 16px 0 0" in quote_style
+    assert "border-right:2px solid #b9b5aa" in quote_style
+    assert "border-left" not in quote_style
+
+
+def test_build_trend_email_preview_sanitizes_raw_markdown_html(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(
+        tmp_path=tmp_path,
+        overview_md=(
+            "Safe summary. <script>alert('unsafe')</script>"
+            "<img src='x' onerror='alert(1)'>"
+            "<a href='javascript:alert(1)' onclick='alert(1)'>Unsafe link</a>"
+            "<a href='http://['>Malformed link</a>"
+            "<svg><a href='https://example.com'>Nested SVG link</a></svg>"
+            "<object><em>Nested object text</em></object>"
+            "<template><p>Nested template text</p></template>"
+        ),
+    )
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+    soup = BeautifulSoup(entry.html_path.read_text(encoding="utf-8"), "html.parser")
+
+    assert soup.find("script") is None
+    assert soup.find("img") is None
+    assert soup.find("svg") is None
+    assert soup.find("object") is None
+    assert soup.find("template") is None
+    assert "Nested SVG link" not in soup.get_text(" ", strip=True)
+    assert "Nested object text" not in soup.get_text(" ", strip=True)
+    assert "Nested template text" not in soup.get_text(" ", strip=True)
+    unsafe_link = next(
+        (
+            anchor
+            for anchor in soup.find_all("a")
+            if anchor.get_text(" ", strip=True) == "Unsafe link"
+        ),
+        None,
+    )
+    assert isinstance(unsafe_link, Tag)
+    assert unsafe_link.get("href") is None
+    assert unsafe_link.get("onclick") is None
+    malformed_link = next(
+        (
+            anchor
+            for anchor in soup.find_all("a")
+            if anchor.get_text(" ", strip=True) == "Malformed link"
+        ),
+        None,
+    )
+    assert isinstance(malformed_link, Tag)
+    assert malformed_link.get("href") is None
 
 
 def test_build_trend_email_preview_writes_multi_granularity_batch_in_config_order(
