@@ -571,38 +571,36 @@ def _excerpt_html_from_atoms(
     return "".join(blocks)
 
 
-def _excerpt_payload_from_html(
-    rendered_html: str,
+def _replace_excerpt_node_with_atom(
     *,
-    limit: int = 220,
-) -> tuple[str, str]:
-    soup = BeautifulSoup(str(rendered_html or ""), "html.parser")
-    for hidden in soup.find_all(["script", "style", "template", "noscript"]):
-        hidden.decompose()
-
-    atoms: list[_ExcerptAtom] = []
-
-    def replace_with_atom(
-        node: Tag,
-        *,
-        text: str,
-        is_block: bool,
-        is_math: bool,
-    ) -> None:
-        if len(text) > limit:
-            node.decompose()
-            return
-        token = _excerpt_atom_token(index=len(atoms), text=text)
-        atoms.append(
-            _ExcerptAtom(
-                token=token,
-                text=text,
-                is_block=is_block,
-                is_math=is_math,
-            )
+    node: Tag,
+    atoms: list[_ExcerptAtom],
+    text: str,
+    is_block: bool,
+    is_math: bool,
+    limit: int,
+) -> None:
+    if len(text) > limit:
+        node.decompose()
+        return
+    token = _excerpt_atom_token(index=len(atoms), text=text)
+    atoms.append(
+        _ExcerptAtom(
+            token=token,
+            text=text,
+            is_block=is_block,
+            is_math=is_math,
         )
-        node.replace_with(token)
+    )
+    node.replace_with(token)
 
+
+def _protect_excerpt_code_atoms(
+    *,
+    soup: BeautifulSoup,
+    atoms: list[_ExcerptAtom],
+    limit: int,
+) -> None:
     for code in list(soup.find_all("code")):
         if code.find_parent("math") is not None:
             continue
@@ -614,43 +612,87 @@ def _excerpt_payload_from_html(
         )
         if fallback is not None:
             source, display_mode = fallback
-            replace_with_atom(
-                code,
+            _replace_excerpt_node_with_atom(
+                node=code,
+                atoms=atoms,
                 text=source,
                 is_block=display_mode,
                 is_math=True,
+                limit=limit,
             )
             continue
-        code_text = code.get_text("", strip=False)
-        replace_with_atom(
-            code,
-            text=code_text,
+        _replace_excerpt_node_with_atom(
+            node=code,
+            atoms=atoms,
+            text=code.get_text("", strip=False),
             is_block=False,
             is_math=False,
+            limit=limit,
         )
 
+
+def _protect_excerpt_math_atoms(
+    *,
+    soup: BeautifulSoup,
+    atoms: list[_ExcerptAtom],
+    limit: int,
+) -> None:
     for math in list(soup.find_all("math")):
         source = _math_source_from_tag(math=math)
         if not source:
             math.decompose()
             continue
-        display_mode = _math_is_block(math=math)
-        replace_with_atom(
-            math,
+        _replace_excerpt_node_with_atom(
+            node=math,
+            atoms=atoms,
             text=source,
-            is_block=display_mode,
+            is_block=_math_is_block(math=math),
             is_math=True,
+            limit=limit,
         )
 
+
+def _protect_excerpt_atoms(
+    *,
+    soup: BeautifulSoup,
+    limit: int,
+) -> list[_ExcerptAtom]:
+    atoms: list[_ExcerptAtom] = []
+    _protect_excerpt_code_atoms(soup=soup, atoms=atoms, limit=limit)
+    _protect_excerpt_math_atoms(soup=soup, atoms=atoms, limit=limit)
+    return atoms
+
+
+def _restore_excerpt_atom_text(
+    *,
+    protected_excerpt: str,
+    atoms: list[_ExcerptAtom],
+) -> str:
+    excerpt_text = protected_excerpt
+    for atom in atoms:
+        excerpt_text = excerpt_text.replace(atom.token, atom.text)
+    return excerpt_text
+
+
+def _excerpt_payload_from_html(
+    rendered_html: str,
+    *,
+    limit: int = 220,
+) -> tuple[str, str]:
+    soup = BeautifulSoup(str(rendered_html or ""), "html.parser")
+    for hidden in soup.find_all(["script", "style", "template", "noscript"]):
+        hidden.decompose()
+
+    atoms = _protect_excerpt_atoms(soup=soup, limit=limit)
     protected_text = _excerpt_protected_text(soup)
     protected_excerpt = _trim_partial_excerpt_atom(
         _safe_excerpt(protected_text, limit=limit)
     )
-    excerpt_text = protected_excerpt
-    for atom in atoms:
-        excerpt_text = excerpt_text.replace(atom.token, atom.text)
     return (
-        excerpt_text,
+        _restore_excerpt_atom_text(
+            protected_excerpt=protected_excerpt,
+            atoms=atoms,
+        ),
         _excerpt_html_from_atoms(
             protected_excerpt=protected_excerpt,
             atoms=atoms,

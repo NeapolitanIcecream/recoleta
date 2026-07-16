@@ -58,6 +58,18 @@ def test_site_math_delimiters_do_not_consume_cjk_currency_text() -> None:
     assert "中文价格$5，公式" in soup.get_text("", strip=True)
 
 
+def test_double_dollar_runs_inside_paragraph_remain_literal() -> None:
+    for renderer in (
+        build_site_markdown_renderer(),
+        build_email_markdown_renderer(),
+    ):
+        rendered = renderer.render("Before $$x+y$$ after.")
+        soup = BeautifulSoup(rendered, "html.parser")
+
+        assert soup.select(".math") == []
+        assert "$$x+y$$" in soup.get_text("", strip=True)
+
+
 def test_site_inline_math_allows_adjacent_cjk_prose() -> None:
     rendered = build_site_markdown_renderer().render("公式$x$满足约束。")
     soup = BeautifulSoup(rendered, "html.parser")

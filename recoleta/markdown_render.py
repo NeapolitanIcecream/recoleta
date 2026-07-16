@@ -117,35 +117,60 @@ def _is_escaped(source: str, position: int) -> bool:
     return backslashes % 2 == 1
 
 
-def _safe_inline_math(state: StateInline, silent: bool) -> bool:
-    source = state.src
-    start = state.pos
+def _is_inline_math_opener(source: str, start: int) -> bool:
     if source[start] != "$" or _is_escaped(source, start):
+        return False
+    if (start + 1 < len(source) and source[start + 1] == "$") or (
+        start > 0 and source[start - 1] == "$"
+    ):
         return False
     if start + 1 >= len(source) or source[start + 1].isspace():
         return False
     if start > 0 and source[start - 1].isdigit():
         return False
+    return True
 
-    end = start + 1
+
+def _find_inline_math_end(source: str, start: int) -> int | None:
+    cursor = start + 1
     while True:
-        end = source.find("$", end)
+        end = source.find("$", cursor)
         if end < 0:
-            return False
-        if _is_escaped(source, end):
-            end += 1
-            continue
-        break
+            return None
+        if not _is_escaped(source, end):
+            return end
+        cursor = end + 1
 
-    content = source[start + 1 : end]
+
+def _inline_math_content_is_valid(content: str) -> bool:
     if not content or content[-1].isspace() or "`" in content or "\n" in content:
         return False
     if content[0].isdigit() and _CJK_OR_FULLWIDTH_TEXT_RE.search(content):
         return False
+    return True
+
+
+def _inline_math_trailing_context_is_valid(source: str, end: int) -> bool:
     if end + 1 < len(source):
         trailing = source[end + 1]
         if trailing.isascii() and trailing.isalnum():
             return False
+    return True
+
+
+def _safe_inline_math(state: StateInline, silent: bool) -> bool:
+    source = state.src
+    start = state.pos
+    if not _is_inline_math_opener(source, start):
+        return False
+    end = _find_inline_math_end(source, start)
+    if end is None:
+        return False
+    content = source[start + 1 : end]
+    if not _inline_math_content_is_valid(content):
+        return False
+    if not _inline_math_trailing_context_is_valid(source, end):
+        return False
 
     if not silent:
         token = state.push("math_inline", "math", 0)
