@@ -662,6 +662,48 @@ def _record_sort_key(record: _ArtifactRecord) -> tuple[datetime, str, int]:
     )
 
 
+def _record_signature(*, value: str, signature_name: str) -> str:
+    if signature_name == "frame":
+        return _title_frame(value)
+    return _opening_ngram(value)
+
+
+def _adjacent_repetition_candidate(
+    *,
+    previous: _ArtifactRecord,
+    current: _ArtifactRecord,
+    artifact_kind: str,
+    granularity: str,
+    value_name: str,
+    signature_name: str,
+) -> tuple[bool, dict[str, Any] | None]:
+    previous_value = str(getattr(previous, value_name) or "")
+    current_value = str(getattr(current, value_name) or "")
+    previous_signature = _record_signature(
+        value=previous_value,
+        signature_name=signature_name,
+    )
+    current_signature = _record_signature(
+        value=current_value,
+        signature_name=signature_name,
+    )
+    if not previous_signature or not current_signature:
+        return False, None
+    if previous_signature != current_signature:
+        return True, None
+    return True, {
+        "artifact_kind": artifact_kind,
+        "granularity": granularity,
+        signature_name: current_signature,
+        "previous_pass_output_id": previous.pass_output_id,
+        "previous_period_start": previous.period_start,
+        "previous_value": _excerpt(previous_value),
+        "current_pass_output_id": current.pass_output_id,
+        "current_period_start": current.period_start,
+        "current_value": _excerpt(current_value),
+    }
+
+
 def _adjacent_signature_repetition(
     records: Sequence[_ArtifactRecord],
     *,
@@ -676,36 +718,19 @@ def _adjacent_signature_repetition(
     for (artifact_kind, granularity), series in sorted(grouped.items()):
         ordered = sorted(series, key=_record_sort_key)
         for previous, current in zip(ordered, ordered[1:], strict=False):
-            previous_value = str(getattr(previous, value_name) or "")
-            current_value = str(getattr(current, value_name) or "")
-            previous_signature = (
-                _title_frame(previous_value)
-                if signature_name == "frame"
-                else _opening_ngram(previous_value)
+            is_comparable, candidate = _adjacent_repetition_candidate(
+                previous=previous,
+                current=current,
+                artifact_kind=artifact_kind,
+                granularity=granularity,
+                value_name=value_name,
+                signature_name=signature_name,
             )
-            current_signature = (
-                _title_frame(current_value)
-                if signature_name == "frame"
-                else _opening_ngram(current_value)
-            )
-            if not previous_signature or not current_signature:
+            if not is_comparable:
                 continue
             compared += 1
-            if previous_signature != current_signature:
-                continue
-            candidates.append(
-                {
-                    "artifact_kind": artifact_kind,
-                    "granularity": granularity,
-                    signature_name: current_signature,
-                    "previous_pass_output_id": previous.pass_output_id,
-                    "previous_period_start": previous.period_start,
-                    "previous_value": _excerpt(previous_value),
-                    "current_pass_output_id": current.pass_output_id,
-                    "current_period_start": current.period_start,
-                    "current_value": _excerpt(current_value),
-                }
-            )
+            if candidate is not None:
+                candidates.append(candidate)
     return {
         "adjacent_pairs_compared": compared,
         "repeated_pairs": len(candidates),

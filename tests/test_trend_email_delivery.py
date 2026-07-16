@@ -119,6 +119,7 @@ def _set_email_env(
     recipients: list[str] | None = None,
     granularities: list[str] | None = None,
     language_code: str | None = None,
+    subject_prefix: str | None = "[Recoleta]",
 ) -> Settings:
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("LLM_MODEL", "openai/gpt-4o-mini")
@@ -132,6 +133,7 @@ def _set_email_env(
                 "from_email": "updates@example.com",
                 "to": recipients or ["alice@example.com", "bob@example.com"],
                 "granularities": granularities or ["day"],
+                "subject_prefix": subject_prefix,
                 **({"language_code": language_code} if language_code else {}),
             }
         ),
@@ -498,6 +500,30 @@ def test_build_trend_email_preview_omits_instance_from_subject(
 
     assert entry.subject == "[Recoleta] Agent systems day"
     assert "Software Intelligence" not in entry.subject
+
+
+@pytest.mark.parametrize("subject_prefix", [None, ""])
+def test_build_trend_email_preview_honors_disabled_subject_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    subject_prefix: str | None,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        output_dir=output_dir,
+        subject_prefix=subject_prefix,
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+
+    assert entry.subject == "Agent systems day"
 
 
 def test_build_trend_email_preview_renders_summary_once_with_semantic_outline(

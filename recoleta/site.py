@@ -4126,6 +4126,48 @@ _SITE_COUNT_LABELS = {
     },
 }
 
+_SITE_COUNT_NOUNS = {
+    "trend": "trend",
+    "trends": "trend",
+    "idea": "idea",
+    "ideas": "idea",
+    "topic": "topic",
+    "topics": "topic",
+    "entry": "entry",
+    "entries": "entry",
+}
+_SITE_METADATA_LABELS = ("Source", "Published", "Relevance", "Authors", "Instance")
+_SITE_GO_TO_PAGE_FORMATS = {
+    "zh-CN": "前往第 {number} 页",
+    "zh-TW": "前往第 {number} 頁",
+    "ja": "{number} ページへ",
+    "ko": "{number}페이지로 이동",
+}
+_SITE_PAGINATION_FORMATS = {
+    "zh-CN": "{collection}分页",
+    "zh-TW": "{collection}分页",
+    "ja": "{collection}のページ移動",
+    "ko": "{collection} 페이지 탐색",
+}
+_SITE_PAGE_RANGE_FORMATS = {
+    "zh-CN": "第 {current} / {total} 页",
+    "zh-TW": "第 {current} / {total} 頁",
+    "ja": "{current} / {total} ページ",
+    "ko": "{current} / {total} 페이지",
+}
+_SITE_PAGE_NUMBER_FORMATS = {
+    "zh-CN": "第 {number} 页",
+    "zh-TW": "第 {number} 頁",
+    "ja": "{number} ページ",
+    "ko": "{number} 페이지",
+}
+_SITE_PERIOD_LABELS = {
+    "zh-CN": {"Day": "日", "Week": "周", "Month": "月"},
+    "zh-TW": {"Day": "日", "Week": "週", "Month": "月"},
+    "ja": {"Day": "日", "Week": "週", "Month": "月"},
+    "ko": {"Day": "일", "Week": "주", "Month": "월"},
+}
+
 
 def _site_chrome_locale(language_code: str) -> str | None:
     normalized = language_code.strip().replace("_", "-").lower()
@@ -4144,32 +4186,22 @@ def _site_chrome_locale(language_code: str) -> str | None:
     return None
 
 
-def _localized_site_chrome_text(*, text: str, locale: str) -> str:
-    translated = _SITE_CHROME_TRANSLATIONS[locale].get(text)
-    if translated is not None:
-        return translated
-
+def _localize_site_count_labels(*, text: str, locale: str) -> str:
     count_labels = _SITE_COUNT_LABELS[locale]
-    count_nouns = {
-        "trend": "trend",
-        "trends": "trend",
-        "idea": "idea",
-        "ideas": "idea",
-        "topic": "topic",
-        "topics": "topic",
-        "entry": "entry",
-        "entries": "entry",
-    }
 
     def _replace_count(match: re.Match[str]) -> str:
-        noun = count_nouns[match.group(2)]
+        noun = _SITE_COUNT_NOUNS[match.group(2)]
         return f"{match.group(1)} {count_labels[noun]}"
 
-    localized = re.sub(
+    return re.sub(
         r"\b(\d+) (trend|trends|idea|ideas|topic|topics|entry|entries)\b",
         _replace_count,
         text,
     )
+
+
+def _localize_site_prefixed_labels(*, text: str, locale: str) -> str:
+    localized = text
     latest_window_label = _SITE_CHROME_TRANSLATIONS[locale]["Latest window"]
     localized = re.sub(
         r"\blatest window\b",
@@ -4181,76 +4213,77 @@ def _localized_site_chrome_text(*, text: str, locale: str) -> str:
         translated_kind = _SITE_CHROME_TRANSLATIONS[locale].get(kind, kind)
         if localized.startswith(f"{kind} ·"):
             localized = translated_kind + localized[len(kind) :]
+    return localized
 
-    metadata_labels = ("Source", "Published", "Relevance", "Authors", "Instance")
-    for label in metadata_labels:
+
+def _localize_site_metadata_labels(*, text: str, locale: str) -> str:
+    localized = text
+    for label in _SITE_METADATA_LABELS:
         translated_label = _SITE_CHROME_TRANSLATIONS[locale].get(label, label)
         localized = re.sub(
             rf"(^| · ){re.escape(label)}:",
             lambda match, value=translated_label: f"{match.group(1)}{value}:",
             localized,
         )
+    return localized
 
-    go_to_page_match = re.fullmatch(r"Go to page (\d+)", localized)
+
+def _localized_pagination_collection_label(*, label: str, locale: str) -> str:
+    if label.endswith(" topic"):
+        topic_label = _SITE_CHROME_TRANSLATIONS[locale].get("Topic", "Topic")
+        return f"{label[:-6]} {topic_label}".strip()
+    return _SITE_CHROME_TRANSLATIONS[locale].get(label, label)
+
+
+def _localize_site_page_navigation(*, text: str, locale: str) -> str:
+    go_to_page_match = re.fullmatch(r"Go to page (\d+)", text)
     if go_to_page_match:
-        page_number = go_to_page_match.group(1)
-        if locale in {"zh-CN", "zh-TW"}:
-            return f"前往第 {page_number} 页" if locale == "zh-CN" else f"前往第 {page_number} 頁"
-        if locale == "ja":
-            return f"{page_number} ページへ"
-        return f"{page_number}페이지로 이동"
+        return _SITE_GO_TO_PAGE_FORMATS[locale].format(
+            number=go_to_page_match.group(1)
+        )
 
-    pagination_match = re.fullmatch(r"(.+) pagination", localized)
+    pagination_match = re.fullmatch(r"(.+) pagination", text)
     if pagination_match:
-        collection_label = pagination_match.group(1)
-        if collection_label.endswith(" topic"):
-            topic_label = _SITE_CHROME_TRANSLATIONS[locale].get("Topic", "Topic")
-            collection_label = f"{collection_label[:-6]} {topic_label}".strip()
-        else:
-            collection_label = _SITE_CHROME_TRANSLATIONS[locale].get(
-                collection_label,
-                collection_label,
-            )
-        if locale in {"zh-CN", "zh-TW"}:
-            return f"{collection_label}分页"
-        if locale == "ja":
-            return f"{collection_label}のページ移動"
-        return f"{collection_label} 페이지 탐색"
+        collection_label = _localized_pagination_collection_label(
+            label=pagination_match.group(1),
+            locale=locale,
+        )
+        return _SITE_PAGINATION_FORMATS[locale].format(collection=collection_label)
 
-    def _replace_page_range(match: re.Match[str]) -> str:
-        current, total = match.groups()
-        if locale == "zh-CN":
-            return f"第 {current} / {total} 页"
-        if locale == "zh-TW":
-            return f"第 {current} / {total} 頁"
-        if locale == "ja":
-            return f"{current} / {total} ページ"
-        return f"{current} / {total} 페이지"
+    range_format = _SITE_PAGE_RANGE_FORMATS[locale]
+    localized = re.sub(
+        r"Page (\d+) of (\d+)",
+        lambda match: range_format.format(
+            current=match.group(1),
+            total=match.group(2),
+        ),
+        text,
+    )
+    number_format = _SITE_PAGE_NUMBER_FORMATS[locale]
+    return re.sub(
+        r"\bPage (\d+)\b",
+        lambda match: number_format.format(number=match.group(1)),
+        localized,
+    )
 
-    localized = re.sub(r"Page (\d+) of (\d+)", _replace_page_range, localized)
 
-    def _replace_page_number(match: re.Match[str]) -> str:
-        page_number = match.group(1)
-        if locale == "zh-CN":
-            return f"第 {page_number} 页"
-        if locale == "zh-TW":
-            return f"第 {page_number} 頁"
-        if locale == "ja":
-            return f"{page_number} ページ"
-        return f"{page_number} 페이지"
-
-    localized = re.sub(r"\bPage (\d+)\b", _replace_page_number, localized)
-
-    period_labels = {
-        "zh-CN": {"Day": "日", "Week": "周", "Month": "月"},
-        "zh-TW": {"Day": "日", "Week": "週", "Month": "月"},
-        "ja": {"Day": "日", "Week": "週", "Month": "月"},
-        "ko": {"Day": "일", "Week": "주", "Month": "월"},
-    }[locale]
-    for source, target in period_labels.items():
+def _localize_site_period_labels(*, text: str, locale: str) -> str:
+    localized = text
+    for source, target in _SITE_PERIOD_LABELS[locale].items():
         localized = re.sub(rf"^{source}(?= · )", target, localized)
         localized = localized.replace(f" · {source} ·", f" · {target} ·")
     return localized
+
+
+def _localized_site_chrome_text(*, text: str, locale: str) -> str:
+    translated = _SITE_CHROME_TRANSLATIONS[locale].get(text)
+    if translated is not None:
+        return translated
+    localized = _localize_site_count_labels(text=text, locale=locale)
+    localized = _localize_site_prefixed_labels(text=localized, locale=locale)
+    localized = _localize_site_metadata_labels(text=localized, locale=locale)
+    localized = _localize_site_page_navigation(text=localized, locale=locale)
+    return _localize_site_period_labels(text=localized, locale=locale)
 
 
 _SITE_CHROME_TEXT_SELECTORS = (
@@ -4314,10 +4347,9 @@ def _localize_site_document_title(*, soup: BeautifulSoup, locale: str) -> None:
     title_tag.string = " · ".join(title_parts)
 
 
-def _localize_site_chrome(*, soup: BeautifulSoup, language_code: str) -> None:
-    locale = _site_chrome_locale(language_code)
-    if locale is None:
-        return
+def _collect_site_chrome_targets(
+    *, soup: BeautifulSoup
+) -> tuple[list[Any], list[Tag]]:
     nodes: list[Any] = []
     aria_tags: list[Tag] = []
     seen_nodes: set[int] = set()
@@ -4334,6 +4366,10 @@ def _localize_site_chrome(*, soup: BeautifulSoup, language_code: str) -> None:
             if id(tag) not in seen_aria_tags:
                 seen_aria_tags.add(id(tag))
                 aria_tags.append(tag)
+    return nodes, aria_tags
+
+
+def _localize_site_text_nodes(*, nodes: list[Any], locale: str) -> None:
     for node in nodes:
         parent = node.parent
         if parent is not None and parent.name in {"script", "style"}:
@@ -4345,13 +4381,25 @@ def _localize_site_chrome(*, soup: BeautifulSoup, language_code: str) -> None:
         localized = _localized_site_chrome_text(text=stripped, locale=locale)
         if localized != stripped:
             node.replace_with(raw.replace(stripped, localized, 1))
-    for tag in aria_tags:
+
+
+def _localize_site_aria_labels(*, tags: list[Tag], locale: str) -> None:
+    for tag in tags:
         aria_label = str(tag.get("aria-label") or "").strip()
         if aria_label:
             tag["aria-label"] = _localized_site_chrome_text(
                 text=aria_label,
                 locale=locale,
             )
+
+
+def _localize_site_chrome(*, soup: BeautifulSoup, language_code: str) -> None:
+    locale = _site_chrome_locale(language_code)
+    if locale is None:
+        return
+    nodes, aria_tags = _collect_site_chrome_targets(soup=soup)
+    _localize_site_text_nodes(nodes=nodes, locale=locale)
+    _localize_site_aria_labels(tags=aria_tags, locale=locale)
     _localize_site_document_title(soup=soup, locale=locale)
 
 

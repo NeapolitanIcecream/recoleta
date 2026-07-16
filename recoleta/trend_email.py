@@ -709,7 +709,7 @@ def _build_email_subject(
     instance: str | None,
 ) -> str:
     email = _normalized_email_config(settings)
-    prefix = str(email.subject_prefix or "[Recoleta]").strip()
+    prefix = str(email.subject_prefix or "").strip()
     normalized_title = " ".join(str(title or "").split()).strip()
     _ = instance
     parts = [prefix, normalized_title]
