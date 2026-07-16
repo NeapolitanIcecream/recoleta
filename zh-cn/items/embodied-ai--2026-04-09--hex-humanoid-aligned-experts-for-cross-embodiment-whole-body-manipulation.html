@@ -10,7 +10,7 @@
 <li>它的 <strong>Action Expert</strong> 通过双重条件生成动作：一条分支关注视觉-语言特征，另一条分支关注预测的未来本体感觉特征，学习到的门控决定状态预测对动作的影响程度。</li>
 <li>训练结合了 <strong>flow-matching action objective</strong> 和辅助的 <strong>future-state prediction loss</strong>；完整系统以分层方式运行，上层是 VLA 策略，下层是用于保持平衡执行的 RL 全身控制器。</li>
 </ul></div></section><section class="surface-card section-card"><h2 class="section-label">结果</h2><div class="prose"><ul>
-<li>论文声称，在人形机器人全身操作任务上，HEX 在真实世界表现达到 <strong>state-of-the-art</strong>，评价指标是 <strong>task success rate</strong> 和 <strong>generalization</strong>，对比对象包括 <strong>ACT, SwitchVLA, GR00T N1.5, and $\Pi_{0.5}$</strong>。</li>
+<li>论文声称，在人形机器人全身操作任务上，HEX 在真实世界表现达到 <strong>state-of-the-art</strong>，评价指标是 <strong>task success rate</strong> 和 <strong>generalization</strong>，对比对象包括 <strong>ACT, SwitchVLA, GR00T N1.5, and <span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>Π</mi><mrow><mn>0.5</mn></mrow></msub></mrow><annotation encoding="application/x-tex">\Pi_{0.5}</annotation></semantics></math></span></strong>。</li>
 <li>它在 <strong>fast-reaction</strong> 和 <strong>long-horizon</strong> 任务上的提升最大，这些任务最依赖时间一致性和全身协同。</li>
 <li>实验在两个真实人形平台上进行：<strong>Tienkung 2.0</strong> 和 <strong>Tienkung 3.0</strong>。</li>
 <li>这段摘要 <strong>没有给出数值表格或确切的成功率数值</strong>，所以仅凭提供的文本无法核实它相对基线的具体提升幅度。</li>

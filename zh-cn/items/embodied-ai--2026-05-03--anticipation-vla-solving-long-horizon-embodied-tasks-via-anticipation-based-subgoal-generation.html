@@ -7,12 +7,12 @@
 <li>系统维护一个活动目标和子目标栈。高层预测模型提出下一个可达的子目标，低层 VLA 策略朝这个子目标执行。</li>
 <li>预测模型先生成文本子目标，再预测匹配的子目标图像。逆动力学检查会拒绝那些推断出的指令与文本子目标不一致的图像子目标。</li>
 <li>值模型把进展分成三类：目标已达成、进展改善、进展停滞。这个分类会触发目标出栈、继续执行，或递归细化子目标。</li>
-<li>作者用 Bagel 这个统一多模态模型实现高层模型，并通过微调一个目标条件的 $\pi_{0.5}$ 风格 flow-matching VLA 实现低层策略。</li>
+<li>作者用 Bagel 这个统一多模态模型实现高层模型，并通过微调一个目标条件的 <span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mrow><mn>0.5</mn></mrow></msub></mrow><annotation encoding="application/x-tex">\pi_{0.5}</annotation></semantics></math></span> 风格 flow-matching VLA 实现低层策略。</li>
 <li>训练使用用于预测、值分类和目标条件动作预测的分层数据集。</li>
 </ul></div></section><section class="surface-card section-card"><h2 class="section-label">结果</h2><div class="prose"><ul>
-<li>在 Libero one-trajectory SFT 上，Anticipation-VLA 的平均成功率为 80.8，$\pi_{0.5}$ 为 76.8，$\pi_{0.5}$+VLM 为 76.0，$\pi_0$ 为 64.6，DreamVLA 为 27.3，UniVLA 为 21.5。</li>
-<li>在主长时程基准 Libero-Long 上，Anticipation-VLA 得分 63.2，$\pi_{0.5}$ 为 54.6，$\pi_{0.5}$+VLM 为 53.2。</li>
-<li>在 VLABench Hammer Nail &amp; Hang Picture 上，Anticipation-VLA 的过程奖励为 56.3，成功率为 4.2，$\pi_{0.5}$+VLM 为 47.9 和 2.1。</li>
+<li>在 Libero one-trajectory SFT 上，Anticipation-VLA 的平均成功率为 80.8，<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mrow><mn>0.5</mn></mrow></msub></mrow><annotation encoding="application/x-tex">\pi_{0.5}</annotation></semantics></math></span> 为 76.8，<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mrow><mn>0.5</mn></mrow></msub></mrow><annotation encoding="application/x-tex">\pi_{0.5}</annotation></semantics></math></span>+VLM 为 76.0，<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mn>0</mn></msub></mrow><annotation encoding="application/x-tex">\pi_0</annotation></semantics></math></span> 为 64.6，DreamVLA 为 27.3，UniVLA 为 21.5。</li>
+<li>在主长时程基准 Libero-Long 上，Anticipation-VLA 得分 63.2，<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mrow><mn>0.5</mn></mrow></msub></mrow><annotation encoding="application/x-tex">\pi_{0.5}</annotation></semantics></math></span> 为 54.6，<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mrow><mn>0.5</mn></mrow></msub></mrow><annotation encoding="application/x-tex">\pi_{0.5}</annotation></semantics></math></span>+VLM 为 53.2。</li>
+<li>在 VLABench Hammer Nail &amp; Hang Picture 上，Anticipation-VLA 的过程奖励为 56.3，成功率为 4.2，<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mrow><mn>0.5</mn></mrow></msub></mrow><annotation encoding="application/x-tex">\pi_{0.5}</annotation></semantics></math></span>+VLM 为 47.9 和 2.1。</li>
 <li>在 Arx-X5 的真实世界测试中，论文对 Rearrange Objects 使用 100 个演示，对 Spell Words 使用 200 个演示，每个任务分成 20 个见过配置和 20 个未见配置，共 40 次 rollout。</li>
 <li>摘录没有给出精确的真实世界成功率，但报告在见过配置上比基线高 60%，在未见配置上高 107%。它还说 Anticipation-VLA 是在未见的 Spell Words 上唯一有非零成功率的测试模型。</li>
 </ul></div></section><section class="surface-card section-card"><h2 class="section-label">Link</h2><div class="prose"><ul>

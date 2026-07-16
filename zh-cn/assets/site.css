@@ -279,6 +279,12 @@ iframe {
   font-size: 18px;
   line-height: 1.68;
 }
+.home-feature-excerpt > p {
+  margin: 0;
+}
+.home-feature-excerpt > .math.block {
+  margin: 0.8em 0;
+}
 .latest-feed,
 .timeline-list,
 .archive-list,
@@ -658,6 +664,34 @@ iframe {
   max-width: 100%;
   overflow-x: auto;
 }
+.math.inline {
+  display: inline-flex;
+  max-width: 100%;
+  vertical-align: -0.14em;
+}
+.math.inline math {
+  font-size: 1em;
+}
+.math.block {
+  max-width: 100%;
+  margin: 1.35em 0;
+  padding: 0.2em 0 0.35em;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.math.block math[display="block"] {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  font-size: 1.05em;
+}
+.math-source-fallback {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
 .detail-content .prose th,
 .detail-content .prose td,
 .detail-content .cluster-body th,
@@ -1013,7 +1047,7 @@ iframe {
   color: var(--text);
   font-size: 13px;
   font-weight: 650;
-  line-height: 1;
+  line-height: 1.35;
   white-space: nowrap;
 }
 .language-switcher-link {

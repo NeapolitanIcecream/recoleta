@@ -6,7 +6,7 @@
 </ul></div></section><section class="surface-card section-card"><h2 class="section-label">方法</h2><div class="prose"><ul>
 <li>BACE 保留一个候选程序的<strong>种群</strong>和一个生成测试的<strong>种群</strong>，而不是只依赖一个代码样本和一个测试集。</li>
 <li>每个代码候选和每个测试都会得到一个贝叶斯信念分数，表示它是否正确或有效。通过或失败的结果会把这些信念当作带噪观察来更新，而不是当作硬事实。</li>
-<li>噪声模型为误导性情况设置了三个通过概率：错误测试上正确代码的误通过率（$\alpha$）、正确测试上错误代码的偶然通过率（$\beta$）、以及错误测试上错误代码的碰巧通过率（$\gamma$）。</li>
+<li>噪声模型为误导性情况设置了三个通过概率：错误测试上正确代码的误通过率（<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span>）、正确测试上错误代码的偶然通过率（<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi></mrow><annotation encoding="application/x-tex">\beta</annotation></semantics></math></span>）、以及错误测试上错误代码的碰巧通过率（<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>γ</mi></mrow><annotation encoding="application/x-tex">\gamma</annotation></semantics></math></span>）。</li>
 <li>提示中的公开输入/输出示例被固定为高置信锚点。代码如果无法通过锚点，信念会被压到零；通过锚点则会得到强正向更新。</li>
 <li>BACE 在测试和代码之间交替演化，并通过基于行为的精英保留和差分测试保留高信念且多样的个体。</li>
 </ul></div></section><section class="surface-card section-card"><h2 class="section-label">结果</h2><div class="prose"><ul>

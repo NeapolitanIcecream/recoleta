@@ -7,7 +7,7 @@
 <li>核心方法是 LLM-as-a-Developer：一个编码代理读取每个 ADK 的文档和源代码，编写带有 <code>solve(prompt, workdir)</code> 的 <code>agent.py</code> 文件，并在验证反馈后修复它。</li>
 <li>ADK Arena 在隔离的 Docker 镜像中运行每个框架，使用相同的提示、工具和预算，因此主要变量是 ADK 本身。</li>
 <li>验证分三层：针对导入和框架使用的静态检查、一次真实 LLM 烟雾测试，以及一个真实基准任务和早停成功检查。</li>
-<li>系统在 SWE-bench Verified、$\tau^2$-bench、Terminal-Bench 和 MCP-Atlas 上评估生成的代理，并用代理转发和测量 LLM 调用。</li>
+<li>系统在 SWE-bench Verified、<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>τ</mi><mn>2</mn></msup></mrow><annotation encoding="application/x-tex">\tau^2</annotation></semantics></math></span>-bench、Terminal-Bench 和 MCP-Atlas 上评估生成的代理，并用代理转发和测量 LLM 调用。</li>
 </ul></div></section><section class="surface-card section-card"><h2 class="section-label">结果</h2><div class="prose"><ul>
 <li>这项研究覆盖 51 个 Python ADK 框架和 204 个代理-基准配对。</li>
 <li>代理生成在 57% 的运行中成功。</li>

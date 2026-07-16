@@ -9,9 +9,9 @@
 <li>训练一个轻量级适配器，用 2 步调度替代原始的 8–10 步流求解器，以重建最终的动作轨迹。</li>
 <li>联合应用这两种机制，在系统层面降低感知和动作生成的计算成本。</li>
 </ul></div></section><section class="surface-card section-card"><h2 class="section-label">结果</h2><div class="prose"><ul>
-<li>在 LIBERO 上，将该方法应用于 $\pi_{0.5}$ 后，采样步数从 10 步降至 2 步，延迟从 286.9 ms 降至 121.2 ms，吞吐量从 3.5 FPS 提升至 8.2 FPS；平均成功率为 93.8%，而原始 $\pi_{0.5}$ 为 94.4%。</li>
-<li>在 LIBERO 的详细效率表中，该方法达到 121.8 ms 的总延迟、8.2 FPS 和 1.23 TFLOPs；相比之下，$\pi_{0.5}$ 基线为 293.2 ms、3.4 FPS 和 4.48 TFLOPs。</li>
-<li>在 RoboTwin 2.0 上，该方法报告的延迟为 125.4 ms、吞吐量为 8.0 FPS、计算量为 2.80 TFLOPs，TOP10 成功率为 81.5%；相比之下，$\pi_{0}$ 为 298.46 ms、3.35 FPS、4.38 TFLOPs 和 82.2%。</li>
+<li>在 LIBERO 上，将该方法应用于 <span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mrow><mn>0.5</mn></mrow></msub></mrow><annotation encoding="application/x-tex">\pi_{0.5}</annotation></semantics></math></span> 后，采样步数从 10 步降至 2 步，延迟从 286.9 ms 降至 121.2 ms，吞吐量从 3.5 FPS 提升至 8.2 FPS；平均成功率为 93.8%，而原始 <span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mrow><mn>0.5</mn></mrow></msub></mrow><annotation encoding="application/x-tex">\pi_{0.5}</annotation></semantics></math></span> 为 94.4%。</li>
+<li>在 LIBERO 的详细效率表中，该方法达到 121.8 ms 的总延迟、8.2 FPS 和 1.23 TFLOPs；相比之下，<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mrow><mn>0.5</mn></mrow></msub></mrow><annotation encoding="application/x-tex">\pi_{0.5}</annotation></semantics></math></span> 基线为 293.2 ms、3.4 FPS 和 4.48 TFLOPs。</li>
+<li>在 RoboTwin 2.0 上，该方法报告的延迟为 125.4 ms、吞吐量为 8.0 FPS、计算量为 2.80 TFLOPs，TOP10 成功率为 81.5%；相比之下，<span class="math inline"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>π</mi><mrow><mn>0</mn></mrow></msub></mrow><annotation encoding="application/x-tex">\pi_{0}</annotation></semantics></math></span> 为 298.46 ms、3.35 FPS、4.38 TFLOPs 和 82.2%。</li>
 <li>论文报告称，该方法在仿真中实现了接近 2.6 倍的端到端加速，在真实机器人平台上实现了 1.6 倍加速，同时保持了相当的任务性能；但摘要摘录没有提供详细的真实机器人成功率表格。</li>
 <li>报告中最显著的收益来自将动作专家的延迟降至基线的约 19%；ViT 和 LLM 的延迟则仍接近原始水平。</li>
 </ul></div></section><section class="surface-card section-card"><h2 class="section-label">Link</h2><div class="prose"><ul>
