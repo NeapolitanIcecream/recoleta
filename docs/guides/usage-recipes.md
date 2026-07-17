@@ -139,6 +139,14 @@ What to know:
 - `recoleta arxiv-pool worker` and `recoleta admin arxiv-pool gc` are local
   SQLite pool commands. In Huldra mode they return a structured unsupported
   reason.
+- Huldra owns its database and cache lifecycle. `recoleta admin gc` only
+  maintains the configured Recoleta workspace; it does not prune Huldra state.
+- The process supervisor owns retention for Huldra stdout and stderr. Send them
+  to a bounded journal or a rotating file sink rather than one append-only log.
+- Use the maintenance commands documented by the deployed Huldra version. Before
+  any cleanup, preview or dry-run the exact `HULDRA_DB_PATH` and log root, review
+  the cutoff and target list, and only then apply it. Do not use a broad recursive
+  delete as a substitute for Huldra retention.
 
 ## Run one stage only
 
@@ -399,11 +407,17 @@ the specific subcommand help before scripting it.
 
 ## Deploy with cron or systemd
 
-Minimal cron example:
+Minimal cron example on a systemd host, routing output to journald instead of an
+append-only file:
 
 ```bash
-*/15 * * * * cd /path/to/recoleta && /path/to/uv run recoleta run now >> /var/log/recoleta.log 2>&1
+*/15 * * * * cd /path/to/recoleta && /usr/bin/systemd-cat --identifier=recoleta /path/to/uv run recoleta run now
 ```
+
+Set bounded journald storage for the host (`SystemMaxUse`, `RuntimeMaxUse`, or
+`MaxRetentionSec`) and check it with `journalctl --disk-usage`. On a host without
+journald, use a dedicated file plus an explicit `logrotate` policy; do not use
+unbounded `>> logfile 2>&1` redirection.
 
 Minimal systemd example:
 
@@ -418,6 +432,9 @@ Type=oneshot
 WorkingDirectory=/path/to/recoleta
 Environment=RECOLETA_CONFIG_PATH=/path/to/recoleta.yaml
 ExecStart=/path/to/uv run recoleta run now
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=recoleta
 ```
 
 ```ini
@@ -512,8 +529,16 @@ What to know:
 Routine maintenance:
 
 ```bash
+# Preview low-risk debug and operational-history cleanup.
+uv run recoleta admin gc --dry-run
 uv run recoleta admin gc
+
+# Preview rebuildable cache deletion separately, then apply only if expected.
+uv run recoleta admin gc --prune-caches --dry-run
 uv run recoleta admin gc --prune-caches
+
+# VACUUM has no dry-run; back up the database first and run it after GC.
+uv run recoleta admin backup --output-dir /path/to/backups
 uv run recoleta admin vacuum
 ```
 
@@ -533,6 +558,20 @@ uv run recoleta admin db clear --yes
 
 Scope notes:
 
+- Run GC with the workspace's `--config` or `RECOLETA_CONFIG_PATH`. Production
+  debug artifact rows store paths relative to `ARTIFACTS_DIR`; without that root,
+  GC skips their filesystem paths rather than resolving them from the current
+  working directory. When the root is available, both relative and absolute
+  artifact paths must resolve beneath it; paths at or outside the root are
+  skipped. Skipped or empty-path artifact rows remain in SQLite for diagnosis;
+  their owning run rows remain valid too. The GC summary reports candidate,
+  eligible-for-deletion, and skipped row counts separately.
+- `admin gc --dry-run` previews the same retention cutoffs and target counters
+  used by the mutating command. `--prune-caches` is a separate, broader preview.
+- `admin vacuum` rewrites the SQLite file, has no dry-run mode, and may require
+  temporary free disk space. Take a DB backup first.
+- Recoleta GC does not rotate scheduler logs, delete `.codex-workflows`, or
+  maintain a separate Huldra database. Those remain operator-owned lifecycles.
 - `admin backup` and `admin restore` cover the SQLite database only.
 - `admin backup` writes to `--output-dir` when you pass it. Otherwise it uses
   `BACKUP_OUTPUT_DIR` / `backup_output_dir` first and falls back to

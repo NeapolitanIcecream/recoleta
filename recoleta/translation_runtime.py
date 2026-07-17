@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from concurrent.futures import FIRST_COMPLETED, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import json
 import time
 from typing import Any, cast
+
+from recoleta.types import MetricPoint
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +98,7 @@ class TranslationBatchContext:
     source_language_label: str
     llm_connection: Any
     llm_max_attempts: int
+    metric_totals: dict[tuple[str, str], float] = field(default_factory=dict, init=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,13 +195,6 @@ def prepare_translation_task(
         global_llm_model=str(getattr(request.settings, "llm_model", "") or ""),
         force=request.force,
     ):
-        _record_run_metric(
-            repository=request.repository,
-            run_id=request.run_id,
-            name="pipeline.translate.skipped_total.up_to_date_source_hash",
-            value=1,
-            unit="count",
-        )
         return "skipped", None
     context = deps.candidate_context_fn(
         repository=request.repository,
@@ -326,6 +322,25 @@ def run_translation_batch(
     targets: list[Any],
     deps: TranslationBatchDeps,
 ) -> Any:
+    try:
+        return _run_translation_batch_core(
+            context,
+            candidates=candidates,
+            targets=targets,
+            deps=deps,
+        )
+    except BaseException:
+        _flush_accumulated_metrics_on_error(context)
+        raise
+
+
+def _run_translation_batch_core(
+    context: TranslationBatchContext,
+    *,
+    candidates: list[Any],
+    targets: list[Any],
+    deps: TranslationBatchDeps,
+) -> Any:
     prepare_started = time.perf_counter()
     prepared_tasks = _prepare_batch_tasks(
         context=context,
@@ -340,7 +355,7 @@ def run_translation_batch(
         unit="ms",
     )
     if prepared_tasks is None:
-        _record_result_totals(context)
+        _record_batch_summary(context)
         return context.result
     _record_batch_metric(
         context=context,
@@ -368,7 +383,7 @@ def run_translation_batch(
             execute_task_fn=deps.execute_task_fn,
             persist_task_fn=deps.persist_task_fn,
         )
-        _record_result_totals(context)
+        _record_batch_summary(context)
         return result
     result = _run_prepared_tasks_in_parallel(
         ParallelExecutionRequest(
@@ -380,11 +395,28 @@ def run_translation_batch(
             executor_class=deps.executor_class,
         )
     )
-    _record_result_totals(context)
+    _record_batch_summary(context)
     return result
 
 
 def run_translation_backfill_batch(
+    context: TranslationBackfillContext,
+    *,
+    candidates: list[Any],
+    deps: TranslationBackfillDeps,
+) -> Any:
+    try:
+        return _run_translation_backfill_batch_core(
+            context,
+            candidates=candidates,
+            deps=deps,
+        )
+    except BaseException:
+        _flush_accumulated_metrics_on_error(context)
+        raise
+
+
+def _run_translation_backfill_batch_core(
     context: TranslationBackfillContext,
     *,
     candidates: list[Any],
@@ -402,7 +434,7 @@ def run_translation_backfill_batch(
             candidate=candidate,
             translate_candidate_fn=deps.translate_candidate_fn,
         ):
-            _record_result_totals(context)
+            _record_batch_summary(context)
             return context.result
         _run_backfill_mirrors(
             context=context,
@@ -410,7 +442,7 @@ def run_translation_backfill_batch(
             mirror_language_codes_by_candidate=deps.mirror_language_codes_by_candidate,
             mirror_candidate_fn=deps.mirror_candidate_fn,
         )
-    _record_result_totals(context)
+    _record_batch_summary(context)
     return context.result
 
 
@@ -452,6 +484,10 @@ def _prepare_batch_tasks(
                 continue
             if status == "skipped":
                 context.result.skipped_total += 1
+                _record_skip_reason_metric(
+                    context=context,
+                    reason="up_to_date_source_hash",
+                )
                 _record_source_bucket_metric(
                     context=context,
                     candidate=candidate,
@@ -675,6 +711,11 @@ def _record_result_totals(context: TranslationBatchContext) -> None:
         _record_batch_metric(context=context, name=name, value=value, unit="count")
 
 
+def _record_batch_summary(context: TranslationBatchContext) -> None:
+    _record_result_totals(context)
+    _flush_accumulated_metrics(context)
+
+
 def _complete_prepared_task(
     *,
     context: TranslationBatchContext,
@@ -756,6 +797,10 @@ def _run_backfill_translation(
     context.provider_failures.reset()
     if status == "skipped":
         context.result.skipped_total += 1
+        _record_skip_reason_metric(
+            context=context,
+            reason="up_to_date_source_hash",
+        )
         _record_source_bucket_metric(
             context=context,
             candidate=candidate,
@@ -916,19 +961,28 @@ def _record_translation_failure_metrics(
     context: TranslationBatchContext,
     failure_reason: str,
 ) -> None:
-    run_id = str(context.run_id or "").strip()
-    if not run_id:
-        return
-    repository = context.repository
-    repository.record_metric(
-        run_id=run_id,
+    _accumulate_metric(
+        context=context,
         name="pipeline.translate.failed_total",
         value=1,
         unit="count",
     )
-    repository.record_metric(
-        run_id=run_id,
+    _accumulate_metric(
+        context=context,
         name=f"pipeline.translate.failed_total.{failure_reason}",
+        value=1,
+        unit="count",
+    )
+
+
+def _record_skip_reason_metric(
+    *,
+    context: TranslationBatchContext,
+    reason: str,
+) -> None:
+    _accumulate_metric(
+        context=context,
+        name=f"pipeline.translate.skipped_total.{reason}",
         value=1,
         unit="count",
     )
@@ -942,13 +996,59 @@ def _record_source_bucket_metric(
     value: int | float = 1,
     unit: str = "count",
 ) -> None:
-    _record_run_metric(
-        repository=context.repository,
-        run_id=context.run_id,
+    _accumulate_metric(
+        context=context,
         name=f"pipeline.translate.source.{_source_bucket(candidate)}.{metric_name}",
         value=value,
         unit=unit,
     )
+
+
+def _accumulate_metric(
+    *,
+    context: TranslationBatchContext,
+    name: str,
+    value: int | float,
+    unit: str,
+) -> None:
+    if not str(context.run_id or "").strip():
+        return
+    key = (name, unit)
+    context.metric_totals[key] = context.metric_totals.get(key, 0.0) + float(value)
+
+
+def _flush_accumulated_metrics(context: TranslationBatchContext) -> None:
+    run_id = str(context.run_id or "").strip()
+    if not run_id or not context.metric_totals:
+        return
+    metrics = [
+        MetricPoint(name=name, value=value, unit=unit)
+        for (name, unit), value in context.metric_totals.items()
+    ]
+    batch_recorder = getattr(context.repository, "record_metrics_batch", None)
+    if callable(batch_recorder):
+        batch_recorder(run_id=run_id, metrics=metrics)
+    else:
+        for metric in metrics:
+            context.repository.record_metric(
+                run_id=run_id,
+                name=metric.name,
+                value=metric.value,
+                unit=metric.unit,
+            )
+    context.metric_totals.clear()
+
+
+def _flush_accumulated_metrics_on_error(context: TranslationBatchContext) -> None:
+    try:
+        _flush_accumulated_metrics(context)
+    except Exception as exc:  # noqa: BLE001
+        context.log.warning(
+            "translation metric flush failed during exceptional batch exit "
+            "error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
+        )
 
 
 def _source_bucket(candidate: Any) -> str:

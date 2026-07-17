@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import dataclass
 import json
+import os
 import sqlite3
 import shutil
 from datetime import UTC, datetime
@@ -37,6 +40,100 @@ from recoleta.storage.common import (
     _to_json,
 )
 from recoleta.types import utc_now
+
+
+def _resolve_artifact_prune_path(
+    *,
+    raw_path: str,
+    artifacts_root: Path | None,
+) -> Path | None:
+    candidate = Path(raw_path).expanduser()
+    if artifacts_root is None:
+        return Path(os.path.abspath(candidate)) if candidate.is_absolute() else None
+
+    root = artifacts_root.expanduser().resolve()
+    lexical_path = Path(
+        os.path.abspath(candidate if candidate.is_absolute() else root / candidate)
+    )
+    resolved = lexical_path.resolve()
+    if resolved == root or not resolved.is_relative_to(root):
+        return None
+    return lexical_path
+
+
+@dataclass(frozen=True, slots=True)
+class _ArtifactPrunePlan:
+    eligible_rows: tuple[Artifact, ...]
+    unique_paths: tuple[Path, ...]
+    skipped_path_values: frozenset[str]
+    skipped_run_ids: tuple[str, ...]
+    skipped_rows: int
+
+
+def _build_artifact_prune_plan(
+    *,
+    rows: list[Artifact],
+    artifacts_root: Path | None,
+) -> _ArtifactPrunePlan:
+    eligible_rows: list[Artifact] = []
+    unique_paths: list[Path] = []
+    seen_paths: set[str] = set()
+    skipped_path_values: set[str] = set()
+    skipped_run_ids: set[str] = set()
+    skipped_rows = 0
+    for row in rows:
+        raw_path = str(getattr(row, "path", "") or "").strip()
+        resolved_path = (
+            _resolve_artifact_prune_path(
+                raw_path=raw_path,
+                artifacts_root=artifacts_root,
+            )
+            if raw_path
+            else None
+        )
+        if resolved_path is None:
+            skipped_rows += 1
+            if raw_path:
+                skipped_path_values.add(raw_path)
+            skipped_run_ids.add(str(row.run_id))
+            continue
+        eligible_rows.append(row)
+        resolved_path_value = str(resolved_path)
+        if resolved_path_value in seen_paths:
+            continue
+        seen_paths.add(resolved_path_value)
+        unique_paths.append(resolved_path)
+    return _ArtifactPrunePlan(
+        eligible_rows=tuple(eligible_rows),
+        unique_paths=tuple(unique_paths),
+        skipped_path_values=frozenset(skipped_path_values),
+        skipped_run_ids=tuple(sorted(skipped_run_ids)),
+        skipped_rows=skipped_rows,
+    )
+
+
+def _prune_artifact_paths(
+    *,
+    paths: tuple[Path, ...],
+    dry_run: bool,
+) -> tuple[int, int]:
+    deleted_paths = 0
+    missing_paths = 0
+    for path in paths:
+        if not path.exists() and not path.is_symlink():
+            missing_paths += 1
+            continue
+        if dry_run:
+            deleted_paths += 1
+            continue
+        if path.is_symlink():
+            path.unlink()
+        elif path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        deleted_paths += 1
+    return deleted_paths, missing_paths
 
 
 class MaintenanceStoreMixin:
@@ -203,6 +300,7 @@ class MaintenanceStoreMixin:
         *,
         older_than: datetime,
         dry_run: bool = False,
+        artifacts_root: Path | None = None,
     ) -> ArtifactPruneResult:
         with Session(self.engine) as session:
             rows = list(
@@ -213,39 +311,28 @@ class MaintenanceStoreMixin:
             if not rows:
                 return ArtifactPruneResult()
 
-            unique_paths: list[Path] = []
-            seen_paths: set[str] = set()
-            for row in rows:
-                raw_path = str(getattr(row, "path", "") or "").strip()
-                if not raw_path or raw_path in seen_paths:
-                    continue
-                seen_paths.add(raw_path)
-                unique_paths.append(Path(raw_path).expanduser())
-
-            deleted_paths = 0
-            missing_paths = 0
-            for path in unique_paths:
-                if not path.exists():
-                    missing_paths += 1
-                    continue
-                if dry_run:
-                    deleted_paths += 1
-                    continue
-                if path.is_dir():
-                    shutil.rmtree(path)
-                else:
-                    path.unlink()
-                deleted_paths += 1
+            plan = _build_artifact_prune_plan(
+                rows=rows,
+                artifacts_root=artifacts_root,
+            )
+            deleted_paths, missing_paths = _prune_artifact_paths(
+                paths=plan.unique_paths,
+                dry_run=dry_run,
+            )
 
             if not dry_run:
-                for row in rows:
+                for row in plan.eligible_rows:
                     session.delete(row)
                 self._commit(session)
 
         return ArtifactPruneResult(
-            artifact_rows=len(rows),
+            artifact_rows=len(plan.eligible_rows),
             deleted_paths=deleted_paths,
             missing_paths=missing_paths,
+            skipped_paths=len(plan.skipped_path_values),
+            candidate_rows=len(rows),
+            skipped_rows=plan.skipped_rows,
+            skipped_run_ids=plan.skipped_run_ids,
         )
 
     def prune_operational_history_older_than(
@@ -254,6 +341,7 @@ class MaintenanceStoreMixin:
         older_than: datetime,
         dry_run: bool = False,
         artifact_older_than: datetime | None = None,
+        protected_artifact_run_ids: Iterable[str] = (),
     ) -> OperationalPruneResult:
         with Session(self.engine) as session:
             runs = list(
@@ -288,6 +376,7 @@ class MaintenanceStoreMixin:
                 session=session,
                 run_ids=run_ids,
                 artifact_older_than=artifact_older_than,
+                protected_run_ids=protected_artifact_run_ids,
             )
             retained_run_ids = canonical_run_ids | artifact_run_ids
             deletable_runs = [
@@ -333,6 +422,7 @@ class MaintenanceStoreMixin:
         session: Session,
         run_ids: list[str],
         artifact_older_than: datetime | None,
+        protected_run_ids: Iterable[str] = (),
     ) -> set[str]:
         if not run_ids:
             return set()
@@ -343,7 +433,9 @@ class MaintenanceStoreMixin:
             statement = statement.where(
                 cast(Any, Artifact.created_at) >= artifact_older_than
             )
-        return {str(run_id) for run_id in session.exec(statement)}
+        recent_run_ids = {str(run_id) for run_id in session.exec(statement)}
+        protected = {str(run_id) for run_id in protected_run_ids}
+        return recent_run_ids | (set(run_ids) & protected)
 
     def clear_document_chunk_cache(
         self,

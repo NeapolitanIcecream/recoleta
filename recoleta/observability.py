@@ -33,6 +33,17 @@ _DEFAULT_SECRET_ENV_KEY_SUBSTRINGS = (
     "PRIVATE_KEY",
 )
 
+_NOISY_THIRD_PARTY_LOGGER_PREFIXES = (
+    "LiteLLM",
+    "LiteLLM Proxy",
+    "LiteLLM Router",
+    "httpcore",
+    "httpx",
+    "litellm",
+    "openai",
+    "urllib3",
+)
+
 
 def collect_environment_secrets(*, extra_keys: Iterable[str] = ()) -> tuple[str, ...]:
     keys = _normalized_secret_keys(extra_keys=extra_keys)
@@ -122,8 +133,24 @@ def get_rich_console() -> Console:
     return _RICH_CONSOLE
 
 
+def _is_noisy_third_party_logger(logger_name: str) -> bool:
+    return any(
+        logger_name == prefix or logger_name.startswith(f"{prefix}.")
+        for prefix in _NOISY_THIRD_PARTY_LOGGER_PREFIXES
+    )
+
+
 class _InterceptHandler(logging.Handler):
+    def __init__(self, *, third_party_level: int) -> None:
+        super().__init__()
+        self._third_party_level = third_party_level
+
     def emit(self, record: logging.LogRecord) -> None:
+        if (
+            _is_noisy_third_party_logger(record.name)
+            and record.levelno < self._third_party_level
+        ):
+            return
         try:
             level = logger.level(record.levelname).name
         except Exception:
@@ -136,19 +163,35 @@ class _InterceptHandler(logging.Handler):
 
 
 def configure_process_logging(*, level: str = "INFO", log_json: bool = False) -> None:
+    # LiteLLM installs its own StreamHandler during import. Keep that handler from
+    # bypassing or duplicating Recoleta's interceptor when LiteLLM is imported lazily.
+    # An explicit LITELLM_LOG is an upstream-handler override and remains untouched.
+    os.environ.setdefault("LITELLM_LOG", "CRITICAL")
     logger.remove()
     normalized_level = level.upper()
 
     # Route stdlib logging (e.g. surya) through loguru.
     logging.captureWarnings(True)
     root_logger = logging.getLogger()
-    root_logger.handlers = [_InterceptHandler()]
     stdlib_level = getattr(logging, normalized_level, logging.INFO)
+    dependency_level = (
+        logging.DEBUG
+        if normalized_level in {"DEBUG", "TRACE"}
+        else max(logging.WARNING, stdlib_level)
+    )
+    intercept_handler = _InterceptHandler(third_party_level=dependency_level)
+    intercept_handler.setLevel(stdlib_level)
+    root_logger.handlers = [intercept_handler]
     root_logger.setLevel(stdlib_level)
     for candidate in logging.root.manager.loggerDict.values():
         if isinstance(candidate, logging.Logger):
             candidate.handlers = []
             candidate.propagate = True
+    for logger_name in _NOISY_THIRD_PARTY_LOGGER_PREFIXES:
+        dependency_logger = logging.getLogger(logger_name)
+        dependency_logger.handlers = []
+        dependency_logger.propagate = True
+        dependency_logger.setLevel(logging.NOTSET)
 
     if log_json:
         logger.add(
