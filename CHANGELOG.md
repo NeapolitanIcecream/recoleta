@@ -7,6 +7,50 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-17
+
+### Added
+
+- Optional stage-specific LLM settings for analyze, trends, ideas, and
+  translation, with `--model` overrides and provenance-aware refresh behavior.
+- Exact evidence-read traces and independent-source quality gates for generated
+  Trends and Ideas. JSON command output now reports whether an artifact
+  succeeded or was suppressed through `artifact_status`.
+- Analyze budget receipts so bounded day workflows can skip a completed
+  analysis budget while still reporting the remaining backlog.
+- Static pagination for generated Trends, Ideas, Topics, Archive, and topic
+  detail collections without changing existing first-page URLs.
+- Inline and display mathematics on generated web pages through semantic
+  MathML, with readable TeX retained in email output.
+- A no-model artifact quality evaluator for comparing generated output and
+  detecting evidence, repetition, and lifecycle regressions.
+
+### Changed
+
+- Low-evidence Trend and Idea windows are now suppressed instead of padded with
+  unsupported prose. Suppression also invalidates derived Ideas and removes
+  stale Markdown, presentation, PDF, and debug projections.
+- The generated site and trend email use a simpler reading layout, localized
+  interface copy, semantic item metadata, deduplicated sources, accessible
+  email markup, and a plain-text email alternative.
+- Trend and Idea generation now checks recent outputs for repeated titles,
+  openings, summaries, and boilerplate before accepting new artifacts.
+- The optional Huldra dependency now pins the reviewed `huldra-arxiv` 0.3.0
+  commit.
+
+### Fixed
+
+- Forced standalone translation reruns now stay within their requested scope,
+  and dated translation commands default to day granularity.
+- Outlook email calls to action use the corrected VML alignment and the site
+  color palette.
+- Translation metrics are aggregated in bounded batches and flushed when a
+  batch is interrupted; noisy dependency logs are routed through Recoleta's
+  logging policy.
+- Artifact garbage collection retains unsafe or unresolved records, keeps runs
+  referenced by skipped artifacts, and unlinks artifact symlinks without
+  deleting their targets.
+
 ## [0.4.0] - 2026-06-02
 
 ### Added
