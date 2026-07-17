@@ -370,6 +370,51 @@ def test_artifact_gc_preserves_absolute_path_compatibility_without_root(
     assert not absolute_path.exists()
 
 
+def test_gc_retains_parent_run_for_skipped_old_artifact(tmp_path: Path) -> None:
+    runner = CliRunner()
+    db_path = tmp_path / "recoleta.db"
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    run = repository.create_run("fp-skipped-artifact", run_id="run-skipped")
+    repository.finish_run(run.id, success=True)
+    repository.record_metric(run_id=run.id, name="old.metric", value=1)
+    repository.add_artifact(
+        run_id=run.id,
+        item_id=None,
+        kind="error_context",
+        path="relative/error-context.json",
+    )
+
+    now = datetime.now(UTC)
+    old_run_ts = now - timedelta(days=75)
+    old_artifact_ts = now - timedelta(days=20)
+    with Session(repository.engine) as session:
+        run_row = session.get(Run, run.id)
+        assert run_row is not None
+        run_row.started_at = old_run_ts
+        run_row.heartbeat_at = old_run_ts
+        run_row.finished_at = old_run_ts
+        artifact = session.exec(select(Artifact)).one()
+        artifact.created_at = old_artifact_ts
+        session.commit()
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["gc", "--db-path", str(db_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "skipped_artifacts=1" in result.stdout
+    assert "deleted_runs=0" in result.stdout
+    assert "retained_artifact_runs=1" in result.stdout
+    with Session(repository.engine) as session:
+        assert session.get(Run, run.id) is not None
+        assert session.exec(select(Artifact)).one().run_id == run.id
+    with repository.engine.connect() as connection:
+        violations = list(connection.exec_driver_sql("PRAGMA foreign_key_check"))
+    assert violations == []
+
+
 def test_operational_gc_preserves_runs_referenced_by_durable_state(
     tmp_path: Path,
 ) -> None:
@@ -416,16 +461,14 @@ def test_operational_gc_preserves_runs_referenced_by_durable_state(
             row.finished_at = old_ts
         session.commit()
 
-    kwargs = {
-        "older_than": now - timedelta(days=60),
-        "artifact_older_than": now - timedelta(days=14),
-    }
     dry_run = repository.prune_operational_history_older_than(
-        **kwargs,
+        older_than=now - timedelta(days=60),
+        artifact_older_than=now - timedelta(days=14),
         dry_run=True,
     )
     result = repository.prune_operational_history_older_than(
-        **kwargs,
+        older_than=now - timedelta(days=60),
+        artifact_older_than=now - timedelta(days=14),
         dry_run=False,
     )
 

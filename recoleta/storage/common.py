@@ -145,6 +145,7 @@ class ArtifactPruneResult:
     skipped_paths: int = 0
     candidate_rows: int = 0
     skipped_rows: int = 0
+    skipped_run_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

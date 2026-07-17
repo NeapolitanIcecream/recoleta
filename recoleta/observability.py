@@ -190,7 +190,6 @@ def configure_process_logging(*, level: str = "INFO", log_json: bool = False) ->
     for logger_name in _NOISY_THIRD_PARTY_LOGGER_PREFIXES:
         dependency_logger = logging.getLogger(logger_name)
         dependency_logger.handlers = []
-        dependency_logger.disabled = False
         dependency_logger.propagate = True
         dependency_logger.setLevel(logging.NOTSET)
 

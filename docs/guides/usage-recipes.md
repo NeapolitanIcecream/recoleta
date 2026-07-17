@@ -564,8 +564,8 @@ Scope notes:
   working directory. When the root is available, both relative and absolute
   artifact paths must resolve beneath it; paths at or outside the root are
   skipped. Skipped or empty-path artifact rows remain in SQLite for diagnosis;
-  the GC summary reports candidate, eligible-for-deletion, and skipped row
-  counts separately.
+  their owning run rows remain valid too. The GC summary reports candidate,
+  eligible-for-deletion, and skipped row counts separately.
 - `admin gc --dry-run` previews the same retention cutoffs and target counters
   used by the mutating command. `--prune-caches` is a separate, broader preview.
 - `admin vacuum` rewrites the SQLite file, has no dry-run mode, and may require

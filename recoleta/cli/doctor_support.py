@@ -1080,6 +1080,7 @@ def build_gc_payload(*, request: GcPayloadRequest) -> dict[str, Any]:
         older_than=operational_cutoff,
         dry_run=request.dry_run,
         artifact_older_than=debug_cutoff,
+        protected_artifact_run_ids=artifact_result.skipped_run_ids,
     )
     chunk_cache_result = _gc_chunk_cache_result(
         repository=request.repository,
