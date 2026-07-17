@@ -15,6 +15,8 @@
     ],
     "favicon": "assets/favicon.svg",
     "idea_pages": [
+      "ideas/embodied-ai--day--2026-07-16--ideas.html",
+      "ideas/software-intelligence--day--2026-07-16--ideas.html",
       "ideas/embodied-ai--day--2026-07-15--ideas.html",
       "ideas/software-intelligence--day--2026-07-15--ideas.html",
       "ideas/embodied-ai--day--2026-07-14--ideas.html",
@@ -270,6 +272,22 @@
     ],
     "index": "index.html",
     "item_pages": [
+      "items/embodied-ai--2026-07-16--xiaomi-opens-a-38b-world-model-built-to-generate-robot-data.html",
+      "items/embodied-ai--2026-07-16--robottt-context-scaling-for-robot-policies.html",
+      "items/software-intelligence--2026-07-16--mm-issueloc-a-controlled-benchmark-for-evaluating-visual-evidence-in-multimodal-repository-level-issue-localization.html",
+      "items/software-intelligence--2026-07-16--setup-complete-now-you-are-compromised-weaponizing-setup-instructions-against-ai-coding-agents.html",
+      "items/embodied-ai--2026-07-16--driftworld-fast-world-modeling-through-drifting.html",
+      "items/software-intelligence--2026-07-16--structureclaw-traceable-llm-agents-and-an-executable-benchmark-for-structural-engineering-workflows.html",
+      "items/software-intelligence--2026-07-16--proof-or-stop-don-t-trust-the-agent-trust-the-evidence-loop-engineering-for-verifiable-evidence-gated-lifecycle-control.html",
+      "items/embodied-ai--2026-07-16--fomovla-bridging-visual-foresight-and-motion-guidance-for-vision-language-action-models.html",
+      "items/embodied-ai--2026-07-16--lights-camera-malfunction-when-illumination-robustness-leaves-vla-models-blind-to-color.html",
+      "items/embodied-ai--2026-07-16--reflex-real-time-vla-control-through-streaming-inference.html",
+      "items/software-intelligence--2026-07-16--project-kaleidoscope-contextual-human-aligned-evaluation-for-real-world-ai-applications.html",
+      "items/software-intelligence--2026-07-16--rethinking-issue-resolution-for-ai-ml-systems.html",
+      "items/software-intelligence--2026-07-16--mcpevol-bench-benchmarking-llm-agent-performance-across-dynamic-evolutions-of-mcp-servers.html",
+      "items/embodied-ai--2026-07-16--representation-aligned-tactile-grounding-for-contact-rich-robotic-manipulation.html",
+      "items/software-intelligence--2026-07-16--alipay-pibench-a-realistic-payment-integration-benchmark-for-coding-agents.html",
+      "items/embodied-ai--2026-07-16--active-real-world-factor-based-evaluation-for-generalist-robot-policies.html",
       "items/software-intelligence--2026-07-15--ebae-a-protocol-for-bounding-the-real-world-authority-of-autonomous-agents.html",
       "items/software-intelligence--2026-07-15--vint-cerf-is-working-on-a-plan-to-unleash-ai-agents-on-the-open-internet.html",
       "items/software-intelligence--2026-07-15--visualrepair-dynamic-tool-calling-and-region-focusing-for-visual-software-issue-repair.html",
@@ -2180,6 +2198,9 @@
       "documentation-sites": [
         "topics/documentation-sites.html"
       ],
+      "domain-evaluation": [
+        "topics/domain-evaluation.html"
+      ],
       "domain-modeling": [
         "topics/domain-modeling.html"
       ],
@@ -2188,6 +2209,9 @@
       ],
       "driving-world-models": [
         "topics/driving-world-models.html"
+      ],
+      "dynamic-tools": [
+        "topics/dynamic-tools.html"
       ],
       "edge-deployment": [
         "topics/edge-deployment.html"
@@ -2249,6 +2273,9 @@
       ],
       "event-cameras": [
         "topics/event-cameras.html"
+      ],
+      "evidence-gating": [
+        "topics/evidence-gating.html"
       ],
       "executable-evaluation": [
         "topics/executable-evaluation.html"
@@ -2975,6 +3002,9 @@
       "robustness": [
         "topics/robustness.html"
       ],
+      "robustness-evaluation": [
+        "topics/robustness-evaluation.html"
+      ],
       "ruan-jian-an-quan": [
         "topics/ruan-jian-an-quan.html"
       ],
@@ -3697,9 +3727,11 @@
       "topics/dexterous-robotics.html",
       "topics/distributed-inference.html",
       "topics/documentation-sites.html",
+      "topics/domain-evaluation.html",
       "topics/domain-modeling.html",
       "topics/dong-zuo-biao-zheng.html",
       "topics/driving-world-models.html",
+      "topics/dynamic-tools.html",
       "topics/edge-deployment.html",
       "topics/edge-safety.html",
       "topics/efficient-inference.html",
@@ -3719,6 +3751,7 @@
       "topics/evaluation.html",
       "topics/evaluation-integrity.html",
       "topics/event-cameras.html",
+      "topics/evidence-gating.html",
       "topics/executable-evaluation.html",
       "topics/executable-feedback.html",
       "topics/executable-verification.html",
@@ -3954,6 +3987,7 @@
       "topics/robotics.html",
       "topics/robotics-evaluation.html",
       "topics/robustness.html",
+      "topics/robustness-evaluation.html",
       "topics/ruan-jian-an-quan.html",
       "topics/ruan-jian-gong-cheng.html",
       "topics/ruan-jian-gong-cheng-ai.html",
@@ -4149,6 +4183,8 @@
       "topics/page/26/index.html"
     ],
     "trend_pages": [
+      "trends/embodied-ai--day--2026-07-16--trend--901.html",
+      "trends/software-intelligence--day--2026-07-16--trend--1955.html",
       "trends/embodied-ai--day--2026-07-15--trend--886.html",
       "trends/software-intelligence--day--2026-07-15--trend--1934.html",
       "trends/embodied-ai--day--2026-07-14--trend--874.html",
@@ -4403,17 +4439,17 @@
       "trends/page/20/index.html"
     ]
   },
-  "ideas_total": 229,
+  "ideas_total": 231,
   "item_export_scope": "linked",
-  "items_available_total": 7376,
-  "items_total": 1287,
-  "items_unreferenced_total": 6089,
+  "items_available_total": 7429,
+  "items_total": 1303,
+  "items_unreferenced_total": 6126,
   "pagination": {
     "card_page_size": 12,
     "dense_page_size": 24,
     "topic_column_page_size": 12,
     "topic_page_size": 12
   },
-  "topics_total": 618,
-  "trends_total": 229
+  "topics_total": 622,
+  "trends_total": 231
 }
