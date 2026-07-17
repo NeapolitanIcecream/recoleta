@@ -640,11 +640,13 @@ def _resolve_backup_output_dir(
 
 
 def _delete_path_if_present(*, path: Path, dry_run: bool = False) -> bool:
-    if not path.exists():
+    if not path.exists() and not path.is_symlink():
         return False
     if dry_run:
         return True
-    if path.is_dir():
+    if path.is_symlink():
+        path.unlink()
+    elif path.is_dir():
         shutil.rmtree(path)
     else:
         path.unlink()

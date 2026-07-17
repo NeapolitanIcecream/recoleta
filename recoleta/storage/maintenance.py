@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 import json
+import os
 import sqlite3
 import shutil
 from datetime import UTC, datetime
@@ -48,17 +49,16 @@ def _resolve_artifact_prune_path(
 ) -> Path | None:
     candidate = Path(raw_path).expanduser()
     if artifacts_root is None:
-        return candidate if candidate.is_absolute() else None
+        return Path(os.path.abspath(candidate)) if candidate.is_absolute() else None
 
     root = artifacts_root.expanduser().resolve()
-    resolved = (
-        candidate.resolve()
-        if candidate.is_absolute()
-        else (root / candidate).resolve()
+    lexical_path = Path(
+        os.path.abspath(candidate if candidate.is_absolute() else root / candidate)
     )
+    resolved = lexical_path.resolve()
     if resolved == root or not resolved.is_relative_to(root):
         return None
-    return resolved
+    return lexical_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,13 +120,15 @@ def _prune_artifact_paths(
     deleted_paths = 0
     missing_paths = 0
     for path in paths:
-        if not path.exists():
+        if not path.exists() and not path.is_symlink():
             missing_paths += 1
             continue
         if dry_run:
             deleted_paths += 1
             continue
-        if path.is_dir():
+        if path.is_symlink():
+            path.unlink()
+        elif path.is_dir():
             shutil.rmtree(path)
         else:
             path.unlink()

@@ -267,6 +267,67 @@ def test_artifact_gc_accepts_absolute_path_within_configured_root(
     assert not absolute_path.exists()
 
 
+@pytest.mark.parametrize(
+    "target_is_directory",
+    [False, True],
+    ids=["file", "directory"],
+)
+def test_artifact_gc_unlinks_symlink_without_deleting_retained_target(
+    tmp_path: Path,
+    target_is_directory: bool,
+) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    target_path = artifacts_dir / "retained-target"
+    if target_is_directory:
+        target_path.mkdir()
+        (target_path / "marker.txt").write_text("keep", encoding="utf-8")
+    else:
+        target_path.write_text("keep", encoding="utf-8")
+    symlink_path = artifacts_dir / "expired-link"
+    symlink_path.symlink_to(target_path, target_is_directory=target_is_directory)
+
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    expired_run = repository.create_run("fp-expired-link", run_id="run-link")
+    retained_run = repository.create_run("fp-retained-target", run_id="run-target")
+    repository.add_artifact(
+        run_id=expired_run.id,
+        item_id=None,
+        kind="error_context",
+        path=str(symlink_path),
+    )
+    repository.add_artifact(
+        run_id=retained_run.id,
+        item_id=None,
+        kind="error_context",
+        path=str(target_path),
+    )
+    now = datetime.now(UTC)
+    with Session(repository.engine) as session:
+        artifacts = {row.path: row for row in session.exec(select(Artifact))}
+        artifacts[str(symlink_path)].created_at = now - timedelta(days=20)
+        artifacts[str(target_path)].created_at = now - timedelta(days=1)
+        session.commit()
+
+    result = repository.prune_artifacts_older_than(
+        older_than=now - timedelta(days=14),
+        artifacts_root=artifacts_dir,
+    )
+
+    assert result.artifact_rows == 1
+    assert result.deleted_paths == 1
+    assert not symlink_path.is_symlink()
+    assert target_path.exists()
+    if target_is_directory:
+        assert (target_path / "marker.txt").read_text(encoding="utf-8") == "keep"
+    else:
+        assert target_path.read_text(encoding="utf-8") == "keep"
+    with Session(repository.engine) as session:
+        remaining_artifact = session.exec(select(Artifact)).one()
+    assert remaining_artifact.path == str(target_path)
+
+
 def test_artifact_gc_skips_absolute_path_outside_configured_root(
     tmp_path: Path,
 ) -> None:
@@ -413,6 +474,19 @@ def test_gc_retains_parent_run_for_skipped_old_artifact(tmp_path: Path) -> None:
     with repository.engine.connect() as connection:
         violations = list(connection.exec_driver_sql("PRAGMA foreign_key_check"))
     assert violations == []
+
+
+def test_gc_filesystem_helper_unlinks_symlinked_directory(tmp_path: Path) -> None:
+    target_dir = tmp_path / "retained-directory"
+    target_dir.mkdir()
+    marker_path = target_dir / "marker.txt"
+    marker_path.write_text("keep", encoding="utf-8")
+    symlink_path = tmp_path / "expired-directory-link"
+    symlink_path.symlink_to(target_dir, target_is_directory=True)
+
+    assert recoleta.cli._delete_path_if_present(path=symlink_path)
+    assert not symlink_path.is_symlink()
+    assert marker_path.read_text(encoding="utf-8") == "keep"
 
 
 def test_operational_gc_preserves_runs_referenced_by_durable_state(
