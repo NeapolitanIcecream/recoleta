@@ -1065,9 +1065,16 @@ def build_gc_payload(*, request: GcPayloadRequest) -> dict[str, Any]:
     operational_cutoff = request.reference_now - timedelta(
         days=cli._GC_OPERATIONAL_RETENTION_DAYS
     )
+    artifacts_root = (
+        Path(request.settings.artifacts_dir)
+        if request.settings is not None
+        and getattr(request.settings, "artifacts_dir", None) is not None
+        else None
+    )
     artifact_result = request.repository.prune_artifacts_older_than(
         older_than=debug_cutoff,
         dry_run=request.dry_run,
+        artifacts_root=artifacts_root,
     )
     operational_result = request.repository.prune_operational_history_older_than(
         older_than=operational_cutoff,
@@ -1080,9 +1087,12 @@ def build_gc_payload(*, request: GcPayloadRequest) -> dict[str, Any]:
         dry_run=request.dry_run,
     )
     return {
+        "candidate_artifact_rows": artifact_result.candidate_rows,
         "artifact_rows": artifact_result.artifact_rows,
+        "skipped_artifact_rows": artifact_result.skipped_rows,
         "deleted_paths": artifact_result.deleted_paths,
         "missing_paths": artifact_result.missing_paths,
+        "skipped_paths": artifact_result.skipped_paths,
         "run_rows": operational_result.run_rows,
         "metric_rows": operational_result.metric_rows,
         "retained_run_rows": operational_result.retained_run_rows,
@@ -1132,10 +1142,13 @@ def build_gc_payload(*, request: GcPayloadRequest) -> dict[str, Any]:
 
 def log_gc_completion(*, log: Any, payload: dict[str, Any], dry_run: bool) -> None:
     log.info(
-        "GC completed artifact_rows={} artifact_paths={} missing_artifact_paths={} run_rows={} metric_rows={} retained_run_rows={} retained_canonical_run_rows={} retained_artifact_run_rows={} pdf_debug_dirs={} document_chunks={} chunk_embeddings={} chunk_fts_rows={} lancedb_tables={} trend_pdfs={} site_outputs={} dry_run={}",
+        "GC completed candidate_artifact_rows={} eligible_artifact_rows={} skipped_artifact_rows={} artifact_paths={} missing_artifact_paths={} skipped_artifact_paths={} run_rows={} metric_rows={} retained_run_rows={} retained_canonical_run_rows={} retained_artifact_run_rows={} pdf_debug_dirs={} document_chunks={} chunk_embeddings={} chunk_fts_rows={} lancedb_tables={} trend_pdfs={} site_outputs={} dry_run={}",
+        payload["candidate_artifact_rows"],
         payload["artifact_rows"],
+        payload["skipped_artifact_rows"],
         payload["deleted_paths"],
         payload["missing_paths"],
+        payload["skipped_paths"],
         payload["run_rows"],
         payload["metric_rows"],
         payload["retained_run_rows"],
@@ -1168,9 +1181,12 @@ def render_gc_summary(
     )
     console.print(
         f"[green]gc completed[/green] "
+        f"candidate_artifacts={payload['candidate_artifact_rows']} "
         f"{counter_prefix}_artifacts={payload['artifact_rows']} "
+        f"skipped_artifacts={payload['skipped_artifact_rows']} "
         f"{counter_prefix}_artifact_paths={payload['deleted_paths']} "
         f"{counter_prefix}_missing_artifact_paths={payload['missing_paths']} "
+        f"skipped_artifact_paths={payload['skipped_paths']} "
         f"{counter_prefix}_runs={payload['run_rows']} "
         f"{counter_prefix}_metrics={payload['metric_rows']} "
         f"retained_runs={payload['retained_run_rows']} "

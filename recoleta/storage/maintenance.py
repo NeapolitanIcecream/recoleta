@@ -39,6 +39,26 @@ from recoleta.storage.common import (
 from recoleta.types import utc_now
 
 
+def _resolve_artifact_prune_path(
+    *,
+    raw_path: str,
+    artifacts_root: Path | None,
+) -> Path | None:
+    candidate = Path(raw_path).expanduser()
+    if artifacts_root is None:
+        return candidate if candidate.is_absolute() else None
+
+    root = artifacts_root.expanduser().resolve()
+    resolved = (
+        candidate.resolve()
+        if candidate.is_absolute()
+        else (root / candidate).resolve()
+    )
+    if resolved == root or not resolved.is_relative_to(root):
+        return None
+    return resolved
+
+
 class MaintenanceStoreMixin:
     engine: Any
     db_path: Path
@@ -203,6 +223,7 @@ class MaintenanceStoreMixin:
         *,
         older_than: datetime,
         dry_run: bool = False,
+        artifacts_root: Path | None = None,
     ) -> ArtifactPruneResult:
         with Session(self.engine) as session:
             rows = list(
@@ -213,14 +234,30 @@ class MaintenanceStoreMixin:
             if not rows:
                 return ArtifactPruneResult()
 
+            eligible_rows: list[Artifact] = []
             unique_paths: list[Path] = []
             seen_paths: set[str] = set()
+            skipped_path_values: set[str] = set()
+            skipped_rows = 0
             for row in rows:
                 raw_path = str(getattr(row, "path", "") or "").strip()
-                if not raw_path or raw_path in seen_paths:
+                if not raw_path:
+                    skipped_rows += 1
                     continue
-                seen_paths.add(raw_path)
-                unique_paths.append(Path(raw_path).expanduser())
+                resolved_path = _resolve_artifact_prune_path(
+                    raw_path=raw_path,
+                    artifacts_root=artifacts_root,
+                )
+                if resolved_path is None:
+                    skipped_rows += 1
+                    skipped_path_values.add(raw_path)
+                    continue
+                eligible_rows.append(row)
+                resolved_path_value = str(resolved_path)
+                if resolved_path_value in seen_paths:
+                    continue
+                seen_paths.add(resolved_path_value)
+                unique_paths.append(resolved_path)
 
             deleted_paths = 0
             missing_paths = 0
@@ -238,14 +275,17 @@ class MaintenanceStoreMixin:
                 deleted_paths += 1
 
             if not dry_run:
-                for row in rows:
+                for row in eligible_rows:
                     session.delete(row)
                 self._commit(session)
 
         return ArtifactPruneResult(
-            artifact_rows=len(rows),
+            artifact_rows=len(eligible_rows),
             deleted_paths=deleted_paths,
             missing_paths=missing_paths,
+            skipped_paths=len(skipped_path_values),
+            candidate_rows=len(rows),
+            skipped_rows=skipped_rows,
         )
 
     def prune_operational_history_older_than(

@@ -121,6 +121,9 @@ Some stage-local metrics use different semantics. In particular:
 - `pipeline.translate.task_duration_ms_total` is cumulative task work across
   translation requests
 - it is not the same thing as the workflow `translate` step wall-time
+- translation scan, skip-reason, and source-bucket counters are aggregated once
+  per run and bucket before persistence. Queries must continue to use
+  `SUM(value)`: older runs may contain one row per candidate and are not rewritten.
 
 If you need the runtime cost of the `translate` step, use the workflow step
 duration, not the cumulative task metric.

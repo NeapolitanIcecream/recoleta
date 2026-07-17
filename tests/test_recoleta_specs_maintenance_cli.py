@@ -154,6 +154,222 @@ def test_gc_prunes_expired_debug_artifacts_and_operational_history(
     assert remaining_artifacts[0].path == str(recent_artifact_path)
 
 
+def test_gc_resolves_relative_artifact_paths_against_configured_root(
+    configured_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    db_path = configured_env / "recoleta.db"
+    artifacts_dir = configured_env / "artifacts"
+    relative_path = Path("run-relative") / "no-item" / "error-context.json"
+    artifact_path = artifacts_dir / relative_path
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_text("debug", encoding="utf-8")
+    monkeypatch.setenv("ARTIFACTS_DIR", str(artifacts_dir))
+    monkeypatch.setenv("WRITE_DEBUG_ARTIFACTS", "true")
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    run = repository.create_run("fp-relative-artifact", run_id="run-relative")
+    repository.add_artifact(
+        run_id=run.id,
+        item_id=None,
+        kind="error_context",
+        path=str(relative_path),
+    )
+    with Session(repository.engine) as session:
+        artifact = session.exec(select(Artifact)).one()
+        artifact.created_at = datetime.now(UTC) - timedelta(days=20)
+        session.commit()
+
+    result = runner.invoke(recoleta.cli.app, ["admin", "gc"])
+
+    assert result.exit_code == 0
+    assert "candidate_artifacts=1" in result.stdout
+    assert "deleted_artifacts=1" in result.stdout
+    assert "skipped_artifacts=0" in result.stdout
+    assert not artifact_path.exists()
+
+
+def test_artifact_gc_skips_relative_paths_outside_configured_root(
+    configured_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    db_path = configured_env / "recoleta.db"
+    artifacts_dir = configured_env / "artifacts"
+    artifacts_dir.mkdir()
+    outside_path = configured_env / "outside.json"
+    outside_path.write_text("keep", encoding="utf-8")
+    monkeypatch.setenv("ARTIFACTS_DIR", str(artifacts_dir))
+    monkeypatch.setenv("WRITE_DEBUG_ARTIFACTS", "true")
+
+    repository = Repository(db_path=db_path)
+    repository.init_schema()
+    run = repository.create_run("fp-escaping-artifact", run_id="run-escaping")
+    repository.add_artifact(
+        run_id=run.id,
+        item_id=None,
+        kind="error_context",
+        path="../outside.json",
+    )
+    now = datetime.now(UTC)
+    with Session(repository.engine) as session:
+        artifact = session.exec(select(Artifact)).one()
+        artifact.created_at = now - timedelta(days=20)
+        session.commit()
+
+    result = runner.invoke(recoleta.cli.app, ["admin", "gc"])
+
+    assert result.exit_code == 0
+    assert "candidate_artifacts=1" in result.stdout
+    assert "deleted_artifacts=0" in result.stdout
+    assert "skipped_artifacts=1" in result.stdout
+    assert "skipped_artifact_paths=1" in result.stdout
+    assert outside_path.exists()
+    with Session(repository.engine) as session:
+        retained_artifact = session.exec(select(Artifact)).one()
+    assert retained_artifact.path == "../outside.json"
+
+
+def test_artifact_gc_accepts_absolute_path_within_configured_root(
+    tmp_path: Path,
+) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    absolute_path = artifacts_dir / "old.json"
+    absolute_path.write_text("legacy", encoding="utf-8")
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    run = repository.create_run("fp-absolute-artifact", run_id="run-absolute")
+    repository.add_artifact(
+        run_id=run.id,
+        item_id=None,
+        kind="error_context",
+        path=str(absolute_path),
+    )
+    now = datetime.now(UTC)
+    with Session(repository.engine) as session:
+        artifact = session.exec(select(Artifact)).one()
+        artifact.created_at = now - timedelta(days=20)
+        session.commit()
+
+    result = repository.prune_artifacts_older_than(
+        older_than=now - timedelta(days=14),
+        artifacts_root=artifacts_dir,
+    )
+
+    assert result.candidate_rows == 1
+    assert result.deleted_paths == 1
+    assert result.artifact_rows == 1
+    assert result.skipped_rows == 0
+    assert result.skipped_paths == 0
+    assert not absolute_path.exists()
+
+
+def test_artifact_gc_skips_absolute_path_outside_configured_root(
+    tmp_path: Path,
+) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    absolute_path = tmp_path / "outside.json"
+    absolute_path.write_text("keep", encoding="utf-8")
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    run = repository.create_run("fp-outside-artifact", run_id="run-outside")
+    repository.add_artifact(
+        run_id=run.id,
+        item_id=None,
+        kind="error_context",
+        path=str(absolute_path),
+    )
+    now = datetime.now(UTC)
+    with Session(repository.engine) as session:
+        artifact = session.exec(select(Artifact)).one()
+        artifact.created_at = now - timedelta(days=20)
+        session.commit()
+
+    result = repository.prune_artifacts_older_than(
+        older_than=now - timedelta(days=14),
+        artifacts_root=artifacts_dir,
+    )
+
+    assert result.candidate_rows == 1
+    assert result.artifact_rows == 0
+    assert result.skipped_rows == 1
+    assert result.deleted_paths == 0
+    assert result.skipped_paths == 1
+    assert absolute_path.exists()
+    with Session(repository.engine) as session:
+        retained_artifact = session.exec(select(Artifact)).one()
+    assert retained_artifact.path == str(absolute_path)
+
+
+def test_artifact_gc_retains_row_with_empty_path(tmp_path: Path) -> None:
+    artifacts_dir = tmp_path / "artifacts"
+    artifacts_dir.mkdir()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    run = repository.create_run("fp-empty-artifact", run_id="run-empty")
+    repository.add_artifact(
+        run_id=run.id,
+        item_id=None,
+        kind="error_context",
+        path=" ",
+    )
+    now = datetime.now(UTC)
+    with Session(repository.engine) as session:
+        artifact = session.exec(select(Artifact)).one()
+        artifact.created_at = now - timedelta(days=20)
+        session.commit()
+
+    result = repository.prune_artifacts_older_than(
+        older_than=now - timedelta(days=14),
+        artifacts_root=artifacts_dir,
+    )
+
+    assert result.candidate_rows == 1
+    assert result.artifact_rows == 0
+    assert result.skipped_rows == 1
+    assert result.deleted_paths == 0
+    assert result.skipped_paths == 0
+    with Session(repository.engine) as session:
+        retained_artifact = session.exec(select(Artifact)).one()
+    assert retained_artifact.path == " "
+
+
+def test_artifact_gc_preserves_absolute_path_compatibility_without_root(
+    tmp_path: Path,
+) -> None:
+    absolute_path = tmp_path / "legacy.json"
+    absolute_path.write_text("legacy", encoding="utf-8")
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    run = repository.create_run("fp-legacy-artifact", run_id="run-legacy")
+    repository.add_artifact(
+        run_id=run.id,
+        item_id=None,
+        kind="error_context",
+        path=str(absolute_path),
+    )
+    now = datetime.now(UTC)
+    with Session(repository.engine) as session:
+        artifact = session.exec(select(Artifact)).one()
+        artifact.created_at = now - timedelta(days=20)
+        session.commit()
+
+    result = repository.prune_artifacts_older_than(
+        older_than=now - timedelta(days=14),
+    )
+
+    assert result.candidate_rows == 1
+    assert result.deleted_paths == 1
+    assert result.artifact_rows == 1
+    assert result.skipped_rows == 0
+    assert result.skipped_paths == 0
+    assert not absolute_path.exists()
+
+
 def test_operational_gc_preserves_runs_referenced_by_durable_state(
     tmp_path: Path,
 ) -> None:

@@ -142,6 +142,9 @@ class ArtifactPruneResult:
     artifact_rows: int = 0
     deleted_paths: int = 0
     missing_paths: int = 0
+    skipped_paths: int = 0
+    candidate_rows: int = 0
+    skipped_rows: int = 0
 
 
 @dataclass(frozen=True, slots=True)

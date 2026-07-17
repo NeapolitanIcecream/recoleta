@@ -7,6 +7,8 @@ import time
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 import recoleta.translation as translation_module
 import recoleta.translation_runtime as translation_runtime
 
@@ -14,6 +16,7 @@ import recoleta.translation_runtime as translation_runtime
 class _FakeRepository:
     def __init__(self) -> None:
         self.metrics: list[SimpleNamespace] = []
+        self.metric_batch_calls = 0
         self.localized_outputs: dict[tuple[str, int, str], SimpleNamespace] = {}
 
     def record_metric(
@@ -27,6 +30,19 @@ class _FakeRepository:
         self.metrics.append(
             SimpleNamespace(run_id=run_id, name=name, value=value, unit=unit)
         )
+
+    def record_metrics_batch(self, *, run_id: str, metrics: list[Any]) -> int:
+        self.metric_batch_calls += 1
+        self.metrics.extend(
+            SimpleNamespace(
+                run_id=run_id,
+                name=metric.name,
+                value=metric.value,
+                unit=metric.unit,
+            )
+            for metric in metrics
+        )
+        return len(metrics)
 
     def get_localized_output(
         self,
@@ -409,9 +425,90 @@ def test_run_translation_batch_records_result_totals() -> None:
     assert metric_values["pipeline.translate.source.analysis.skipped_total"] == 1
     assert metric_values["pipeline.translate.source.analysis.translated_total"] == 1
     assert metric_values["pipeline.translate.llm_max_attempts"] == 5
+    source_scan_metrics = [
+        metric
+        for metric in repository.metrics
+        if metric.name == "pipeline.translate.source.analysis.scanned_total"
+    ]
+    assert [metric.value for metric in source_scan_metrics] == [2]
+    assert repository.metric_batch_calls == 1
 
 
-def test_prepare_translation_task_records_up_to_date_source_hash_skip_reason() -> None:
+def test_run_translation_batch_aggregates_skip_reason_and_source_buckets() -> None:
+    repository = _FakeRepository()
+    candidates = [
+        SimpleNamespace(
+            source_kind="analysis",
+            source_record_id=1,
+            payload={"id": 1},
+            granularity=None,
+        ),
+        SimpleNamespace(
+            source_kind="analysis",
+            source_record_id=2,
+            payload={"id": 2},
+            granularity=None,
+        ),
+        SimpleNamespace(
+            source_kind="trend_synthesis",
+            source_record_id=3,
+            payload={"id": 3},
+            granularity="week",
+        ),
+    ]
+    for candidate in candidates:
+        repository.localized_outputs[
+            (candidate.source_kind, candidate.source_record_id, "zh-CN")
+        ] = SimpleNamespace(
+            source_hash=f"hash-{candidate.source_record_id}",
+            diagnostics={"llm_model": "test/model"},
+        )
+
+    def _prepare_task(**kwargs):  # type: ignore[no-untyped-def]
+        return translation_runtime.prepare_translation_task(
+            translation_runtime.PrepareTaskRequest(**kwargs),
+            translation_runtime.PrepareTaskDeps(
+                payload_hash_fn=lambda payload: f"hash-{payload['id']}",
+                candidate_context_fn=lambda **context_kwargs: {
+                    "unused": context_kwargs
+                },
+                task_factory=lambda **task_kwargs: task_kwargs,
+            ),
+        )
+
+    result = translation_runtime.run_translation_batch(
+        _batch_context(repository=repository),
+        candidates=candidates,
+        targets=[SimpleNamespace(code="zh-CN")],
+        deps=translation_runtime.TranslationBatchDeps(
+            prepare_task_fn=_prepare_task,
+            execute_task_fn=lambda **kwargs: SimpleNamespace(unused=kwargs),
+            persist_task_fn=lambda **kwargs: None,
+            parallelism_fn=lambda task_total: 1 if task_total else 0,
+            executor_class=ThreadPoolExecutor,
+        ),
+    )
+
+    def _points(name: str) -> list[float]:
+        return [metric.value for metric in repository.metrics if metric.name == name]
+
+    assert result.scanned_total == 3
+    assert result.skipped_total == 3
+    assert _points(
+        "pipeline.translate.skipped_total.up_to_date_source_hash"
+    ) == [3]
+    assert _points("pipeline.translate.source.analysis.scanned_total") == [2]
+    assert _points("pipeline.translate.source.analysis.skipped_total") == [2]
+    assert _points(
+        "pipeline.translate.source.trend_synthesis.week.scanned_total"
+    ) == [1]
+    assert _points(
+        "pipeline.translate.source.trend_synthesis.week.skipped_total"
+    ) == [1]
+    assert repository.metric_batch_calls == 1
+
+
+def test_prepare_translation_task_skips_fresh_output_without_immediate_metric_write() -> None:
     repository = _FakeRepository()
     repository.localized_outputs[("analysis", 42, "zh-CN")] = SimpleNamespace(
         source_hash="same-hash"
@@ -438,12 +535,30 @@ def test_prepare_translation_task_records_up_to_date_source_hash_skip_reason() -
         ),
     )
 
-    metric_values = _metric_values(repository.metrics)
     assert status == "skipped"
     assert prepared is None
-    assert (
-        metric_values["pipeline.translate.skipped_total.up_to_date_source_hash"] == 1
-    )
+    assert repository.metrics == []
+
+
+def test_accumulated_metrics_remain_available_when_batch_write_fails(
+    monkeypatch,
+) -> None:
+    repository = _FakeRepository()
+    context = _batch_context(repository=repository)
+    expected = {
+        ("pipeline.translate.source.analysis.scanned_total", "count"): 3.0
+    }
+    context.metric_totals.update(expected)
+
+    def _fail_batch_write(**_kwargs: Any) -> int:
+        raise RuntimeError("metric batch unavailable")
+
+    monkeypatch.setattr(repository, "record_metrics_batch", _fail_batch_write)
+
+    with pytest.raises(RuntimeError, match="metric batch unavailable"):
+        translation_runtime._flush_accumulated_metrics(context)
+
+    assert context.metric_totals == expected
 
 
 def test_prepare_translation_task_reruns_when_model_changes() -> None:

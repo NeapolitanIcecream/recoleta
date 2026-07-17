@@ -44,7 +44,7 @@ dependencies = [
 
 [project.optional-dependencies]
 huldra = [
-    "huldra-arxiv @ git+https://github.com/NeapolitanIcecream/huldra.git@aed7bcfd0c8a47e0244f7370d48c937c0b3feeb6",
+    "huldra-arxiv @ git+https://github.com/NeapolitanIcecream/huldra.git@ac44c9e175a844d48f5151a7fda62dd0e9a1db9e",
 ]
 
 [project.scripts]

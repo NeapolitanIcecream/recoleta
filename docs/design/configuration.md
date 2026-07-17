@@ -478,7 +478,14 @@ Notes:
 
 ## Logging and diagnostics
 
-- `LOG_LEVEL` (default `INFO`)
+- `LOG_LEVEL` (default `INFO`): keeps Recoleta `INFO` lifecycle and summary logs,
+  while high-volume LiteLLM, HTTPX, HTTPCore, OpenAI, and urllib3 transport
+  details are limited to `WARNING` and above. Set `LOG_LEVEL=DEBUG` explicitly
+  when dependency request and connection details are needed for diagnosis.
+- When `LITELLM_LOG` is unset, Recoleta sets it to `CRITICAL` before LiteLLM is
+  imported so LiteLLM's private stream handler cannot bypass or duplicate the
+  unified logger. An explicitly configured `LITELLM_LOG` is an upstream escape
+  hatch: LiteLLM honors it independently and may emit additional raw log lines.
 - `LOG_JSON` (default false): if true, emit JSON logs (recommended for automation).
 - `WRITE_DEBUG_ARTIFACTS` (default false): if true, write scrubbed debug JSON for failures and LLM calls.
 
