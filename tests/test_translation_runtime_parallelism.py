@@ -170,6 +170,37 @@ def _batch_context(
     )
 
 
+def _backfill_context(
+    *,
+    repository: _FakeRepository,
+) -> translation_runtime.TranslationBackfillContext:
+    return translation_runtime.TranslationBackfillContext(
+        repository=repository,
+        settings=SimpleNamespace(translation_llm_max_attempts=5),
+        result=SimpleNamespace(
+            translated_total=0,
+            mirrored_total=0,
+            scanned_total=0,
+            skipped_total=0,
+            failed_total=0,
+            aborted=False,
+            abort_reason=None,
+        ),
+        provider_failures=_FakeProviderFailures(),
+        log=_FakeLog(),
+        force=False,
+        run_id="run-translation",
+        context_assist="direct",
+        llm_model="test/model",
+        source_language_code="zh-CN",
+        source_language_label="Chinese",
+        llm_connection=None,
+        llm_max_attempts=5,
+        translation_target=SimpleNamespace(code="en"),
+        emit_mirror_targets=False,
+    )
+
+
 def test_translation_parallelism_uses_settings_cap() -> None:
     settings: Any = SimpleNamespace(translation_parallelism=12)
 
@@ -381,6 +412,65 @@ def test_run_translation_batch_records_batch_parallelism_metrics() -> None:
     assert "pipeline.translate.batch.prepared_tasks_total" in metric_names
     assert "pipeline.translate.parallelism.effective" in metric_names
     assert "pipeline.translate.llm_max_attempts" in metric_names
+
+
+def test_translation_batch_flushes_accumulated_metrics_on_keyboard_interrupt() -> None:
+    repository = _FakeRepository()
+    context = _batch_context(repository=repository)
+    candidate = SimpleNamespace(source_kind="analysis", source_record_id=1)
+
+    def _prepare_task(**kwargs):  # type: ignore[no-untyped-def]
+        return "pending", SimpleNamespace(
+            candidate=kwargs["candidate"],
+            target=kwargs["target"],
+        )
+
+    def _interrupt(**_kwargs: Any) -> None:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        translation_runtime.run_translation_batch(
+            context,
+            candidates=[candidate],
+            targets=[SimpleNamespace(code="zh-CN")],
+            deps=translation_runtime.TranslationBatchDeps(
+                prepare_task_fn=_prepare_task,
+                execute_task_fn=_interrupt,
+                persist_task_fn=lambda **kwargs: None,
+                parallelism_fn=lambda task_total: 1 if task_total else 0,
+                executor_class=ThreadPoolExecutor,
+            ),
+        )
+
+    metric_values = _metric_values(repository.metrics)
+    assert metric_values["pipeline.translate.source.analysis.scanned_total"] == 1
+    assert repository.metric_batch_calls == 1
+    assert context.metric_totals == {}
+
+
+def test_translation_backfill_flushes_metrics_on_keyboard_interrupt() -> None:
+    repository = _FakeRepository()
+    context = _backfill_context(repository=repository)
+    candidate = SimpleNamespace(source_kind="analysis", source_record_id=1)
+
+    def _interrupt(**_kwargs: Any) -> tuple[str, bool]:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        translation_runtime.run_translation_backfill_batch(
+            context,
+            candidates=[candidate],
+            deps=translation_runtime.TranslationBackfillDeps(
+                mirror_language_codes_by_candidate=lambda _candidate: [],
+                translate_candidate_fn=_interrupt,
+                mirror_candidate_fn=lambda **kwargs: ("skipped", False),
+            ),
+        )
+
+    metric_values = _metric_values(repository.metrics)
+    assert metric_values["pipeline.translate.source.analysis.scanned_total"] == 1
+    assert repository.metric_batch_calls == 1
+    assert context.metric_totals == {}
 
 
 def test_run_translation_batch_records_result_totals() -> None:

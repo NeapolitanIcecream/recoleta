@@ -322,6 +322,25 @@ def run_translation_batch(
     targets: list[Any],
     deps: TranslationBatchDeps,
 ) -> Any:
+    try:
+        return _run_translation_batch_core(
+            context,
+            candidates=candidates,
+            targets=targets,
+            deps=deps,
+        )
+    except BaseException:
+        _flush_accumulated_metrics_on_error(context)
+        raise
+
+
+def _run_translation_batch_core(
+    context: TranslationBatchContext,
+    *,
+    candidates: list[Any],
+    targets: list[Any],
+    deps: TranslationBatchDeps,
+) -> Any:
     prepare_started = time.perf_counter()
     prepared_tasks = _prepare_batch_tasks(
         context=context,
@@ -381,6 +400,23 @@ def run_translation_batch(
 
 
 def run_translation_backfill_batch(
+    context: TranslationBackfillContext,
+    *,
+    candidates: list[Any],
+    deps: TranslationBackfillDeps,
+) -> Any:
+    try:
+        return _run_translation_backfill_batch_core(
+            context,
+            candidates=candidates,
+            deps=deps,
+        )
+    except BaseException:
+        _flush_accumulated_metrics_on_error(context)
+        raise
+
+
+def _run_translation_backfill_batch_core(
     context: TranslationBackfillContext,
     *,
     candidates: list[Any],
@@ -1001,6 +1037,18 @@ def _flush_accumulated_metrics(context: TranslationBatchContext) -> None:
                 unit=metric.unit,
             )
     context.metric_totals.clear()
+
+
+def _flush_accumulated_metrics_on_error(context: TranslationBatchContext) -> None:
+    try:
+        _flush_accumulated_metrics(context)
+    except Exception as exc:  # noqa: BLE001
+        context.log.warning(
+            "translation metric flush failed during exceptional batch exit "
+            "error_type={} error={}",
+            type(exc).__name__,
+            str(exc),
+        )
 
 
 def _source_bucket(candidate: Any) -> str:
