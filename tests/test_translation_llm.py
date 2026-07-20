@@ -12,6 +12,7 @@ from recoleta.translation_llm import (
     TranslationLLMRequest,
     translate_structured_payload_with_debug,
 )
+from recoleta.trends import TrendPayload
 
 
 def _ideas_payload() -> dict[str, object]:
@@ -32,6 +33,104 @@ def _ideas_payload() -> dict[str, object]:
             }
         ],
     }
+
+
+def _trend_payload() -> dict[str, Any]:
+    return {
+        "title": "Weekly AI trends",
+        "granularity": "week",
+        "period_start": "2026-07-13T00:00:00+00:00",
+        "period_end": "2026-07-20T00:00:00+00:00",
+        "overview_md": "Agent evaluation became easier to audit this week.",
+        "topics": ["agent-evaluation"],
+        "clusters": [
+            {
+                "title": "Auditable agent evaluation",
+                "content_md": "Teams retained grounded traces for regression analysis.",
+                "evidence_refs": [
+                    {
+                        "doc_id": 1972,
+                        "chunk_index": 3,
+                        "reason": "Reports trace-backed evaluation workflows.",
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def test_translation_prompt_preserves_trend_payload_model_field_order() -> None:
+    captured_messages: list[dict[str, str]] = []
+    source_payload = dict(reversed(_trend_payload().items()))
+
+    def _completion(**kwargs: object) -> object:
+        captured_messages.extend(cast(list[dict[str, str]], kwargs["messages"]))
+        return {"raw": json.dumps(_trend_payload(), ensure_ascii=False)}
+
+    translated, _ = translate_structured_payload_with_debug(
+        TranslationLLMRequest(
+            model="test/fake-model",
+            source_kind="trend",
+            payload=source_payload,
+            source_language_code="en",
+            target_language_code="zh-CN",
+            context={"representative_docs": [], "canonical_note": "# Trends"},
+            payload_model=TrendPayload,
+        ),
+        TranslationLLMDeps(
+            completion_factory=lambda: _completion,
+            extract_content_fn=lambda response: cast(dict[str, Any], response)["raw"],
+            resolve_response_cost_usd_fn=lambda **_: None,
+        ),
+    )
+
+    payload_json = captured_messages[1]["content"].split("Payload JSON:\n", 1)[1]
+    assert list(json.loads(payload_json)) == list(TrendPayload.model_fields)
+    assert translated == TrendPayload.model_validate(_trend_payload()).model_dump(
+        mode="json"
+    )
+
+
+def test_translate_structured_payload_rejects_trend_fields_nested_in_cluster() -> None:
+    malformed_translation = {
+        "clusters": [
+            _trend_payload()["clusters"][0],
+            {
+                "title": "Weekly AI trends",
+                "granularity": "week",
+                "period_start": "2026-07-13T00:00:00+00:00",
+                "period_end": "2026-07-20T00:00:00+00:00",
+                "overview_md": "Agent evaluation became easier to audit this week.",
+                "topics": ["agent-evaluation"],
+            },
+        ]
+    }
+
+    with pytest.raises(TranslationLLMOutputError) as excinfo:
+        translate_structured_payload_with_debug(
+            TranslationLLMRequest(
+                model="test/fake-model",
+                source_kind="trend",
+                payload=_trend_payload(),
+                source_language_code="en",
+                target_language_code="zh-CN",
+                payload_model=TrendPayload,
+                max_attempts=1,
+            ),
+            TranslationLLMDeps(
+                completion_factory=lambda: (
+                    lambda **_: {
+                        "raw": json.dumps(malformed_translation, ensure_ascii=False)
+                    }
+                ),
+                extract_content_fn=lambda response: cast(dict[str, Any], response)[
+                    "raw"
+                ],
+                resolve_response_cost_usd_fn=lambda **_: None,
+            ),
+        )
+
+    assert excinfo.value.reason == "invalid_schema"
 
 
 def test_translate_structured_payload_retries_after_invalid_json() -> None:
