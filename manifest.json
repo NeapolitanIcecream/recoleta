@@ -31,6 +31,12 @@
         ],
         "favicon": "assets/favicon.svg",
         "idea_pages": [
+          "ideas/embodied-ai--week--2026-W29--ideas.html",
+          "ideas/software-intelligence--week--2026-W29--ideas.html",
+          "ideas/software-intelligence--day--2026-07-19--ideas.html",
+          "ideas/software-intelligence--day--2026-07-18--ideas.html",
+          "ideas/embodied-ai--day--2026-07-17--ideas.html",
+          "ideas/software-intelligence--day--2026-07-17--ideas.html",
           "ideas/embodied-ai--day--2026-07-16--ideas.html",
           "ideas/software-intelligence--day--2026-07-16--ideas.html",
           "ideas/embodied-ai--day--2026-07-15--ideas.html",
@@ -288,6 +294,24 @@
         ],
         "index": "index.html",
         "item_pages": [
+          "items/software-intelligence--2026-07-19--does-operational-privacy-guidance-change-code-generated-by-qwen.html",
+          "items/software-intelligence--2026-07-19--show-hn-deploy-ai-agent-in-5-lines-of-code.html",
+          "items/software-intelligence--2026-07-19--self-evolving-repo-for-team-and-coding-agent-collaboration.html",
+          "items/software-intelligence--2026-07-19--tripplet-ai-a-new-era-of-smarter-ai.html",
+          "items/software-intelligence--2026-07-18--harness-engineering.html",
+          "items/software-intelligence--2026-07-18--codex-resets.html",
+          "items/software-intelligence--2026-07-18--we-built-an-open-source-static-ai-risk-analyzer-in-5-days-using-ai-coding-agents.html",
+          "items/software-intelligence--2026-07-18--hiring-private-equity-firm-doing-9m-in-revenue.html",
+          "items/software-intelligence--2026-07-17--loop-library-for-engineers.html",
+          "items/embodied-ai--2026-07-17--joynexus-service-oriented-multi-tenant-post-training-for-vla-models.html",
+          "items/software-intelligence--2026-07-17--difftestgen-change-directed-llm-based-testing-for-exposing-behavioral-differences.html",
+          "items/software-intelligence--2026-07-17--code-poisoning-property-inference-attacks.html",
+          "items/software-intelligence--2026-07-17--the-language-of-security-how-prompt-syntax-shapes-secure-code-generation-in-open-llms.html",
+          "items/software-intelligence--2026-07-17--making-agent-mediated-contributions-governable-a-project-level-governance-manifest-for-open-source-ai-collaboration.html",
+          "items/software-intelligence--2026-07-17--gapforge-directed-compiler-fuzzing-via-coverage-gap-analysis.html",
+          "items/embodied-ai--2026-07-17--ac-vla-robust-out-of-distribution-action-execution-via-compositional-learning.html",
+          "items/embodied-ai--2026-07-17--imbench-a-benchmark-for-intuitive-robotic-manipulation.html",
+          "items/embodied-ai--2026-07-17--think-at-5-hz-act-at-20-hz-asynchronous-fast-slow-vision-language-action-inference-for-closed-loop-driving.html",
           "items/embodied-ai--2026-07-16--xiaomi-opens-a-38b-world-model-built-to-generate-robot-data.html",
           "items/embodied-ai--2026-07-16--robottt-context-scaling-for-robot-policies.html",
           "items/software-intelligence--2026-07-16--mm-issueloc-a-controlled-benchmark-for-evaluating-visual-evidence-in-multimodal-repository-level-issue-localization.html",
@@ -1661,11 +1685,15 @@
           "agent-development-kit": [
             "topics/agent-development-kit.html"
           ],
+          "agent-engineering": [
+            "topics/agent-engineering.html"
+          ],
           "agent-evaluation": [
             "topics/agent-evaluation.html",
             "topics/agent-evaluation/page/2/index.html",
             "topics/agent-evaluation/page/3/index.html",
-            "topics/agent-evaluation/page/4/index.html"
+            "topics/agent-evaluation/page/4/index.html",
+            "topics/agent-evaluation/page/5/index.html"
           ],
           "agent-governance": [
             "topics/agent-governance.html",
@@ -1892,6 +1920,9 @@
           "claude-code": [
             "topics/claude-code.html"
           ],
+          "closed-loop-control": [
+            "topics/closed-loop-control.html"
+          ],
           "coarse-to-fine-control": [
             "topics/coarse-to-fine-control.html"
           ],
@@ -1963,7 +1994,8 @@
             "topics/coding-agents/page/13/index.html",
             "topics/coding-agents/page/14/index.html",
             "topics/coding-agents/page/15/index.html",
-            "topics/coding-agents/page/16/index.html"
+            "topics/coding-agents/page/16/index.html",
+            "topics/coding-agents/page/17/index.html"
           ],
           "coding-benchmarks": [
             "topics/coding-benchmarks.html"
@@ -2078,6 +2110,9 @@
           ],
           "deployment-adaptation": [
             "topics/deployment-adaptation.html"
+          ],
+          "deployment-efficiency": [
+            "topics/deployment-efficiency.html"
           ],
           "deployment-systems": [
             "topics/deployment-systems.html"
@@ -2339,6 +2374,9 @@
           ],
           "hardware-design": [
             "topics/hardware-design.html"
+          ],
+          "harness-engineering": [
+            "topics/harness-engineering.html"
           ],
           "harness-repair": [
             "topics/harness-repair.html"
@@ -2633,6 +2671,9 @@
           "photorealistic-simulation": [
             "topics/photorealistic-simulation.html"
           ],
+          "physical-reasoning": [
+            "topics/physical-reasoning.html"
+          ],
           "planning-security": [
             "topics/planning-security.html"
           ],
@@ -2641,6 +2682,12 @@
           ],
           "policy-evaluation": [
             "topics/policy-evaluation.html"
+          ],
+          "predictive-supervision": [
+            "topics/predictive-supervision.html"
+          ],
+          "privacy-controls": [
+            "topics/privacy-controls.html"
           ],
           "procedural-memory": [
             "topics/procedural-memory.html"
@@ -2725,6 +2772,9 @@
           "release-engineering": [
             "topics/release-engineering.html"
           ],
+          "reliability": [
+            "topics/reliability.html"
+          ],
           "repo-generation": [
             "topics/repo-generation.html"
           ],
@@ -2747,7 +2797,8 @@
             "topics/repository-benchmarks.html"
           ],
           "repository-context": [
-            "topics/repository-context.html"
+            "topics/repository-context.html",
+            "topics/repository-context/page/2/index.html"
           ],
           "repository-engineering": [
             "topics/repository-engineering.html"
@@ -3324,6 +3375,9 @@
           "workflow-security": [
             "topics/workflow-security.html"
           ],
+          "workflow-traceability": [
+            "topics/workflow-traceability.html"
+          ],
           "world-action-models": [
             "topics/world-action-models.html"
           ],
@@ -3369,6 +3423,7 @@
           "topics/agent-context.html",
           "topics/agent-control.html",
           "topics/agent-development-kit.html",
+          "topics/agent-engineering.html",
           "topics/agent-evaluation.html",
           "topics/agent-governance.html",
           "topics/agent-guardrails.html",
@@ -3442,6 +3497,7 @@
           "topics/c-to-rust-migration.html",
           "topics/cad-automation.html",
           "topics/claude-code.html",
+          "topics/closed-loop-control.html",
           "topics/coarse-to-fine-control.html",
           "topics/code-agents.html",
           "topics/code-benchmarks.html",
@@ -3499,6 +3555,7 @@
           "topics/deformable-objects.html",
           "topics/dependency-risk.html",
           "topics/deployment-adaptation.html",
+          "topics/deployment-efficiency.html",
           "topics/deployment-systems.html",
           "topics/desktop-automation.html",
           "topics/desktop-support.html",
@@ -3584,6 +3641,7 @@
           "topics/gui-code.html",
           "topics/hardware-agents.html",
           "topics/hardware-design.html",
+          "topics/harness-engineering.html",
           "topics/harness-repair.html",
           "topics/hierarchical-control.html",
           "topics/hot-fixes.html",
@@ -3681,9 +3739,12 @@
           "topics/partial-hydration.html",
           "topics/performance-engineering.html",
           "topics/photorealistic-simulation.html",
+          "topics/physical-reasoning.html",
           "topics/planning-security.html",
           "topics/policy-adaptation.html",
           "topics/policy-evaluation.html",
+          "topics/predictive-supervision.html",
+          "topics/privacy-controls.html",
           "topics/procedural-memory.html",
           "topics/product-roadmap.html",
           "topics/production-automation.html",
@@ -3711,6 +3772,7 @@
           "topics/regex.html",
           "topics/reinforcement-learning.html",
           "topics/release-engineering.html",
+          "topics/reliability.html",
           "topics/repo-generation.html",
           "topics/repo-level-codegen.html",
           "topics/repo-level-generation.html",
@@ -3898,6 +3960,7 @@
           "topics/workflow-evaluation.html",
           "topics/workflow-reliability.html",
           "topics/workflow-security.html",
+          "topics/workflow-traceability.html",
           "topics/world-action-models.html",
           "topics/world-model-safety.html",
           "topics/world-models.html",
@@ -3931,6 +3994,12 @@
           "topics/page/24/index.html"
         ],
         "trend_pages": [
+          "trends/embodied-ai--week--2026-W29--trend--916.html",
+          "trends/software-intelligence--week--2026-W29--trend--2013.html",
+          "trends/software-intelligence--day--2026-07-19--trend--1989.html",
+          "trends/software-intelligence--day--2026-07-18--trend--1980.html",
+          "trends/embodied-ai--day--2026-07-17--trend--910.html",
+          "trends/software-intelligence--day--2026-07-17--trend--1972.html",
           "trends/embodied-ai--day--2026-07-16--trend--901.html",
           "trends/software-intelligence--day--2026-07-16--trend--1955.html",
           "trends/embodied-ai--day--2026-07-15--trend--886.html",
@@ -4203,6 +4272,12 @@
         ],
         "favicon": "assets/favicon.svg",
         "idea_pages": [
+          "ideas/embodied-ai--week--2026-W29--ideas.html",
+          "ideas/software-intelligence--week--2026-W29--ideas.html",
+          "ideas/software-intelligence--day--2026-07-19--ideas.html",
+          "ideas/software-intelligence--day--2026-07-18--ideas.html",
+          "ideas/embodied-ai--day--2026-07-17--ideas.html",
+          "ideas/software-intelligence--day--2026-07-17--ideas.html",
           "ideas/embodied-ai--day--2026-07-16--ideas.html",
           "ideas/software-intelligence--day--2026-07-16--ideas.html",
           "ideas/embodied-ai--day--2026-07-15--ideas.html",
@@ -4460,6 +4535,24 @@
         ],
         "index": "index.html",
         "item_pages": [
+          "items/software-intelligence--2026-07-19--does-operational-privacy-guidance-change-code-generated-by-qwen.html",
+          "items/software-intelligence--2026-07-19--show-hn-deploy-ai-agent-in-5-lines-of-code.html",
+          "items/software-intelligence--2026-07-19--self-evolving-repo-for-team-and-coding-agent-collaboration.html",
+          "items/software-intelligence--2026-07-19--tripplet-ai-a-new-era-of-smarter-ai.html",
+          "items/software-intelligence--2026-07-18--harness-engineering.html",
+          "items/software-intelligence--2026-07-18--codex-resets.html",
+          "items/software-intelligence--2026-07-18--we-built-an-open-source-static-ai-risk-analyzer-in-5-days-using-ai-coding-agents.html",
+          "items/software-intelligence--2026-07-18--hiring-private-equity-firm-doing-9m-in-revenue.html",
+          "items/software-intelligence--2026-07-17--loop-library-for-engineers.html",
+          "items/embodied-ai--2026-07-17--joynexus-service-oriented-multi-tenant-post-training-for-vla-models.html",
+          "items/software-intelligence--2026-07-17--difftestgen-change-directed-llm-based-testing-for-exposing-behavioral-differences.html",
+          "items/software-intelligence--2026-07-17--code-poisoning-property-inference-attacks.html",
+          "items/software-intelligence--2026-07-17--the-language-of-security-how-prompt-syntax-shapes-secure-code-generation-in-open-llms.html",
+          "items/software-intelligence--2026-07-17--making-agent-mediated-contributions-governable-a-project-level-governance-manifest-for-open-source-ai-collaboration.html",
+          "items/software-intelligence--2026-07-17--gapforge-directed-compiler-fuzzing-via-coverage-gap-analysis.html",
+          "items/embodied-ai--2026-07-17--ac-vla-robust-out-of-distribution-action-execution-via-compositional-learning.html",
+          "items/embodied-ai--2026-07-17--imbench-a-benchmark-for-intuitive-robotic-manipulation.html",
+          "items/embodied-ai--2026-07-17--think-at-5-hz-act-at-20-hz-asynchronous-fast-slow-vision-language-action-inference-for-closed-loop-driving.html",
           "items/embodied-ai--2026-07-16--xiaomi-opens-a-38b-world-model-built-to-generate-robot-data.html",
           "items/embodied-ai--2026-07-16--robottt-context-scaling-for-robot-policies.html",
           "items/software-intelligence--2026-07-16--mm-issueloc-a-controlled-benchmark-for-evaluating-visual-evidence-in-multimodal-repository-level-issue-localization.html",
@@ -5839,6 +5932,9 @@
           "agent-development-kit": [
             "topics/agent-development-kit.html"
           ],
+          "agent-engineering": [
+            "topics/agent-engineering.html"
+          ],
           "agent-evaluation": [
             "topics/agent-evaluation.html",
             "topics/agent-evaluation/page/2/index.html",
@@ -5977,6 +6073,9 @@
           "ai-cost-tracking": [
             "topics/ai-cost-tracking.html"
           ],
+          "ai-dai-li": [
+            "topics/ai-dai-li.html"
+          ],
           "ai-dai-ma-shen-cha": [
             "topics/ai-dai-ma-shen-cha.html"
           ],
@@ -6057,6 +6156,9 @@
             "topics/benchmarks/page/2/index.html",
             "topics/benchmarks/page/3/index.html"
           ],
+          "bi-huan-kong-zhi": [
+            "topics/bi-huan-kong-zhi.html"
+          ],
           "bian-ma-agent": [
             "topics/bian-ma-agent.html"
           ],
@@ -6074,6 +6176,9 @@
           ],
           "browser-tooling": [
             "topics/browser-tooling.html"
+          ],
+          "bu-shu-xiao-lu": [
+            "topics/bu-shu-xiao-lu.html"
           ],
           "bug-localization": [
             "topics/bug-localization.html"
@@ -6107,6 +6212,9 @@
           ],
           "claude-code": [
             "topics/claude-code.html"
+          ],
+          "closed-loop-control": [
+            "topics/closed-loop-control.html"
           ],
           "coarse-to-fine-control": [
             "topics/coarse-to-fine-control.html"
@@ -6268,6 +6376,9 @@
           "dai-li-an-quan": [
             "topics/dai-li-an-quan.html"
           ],
+          "dai-li-gong-cheng": [
+            "topics/dai-li-gong-cheng.html"
+          ],
           "dai-li-ji-neng": [
             "topics/dai-li-ji-neng.html"
           ],
@@ -6279,6 +6390,12 @@
           ],
           "dai-li-ping-gu": [
             "topics/dai-li-ping-gu.html"
+          ],
+          "dai-li-zhi-li": [
+            "topics/dai-li-zhi-li.html"
+          ],
+          "dai-ma-an-quan": [
+            "topics/dai-ma-an-quan.html"
           ],
           "dai-ma-cang-ku-shang-xia-wen": [
             "topics/dai-ma-cang-ku-shang-xia-wen.html"
@@ -6315,6 +6432,9 @@
           ],
           "deployment-adaptation": [
             "topics/deployment-adaptation.html"
+          ],
+          "deployment-efficiency": [
+            "topics/deployment-efficiency.html"
           ],
           "deployment-systems": [
             "topics/deployment-systems.html"
@@ -6559,6 +6679,9 @@
           "gong-ju-shi-yong": [
             "topics/gong-ju-shi-yong.html"
           ],
+          "gong-zuo-liu-ke-zhui-su-xing": [
+            "topics/gong-zuo-liu-ke-zhui-su-xing.html"
+          ],
           "google-cloud-next": [
             "topics/google-cloud-next.html"
           ],
@@ -6591,6 +6714,9 @@
           ],
           "hardware-design": [
             "topics/hardware-design.html"
+          ],
+          "harness-engineering": [
+            "topics/harness-engineering.html"
           ],
           "harness-repair": [
             "topics/harness-repair.html"
@@ -6679,6 +6805,12 @@
           "ju-shen-ai": [
             "topics/ju-shen-ai.html"
           ],
+          "ke-guan-ce-xing": [
+            "topics/ke-guan-ce-xing.html"
+          ],
+          "ke-kao-xing": [
+            "topics/ke-kao-xing.html"
+          ],
           "ke-zhi-xing-fan-kui": [
             "topics/ke-zhi-xing-fan-kui.html"
           ],
@@ -6693,6 +6825,9 @@
           ],
           "kua-ping-tai-kai-fa": [
             "topics/kua-ping-tai-kai-fa.html"
+          ],
+          "kuang-jia-gong-cheng": [
+            "topics/kuang-jia-gong-cheng.html"
           ],
           "latency": [
             "topics/latency.html"
@@ -6933,6 +7068,9 @@
           "photorealistic-simulation": [
             "topics/photorealistic-simulation.html"
           ],
+          "physical-reasoning": [
+            "topics/physical-reasoning.html"
+          ],
           "planning-security": [
             "topics/planning-security.html"
           ],
@@ -6941,6 +7079,12 @@
           ],
           "policy-evaluation": [
             "topics/policy-evaluation.html"
+          ],
+          "predictive-supervision": [
+            "topics/predictive-supervision.html"
+          ],
+          "privacy-controls": [
+            "topics/privacy-controls.html"
           ],
           "procedural-memory": [
             "topics/procedural-memory.html"
@@ -7030,6 +7174,9 @@
           ],
           "release-engineering": [
             "topics/release-engineering.html"
+          ],
+          "reliability": [
+            "topics/reliability.html"
           ],
           "repo-generation": [
             "topics/repo-generation.html"
@@ -7195,6 +7342,9 @@
           ],
           "ruan-jian-an-quan": [
             "topics/ruan-jian-an-quan.html"
+          ],
+          "ruan-jian-ce-shi": [
+            "topics/ruan-jian-ce-shi.html"
           ],
           "ruan-jian-gong-cheng": [
             "topics/ruan-jian-gong-cheng.html"
@@ -7668,6 +7818,9 @@
           "workflow-security": [
             "topics/workflow-security.html"
           ],
+          "workflow-traceability": [
+            "topics/workflow-traceability.html"
+          ],
           "world-action-models": [
             "topics/world-action-models.html"
           ],
@@ -7695,8 +7848,17 @@
           "xing-shi-hua-yan-zheng": [
             "topics/xing-shi-hua-yan-zheng.html"
           ],
+          "yin-si-kong-zhi": [
+            "topics/yin-si-kong-zhi.html"
+          ],
+          "yu-ce-xing-jian-du": [
+            "topics/yu-ce-xing-jian-du.html"
+          ],
           "yun-xing-shi-gui-ji": [
             "topics/yun-xing-shi-gui-ji.html"
+          ],
+          "yun-xing-shi-yan-zheng": [
+            "topics/yun-xing-shi-yan-zheng.html"
           ],
           "yun-xing-shi-zhi-xing": [
             "topics/yun-xing-shi-zhi-xing.html"
@@ -7742,6 +7904,7 @@
           "topics/agent-context.html",
           "topics/agent-control.html",
           "topics/agent-development-kit.html",
+          "topics/agent-engineering.html",
           "topics/agent-evaluation.html",
           "topics/agent-governance.html",
           "topics/agent-guardrails.html",
@@ -7785,6 +7948,7 @@
           "topics/ai-cost-control.html",
           "topics/ai-cost-governance.html",
           "topics/ai-cost-tracking.html",
+          "topics/ai-dai-li.html",
           "topics/ai-dai-ma-shen-cha.html",
           "topics/ai-education.html",
           "topics/ai-generated-software.html",
@@ -7811,12 +7975,14 @@
           "topics/benchmark-security.html",
           "topics/benchmarking.html",
           "topics/benchmarks.html",
+          "topics/bi-huan-kong-zhi.html",
           "topics/bian-ma-agent.html",
           "topics/bian-ma-dai-li.html",
           "topics/bian-ma-zhi-neng-ti.html",
           "topics/blockchain-state.html",
           "topics/browser-testing.html",
           "topics/browser-tooling.html",
+          "topics/bu-shu-xiao-lu.html",
           "topics/bug-localization.html",
           "topics/bug-reports.html",
           "topics/bug-validation.html",
@@ -7828,6 +7994,7 @@
           "topics/cheng-ben-kong-zhi.html",
           "topics/cheng-xu-xiu-fu.html",
           "topics/claude-code.html",
+          "topics/closed-loop-control.html",
           "topics/coarse-to-fine-control.html",
           "topics/code-agents.html",
           "topics/code-benchmarks.html",
@@ -7876,10 +8043,13 @@
           "topics/cross-platform-mobile.html",
           "topics/cross-robot-transfer.html",
           "topics/dai-li-an-quan.html",
+          "topics/dai-li-gong-cheng.html",
           "topics/dai-li-ji-neng.html",
           "topics/dai-li-ji-yi.html",
           "topics/dai-li-ke-guan-ce-xing.html",
           "topics/dai-li-ping-gu.html",
+          "topics/dai-li-zhi-li.html",
+          "topics/dai-ma-an-quan.html",
           "topics/dai-ma-cang-ku-shang-xia-wen.html",
           "topics/dai-ma-zhi-neng-ti.html",
           "topics/dart.html",
@@ -7892,6 +8062,7 @@
           "topics/deformable-objects.html",
           "topics/dependency-risk.html",
           "topics/deployment-adaptation.html",
+          "topics/deployment-efficiency.html",
           "topics/deployment-systems.html",
           "topics/desktop-automation.html",
           "topics/desktop-support.html",
@@ -7971,6 +8142,7 @@
           "topics/github-adoption.html",
           "topics/goal-conditioning.html",
           "topics/gong-ju-shi-yong.html",
+          "topics/gong-zuo-liu-ke-zhui-su-xing.html",
           "topics/google-cloud-next.html",
           "topics/governance.html",
           "topics/gpu-kernels.html",
@@ -7982,6 +8154,7 @@
           "topics/guo-cheng-ji-yi.html",
           "topics/hardware-agents.html",
           "topics/hardware-design.html",
+          "topics/harness-engineering.html",
           "topics/harness-repair.html",
           "topics/he-cheng-shu-ju.html",
           "topics/hierarchical-control.html",
@@ -8011,11 +8184,14 @@
           "topics/ji-qi-ren-xue.html",
           "topics/ji-qi-ren-xue-xi.html",
           "topics/ju-shen-ai.html",
+          "topics/ke-guan-ce-xing.html",
+          "topics/ke-kao-xing.html",
           "topics/ke-zhi-xing-fan-kui.html",
           "topics/ke-zhi-xing-ping-gu.html",
           "topics/kong-jian-ji-yi.html",
           "topics/kotlin-multiplatform.html",
           "topics/kua-ping-tai-kai-fa.html",
+          "topics/kuang-jia-gong-cheng.html",
           "topics/latency.html",
           "topics/latent-actions.html",
           "topics/latent-reasoning.html",
@@ -8095,9 +8271,12 @@
           "topics/partial-hydration.html",
           "topics/performance-engineering.html",
           "topics/photorealistic-simulation.html",
+          "topics/physical-reasoning.html",
           "topics/planning-security.html",
           "topics/policy-adaptation.html",
           "topics/policy-evaluation.html",
+          "topics/predictive-supervision.html",
+          "topics/privacy-controls.html",
           "topics/procedural-memory.html",
           "topics/product-roadmap.html",
           "topics/production-automation.html",
@@ -8127,6 +8306,7 @@
           "topics/regex.html",
           "topics/reinforcement-learning.html",
           "topics/release-engineering.html",
+          "topics/reliability.html",
           "topics/repo-generation.html",
           "topics/repo-level-codegen.html",
           "topics/repo-level-generation.html",
@@ -8177,6 +8357,7 @@
           "topics/robustness.html",
           "topics/robustness-evaluation.html",
           "topics/ruan-jian-an-quan.html",
+          "topics/ruan-jian-ce-shi.html",
           "topics/ruan-jian-gong-cheng.html",
           "topics/ruan-jian-gong-cheng-ai.html",
           "topics/ruan-jian-gong-cheng-ji-zhun.html",
@@ -8327,13 +8508,17 @@
           "topics/workflow-evaluation.html",
           "topics/workflow-reliability.html",
           "topics/workflow-security.html",
+          "topics/workflow-traceability.html",
           "topics/world-action-models.html",
           "topics/world-model-safety.html",
           "topics/world-models.html",
           "topics/xiao-yu-yan-mo-xing.html",
           "topics/xing-shi-hua-fang-fa.html",
           "topics/xing-shi-hua-yan-zheng.html",
+          "topics/yin-si-kong-zhi.html",
+          "topics/yu-ce-xing-jian-du.html",
           "topics/yun-xing-shi-gui-ji.html",
+          "topics/yun-xing-shi-yan-zheng.html",
           "topics/yun-xing-shi-zhi-xing.html",
           "topics/zero-shot-vision.html",
           "topics/zhen-shi-shi-jie-ping-gu.html",
@@ -8368,9 +8553,16 @@
           "topics/page/23/index.html",
           "topics/page/24/index.html",
           "topics/page/25/index.html",
-          "topics/page/26/index.html"
+          "topics/page/26/index.html",
+          "topics/page/27/index.html"
         ],
         "trend_pages": [
+          "trends/embodied-ai--week--2026-W29--trend--916.html",
+          "trends/software-intelligence--week--2026-W29--trend--2013.html",
+          "trends/software-intelligence--day--2026-07-19--trend--1989.html",
+          "trends/software-intelligence--day--2026-07-18--trend--1980.html",
+          "trends/embodied-ai--day--2026-07-17--trend--910.html",
+          "trends/software-intelligence--day--2026-07-17--trend--1972.html",
           "trends/embodied-ai--day--2026-07-16--trend--901.html",
           "trends/software-intelligence--day--2026-07-16--trend--1955.html",
           "trends/embodied-ai--day--2026-07-15--trend--886.html",
@@ -8630,6 +8822,12 @@
     },
     "favicon": "assets/favicon.svg",
     "idea_pages": [
+      "ideas/embodied-ai--week--2026-W29--ideas.html",
+      "ideas/software-intelligence--week--2026-W29--ideas.html",
+      "ideas/software-intelligence--day--2026-07-19--ideas.html",
+      "ideas/software-intelligence--day--2026-07-18--ideas.html",
+      "ideas/embodied-ai--day--2026-07-17--ideas.html",
+      "ideas/software-intelligence--day--2026-07-17--ideas.html",
       "ideas/embodied-ai--day--2026-07-16--ideas.html",
       "ideas/software-intelligence--day--2026-07-16--ideas.html",
       "ideas/embodied-ai--day--2026-07-15--ideas.html",
@@ -8887,6 +9085,24 @@
     ],
     "index": "index.html",
     "item_pages": [
+      "items/software-intelligence--2026-07-19--does-operational-privacy-guidance-change-code-generated-by-qwen.html",
+      "items/software-intelligence--2026-07-19--show-hn-deploy-ai-agent-in-5-lines-of-code.html",
+      "items/software-intelligence--2026-07-19--self-evolving-repo-for-team-and-coding-agent-collaboration.html",
+      "items/software-intelligence--2026-07-19--tripplet-ai-a-new-era-of-smarter-ai.html",
+      "items/software-intelligence--2026-07-18--harness-engineering.html",
+      "items/software-intelligence--2026-07-18--codex-resets.html",
+      "items/software-intelligence--2026-07-18--we-built-an-open-source-static-ai-risk-analyzer-in-5-days-using-ai-coding-agents.html",
+      "items/software-intelligence--2026-07-18--hiring-private-equity-firm-doing-9m-in-revenue.html",
+      "items/software-intelligence--2026-07-17--loop-library-for-engineers.html",
+      "items/embodied-ai--2026-07-17--joynexus-service-oriented-multi-tenant-post-training-for-vla-models.html",
+      "items/software-intelligence--2026-07-17--difftestgen-change-directed-llm-based-testing-for-exposing-behavioral-differences.html",
+      "items/software-intelligence--2026-07-17--code-poisoning-property-inference-attacks.html",
+      "items/software-intelligence--2026-07-17--the-language-of-security-how-prompt-syntax-shapes-secure-code-generation-in-open-llms.html",
+      "items/software-intelligence--2026-07-17--making-agent-mediated-contributions-governable-a-project-level-governance-manifest-for-open-source-ai-collaboration.html",
+      "items/software-intelligence--2026-07-17--gapforge-directed-compiler-fuzzing-via-coverage-gap-analysis.html",
+      "items/embodied-ai--2026-07-17--ac-vla-robust-out-of-distribution-action-execution-via-compositional-learning.html",
+      "items/embodied-ai--2026-07-17--imbench-a-benchmark-for-intuitive-robotic-manipulation.html",
+      "items/embodied-ai--2026-07-17--think-at-5-hz-act-at-20-hz-asynchronous-fast-slow-vision-language-action-inference-for-closed-loop-driving.html",
       "items/embodied-ai--2026-07-16--xiaomi-opens-a-38b-world-model-built-to-generate-robot-data.html",
       "items/embodied-ai--2026-07-16--robottt-context-scaling-for-robot-policies.html",
       "items/software-intelligence--2026-07-16--mm-issueloc-a-controlled-benchmark-for-evaluating-visual-evidence-in-multimodal-repository-level-issue-localization.html",
@@ -10268,11 +10484,15 @@
       "agent-development-kit": [
         "topics/agent-development-kit.html"
       ],
+      "agent-engineering": [
+        "topics/agent-engineering.html"
+      ],
       "agent-evaluation": [
         "topics/agent-evaluation.html",
         "topics/agent-evaluation/page/2/index.html",
         "topics/agent-evaluation/page/3/index.html",
-        "topics/agent-evaluation/page/4/index.html"
+        "topics/agent-evaluation/page/4/index.html",
+        "topics/agent-evaluation/page/5/index.html"
       ],
       "agent-governance": [
         "topics/agent-governance.html",
@@ -10499,6 +10719,9 @@
       "claude-code": [
         "topics/claude-code.html"
       ],
+      "closed-loop-control": [
+        "topics/closed-loop-control.html"
+      ],
       "coarse-to-fine-control": [
         "topics/coarse-to-fine-control.html"
       ],
@@ -10570,7 +10793,8 @@
         "topics/coding-agents/page/13/index.html",
         "topics/coding-agents/page/14/index.html",
         "topics/coding-agents/page/15/index.html",
-        "topics/coding-agents/page/16/index.html"
+        "topics/coding-agents/page/16/index.html",
+        "topics/coding-agents/page/17/index.html"
       ],
       "coding-benchmarks": [
         "topics/coding-benchmarks.html"
@@ -10685,6 +10909,9 @@
       ],
       "deployment-adaptation": [
         "topics/deployment-adaptation.html"
+      ],
+      "deployment-efficiency": [
+        "topics/deployment-efficiency.html"
       ],
       "deployment-systems": [
         "topics/deployment-systems.html"
@@ -10946,6 +11173,9 @@
       ],
       "hardware-design": [
         "topics/hardware-design.html"
+      ],
+      "harness-engineering": [
+        "topics/harness-engineering.html"
       ],
       "harness-repair": [
         "topics/harness-repair.html"
@@ -11240,6 +11470,9 @@
       "photorealistic-simulation": [
         "topics/photorealistic-simulation.html"
       ],
+      "physical-reasoning": [
+        "topics/physical-reasoning.html"
+      ],
       "planning-security": [
         "topics/planning-security.html"
       ],
@@ -11248,6 +11481,12 @@
       ],
       "policy-evaluation": [
         "topics/policy-evaluation.html"
+      ],
+      "predictive-supervision": [
+        "topics/predictive-supervision.html"
+      ],
+      "privacy-controls": [
+        "topics/privacy-controls.html"
       ],
       "procedural-memory": [
         "topics/procedural-memory.html"
@@ -11332,6 +11571,9 @@
       "release-engineering": [
         "topics/release-engineering.html"
       ],
+      "reliability": [
+        "topics/reliability.html"
+      ],
       "repo-generation": [
         "topics/repo-generation.html"
       ],
@@ -11354,7 +11596,8 @@
         "topics/repository-benchmarks.html"
       ],
       "repository-context": [
-        "topics/repository-context.html"
+        "topics/repository-context.html",
+        "topics/repository-context/page/2/index.html"
       ],
       "repository-engineering": [
         "topics/repository-engineering.html"
@@ -11931,6 +12174,9 @@
       "workflow-security": [
         "topics/workflow-security.html"
       ],
+      "workflow-traceability": [
+        "topics/workflow-traceability.html"
+      ],
       "world-action-models": [
         "topics/world-action-models.html"
       ],
@@ -11976,6 +12222,7 @@
       "topics/agent-context.html",
       "topics/agent-control.html",
       "topics/agent-development-kit.html",
+      "topics/agent-engineering.html",
       "topics/agent-evaluation.html",
       "topics/agent-governance.html",
       "topics/agent-guardrails.html",
@@ -12049,6 +12296,7 @@
       "topics/c-to-rust-migration.html",
       "topics/cad-automation.html",
       "topics/claude-code.html",
+      "topics/closed-loop-control.html",
       "topics/coarse-to-fine-control.html",
       "topics/code-agents.html",
       "topics/code-benchmarks.html",
@@ -12106,6 +12354,7 @@
       "topics/deformable-objects.html",
       "topics/dependency-risk.html",
       "topics/deployment-adaptation.html",
+      "topics/deployment-efficiency.html",
       "topics/deployment-systems.html",
       "topics/desktop-automation.html",
       "topics/desktop-support.html",
@@ -12191,6 +12440,7 @@
       "topics/gui-code.html",
       "topics/hardware-agents.html",
       "topics/hardware-design.html",
+      "topics/harness-engineering.html",
       "topics/harness-repair.html",
       "topics/hierarchical-control.html",
       "topics/hot-fixes.html",
@@ -12288,9 +12538,12 @@
       "topics/partial-hydration.html",
       "topics/performance-engineering.html",
       "topics/photorealistic-simulation.html",
+      "topics/physical-reasoning.html",
       "topics/planning-security.html",
       "topics/policy-adaptation.html",
       "topics/policy-evaluation.html",
+      "topics/predictive-supervision.html",
+      "topics/privacy-controls.html",
       "topics/procedural-memory.html",
       "topics/product-roadmap.html",
       "topics/production-automation.html",
@@ -12318,6 +12571,7 @@
       "topics/regex.html",
       "topics/reinforcement-learning.html",
       "topics/release-engineering.html",
+      "topics/reliability.html",
       "topics/repo-generation.html",
       "topics/repo-level-codegen.html",
       "topics/repo-level-generation.html",
@@ -12505,6 +12759,7 @@
       "topics/workflow-evaluation.html",
       "topics/workflow-reliability.html",
       "topics/workflow-security.html",
+      "topics/workflow-traceability.html",
       "topics/world-action-models.html",
       "topics/world-model-safety.html",
       "topics/world-models.html",
@@ -12538,6 +12793,12 @@
       "topics/page/24/index.html"
     ],
     "trend_pages": [
+      "trends/embodied-ai--week--2026-W29--trend--916.html",
+      "trends/software-intelligence--week--2026-W29--trend--2013.html",
+      "trends/software-intelligence--day--2026-07-19--trend--1989.html",
+      "trends/software-intelligence--day--2026-07-18--trend--1980.html",
+      "trends/embodied-ai--day--2026-07-17--trend--910.html",
+      "trends/software-intelligence--day--2026-07-17--trend--1972.html",
       "trends/embodied-ai--day--2026-07-16--trend--901.html",
       "trends/software-intelligence--day--2026-07-16--trend--1955.html",
       "trends/embodied-ai--day--2026-07-15--trend--886.html",
@@ -12794,11 +13055,11 @@
       "trends/page/20/index.html"
     ]
   },
-  "ideas_total": 231,
+  "ideas_total": 237,
   "item_export_scope": "linked",
-  "items_available_total": 7429,
-  "items_total": 1303,
-  "items_unreferenced_total": 6126,
+  "items_available_total": 7729,
+  "items_total": 1321,
+  "items_unreferenced_total": 6408,
   "language_codes": {
     "en": "en",
     "zh-cn": "zh-CN"
@@ -12813,6 +13074,6 @@
     "topic_column_page_size": 12,
     "topic_page_size": 12
   },
-  "topics_total": 555,
-  "trends_total": 231
+  "topics_total": 564,
+  "trends_total": 237
 }
