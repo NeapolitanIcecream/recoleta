@@ -473,7 +473,7 @@ def test_build_trend_email_preview_writes_preview_artifacts_and_site_first_links
     assert "Read the full brief" in html_body
     assert "Agent systems" in text_body
     manifest = json.loads(entry.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["renderer_version"] == "trend-email-v4"
+    assert manifest["renderer_version"] == "trend-email-v5"
     assert manifest["content_hash"] == entry.content_hash
     assert manifest["primary_page_url"] == entry.primary_page_url
 
@@ -515,7 +515,7 @@ def test_build_trend_email_preview_uses_site_palette_roles(
     assert isinstance(title, Tag)
     assert isinstance(summary, Tag)
     assert isinstance(evidence_link, Tag)
-    period_line = article.find("div", recursive=False)
+    period_line = article.select_one(".email-period")
     assert isinstance(period_line, Tag)
     cta = next(
         (
@@ -542,7 +542,7 @@ def test_build_trend_email_preview_uses_site_palette_roles(
     assert style_value(shell, "border").endswith(site_palette["--line-strong"])
     assert style_value(title, "color") == site_palette["--ink"]
     assert style_value(summary, "color") == site_palette["--text"]
-    assert style_value(period_line, "color") == site_palette["--muted"]
+    assert style_value(period_line, "color") == site_palette["--accent"]
     assert style_value(evidence_link, "color") == site_palette["--accent"]
     assert style_value(cta, "background") == site_palette["--accent"]
     assert style_value(cta, "color") == site_palette["--on-accent"]
