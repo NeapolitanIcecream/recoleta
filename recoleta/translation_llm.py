@@ -208,7 +208,7 @@ def _translation_messages(
         "Context JSON:\n"
         f"{json.dumps(context_payload, ensure_ascii=False, sort_keys=True)}\n\n"
         "Payload JSON:\n"
-        f"{json.dumps(normalized_payload, ensure_ascii=False, sort_keys=True)}"
+        f"{json.dumps(normalized_payload, ensure_ascii=False)}"
     )
     return [
         {"role": "system", "content": build_translation_system_message()},
