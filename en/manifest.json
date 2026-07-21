@@ -15,6 +15,8 @@
     ],
     "favicon": "assets/favicon.svg",
     "idea_pages": [
+      "ideas/embodied-ai--day--2026-07-20--ideas.html",
+      "ideas/software-intelligence--day--2026-07-20--ideas.html",
       "ideas/embodied-ai--week--2026-W29--ideas.html",
       "ideas/software-intelligence--week--2026-W29--ideas.html",
       "ideas/software-intelligence--day--2026-07-19--ideas.html",
@@ -278,6 +280,19 @@
     ],
     "index": "index.html",
     "item_pages": [
+      "items/software-intelligence--2026-07-20--github-code-quality-is-now-generally-available.html",
+      "items/embodied-ai--2026-07-20--patch-policy-efficient-embodied-control-via-dense-visual-representations.html",
+      "items/embodied-ai--2026-07-20--fm-vla-force-based-memory-for-vision-language-action-models-in-contact-rich-manipulation.html",
+      "items/software-intelligence--2026-07-20--swe-pruner-pro-the-coder-llm-already-knows-what-to-prune.html",
+      "items/software-intelligence--2026-07-20--trim-reducing-ai-generated-codeslop-via-agent-trajectory-minimization.html",
+      "items/software-intelligence--2026-07-20--test-coverage-analysis-of-agentic-pull-requests.html",
+      "items/embodied-ai--2026-07-20--closing-the-loop-in-humanoid-vla-persistent-3d-object-tokens-for-verifiable-loco-manipulation.html",
+      "items/embodied-ai--2026-07-20--sage-subgoal-conditioned-action-generation-for-latent-world-model-planning.html",
+      "items/software-intelligence--2026-07-20--how-agent-skills-fail-under-long-contexts-a-white-box-study-in-code-auditing.html",
+      "items/embodied-ai--2026-07-20--reasoning-as-a-double-edged-sword-architecture-and-cross-stage-robustness-in-vision-language-action-models.html",
+      "items/software-intelligence--2026-07-20--integrating-high-level-requirements-to-low-level-tests-with-machine-readable-v-v-specifications.html",
+      "items/embodied-ai--2026-07-20--thinking-in-video-can-video-generators-really-reason-about-the-real-world.html",
+      "items/embodied-ai--2026-07-20--geoworldad-geometry-world-action-model-for-autonomous-driving.html",
       "items/software-intelligence--2026-07-19--does-operational-privacy-guidance-change-code-generated-by-qwen.html",
       "items/software-intelligence--2026-07-19--show-hn-deploy-ai-agent-in-5-lines-of-code.html",
       "items/software-intelligence--2026-07-19--self-evolving-repo-for-team-and-coding-agent-collaboration.html",
@@ -2877,6 +2892,9 @@
         "topics/robot-manipulation/page/3/index.html",
         "topics/robot-manipulation/page/4/index.html"
       ],
+      "robot-memory": [
+        "topics/robot-memory.html"
+      ],
       "robot-planning": [
         "topics/robot-planning.html"
       ],
@@ -3187,6 +3205,9 @@
       "terminal-ui": [
         "topics/terminal-ui.html"
       ],
+      "test-coverage": [
+        "topics/test-coverage.html"
+      ],
       "test-evolution": [
         "topics/test-evolution.html"
       ],
@@ -3364,6 +3385,9 @@
       ],
       "world-action-models": [
         "topics/world-action-models.html"
+      ],
+      "world-model-planning": [
+        "topics/world-model-planning.html"
       ],
       "world-model-safety": [
         "topics/world-model-safety.html"
@@ -3794,6 +3818,7 @@
       "topics/robot-evaluation.html",
       "topics/robot-learning.html",
       "topics/robot-manipulation.html",
+      "topics/robot-memory.html",
       "topics/robot-planning.html",
       "topics/robot-policy-safety.html",
       "topics/robot-safety.html",
@@ -3891,6 +3916,7 @@
       "topics/temporal-modeling.html",
       "topics/terminal-agents.html",
       "topics/terminal-ui.html",
+      "topics/test-coverage.html",
       "topics/test-evolution.html",
       "topics/test-generation.html",
       "topics/test-migration.html",
@@ -3946,6 +3972,7 @@
       "topics/workflow-security.html",
       "topics/workflow-traceability.html",
       "topics/world-action-models.html",
+      "topics/world-model-planning.html",
       "topics/world-model-safety.html",
       "topics/world-models.html",
       "topics/zero-shot-vision.html"
@@ -3978,6 +4005,8 @@
       "topics/page/24/index.html"
     ],
     "trend_pages": [
+      "trends/embodied-ai--day--2026-07-20--trend--928.html",
+      "trends/software-intelligence--day--2026-07-20--trend--2031.html",
       "trends/embodied-ai--week--2026-W29--trend--916.html",
       "trends/software-intelligence--week--2026-W29--trend--2013.html",
       "trends/software-intelligence--day--2026-07-19--trend--1989.html",
@@ -4240,17 +4269,17 @@
       "trends/page/20/index.html"
     ]
   },
-  "ideas_total": 237,
+  "ideas_total": 239,
   "item_export_scope": "linked",
-  "items_available_total": 7729,
-  "items_total": 1321,
-  "items_unreferenced_total": 6408,
+  "items_available_total": 7775,
+  "items_total": 1334,
+  "items_unreferenced_total": 6441,
   "pagination": {
     "card_page_size": 12,
     "dense_page_size": 24,
     "topic_column_page_size": 12,
     "topic_page_size": 12
   },
-  "topics_total": 564,
-  "trends_total": 237
+  "topics_total": 567,
+  "trends_total": 239
 }
