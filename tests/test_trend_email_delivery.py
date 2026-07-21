@@ -473,7 +473,7 @@ def test_build_trend_email_preview_writes_preview_artifacts_and_site_first_links
     assert "Read the full brief" in html_body
     assert "Agent systems" in text_body
     manifest = json.loads(entry.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["renderer_version"] == "trend-email-v5"
+    assert manifest["renderer_version"] == "trend-email-v6"
     assert manifest["content_hash"] == entry.content_hash
     assert manifest["primary_page_url"] == entry.primary_page_url
 
@@ -546,6 +546,40 @@ def test_build_trend_email_preview_uses_site_palette_roles(
     assert style_value(evidence_link, "color") == site_palette["--accent"]
     assert style_value(cta, "background") == site_palette["--accent"]
     assert style_value(cta, "color") == site_palette["--on-accent"]
+
+
+def test_build_trend_email_preview_paints_title_rule_spacing_for_outlook(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fixture = _write_email_fixture(tmp_path=tmp_path)
+    output_dir = Path(fixture["output_dir"])
+    settings = _set_email_env(
+        monkeypatch=monkeypatch, tmp_path=tmp_path, output_dir=output_dir
+    )
+    site_dir = tmp_path / "site"
+    export_trend_static_site(input_dir=output_dir, output_dir=site_dir)
+
+    entry = _preview_entry(
+        build_trend_email_preview(settings=settings, site_output_dir=site_dir)
+    )
+    soup = BeautifulSoup(entry.html_path.read_text(encoding="utf-8"), "html.parser")
+    shell = soup.select_one("table.email-shell")
+    spacer = soup.select_one("td.email-title-rule-spacer")
+
+    assert isinstance(shell, Tag)
+    assert isinstance(spacer, Tag)
+    paper_color = shell.get("bgcolor")
+    assert paper_color
+    assert spacer.get("width") == "100%"
+    assert spacer.get("bgcolor") == paper_color
+    declarations = {
+        name.strip(): value.strip()
+        for item in str(spacer.get("style") or "").split(";")
+        if ":" in item
+        for name, value in [item.split(":", 1)]
+    }
+    assert declarations["background"] == paper_color
 
 
 def test_build_trend_email_preview_omits_instance_from_subject(
