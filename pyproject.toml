@@ -10,6 +10,7 @@ dependencies = [
     "babel>=2.18.0",
     "beautifulsoup4>=4.14.3",
     "feedparser>=6.0.12",
+    "filelock>=3.24.3",
     "httpx>=0.28.1",
     "huggingface-hub>=0.36.2",
     "huldra-arxiv @ git+https://github.com/NeapolitanIcecream/huldra.git@409a48165ca348f243311d7b5d00323f92fdb658",

@@ -752,6 +752,14 @@ def _fleet_granularity_readiness_context(
         and readiness_plan.backend_descriptor.kind == "huldra"
     ):
         readiness_payload = evaluate_arxiv_pool_workflow_readiness(readiness_plan)
+        if pre_sync_plan.status != "planned":
+            return FleetGranularityReadinessContext(
+                manifest=manifest,
+                requested_steps=requested_steps,
+                readiness_plan=readiness_plan,
+                arxiv_pool_pre_sync=pre_sync_plan.as_payload(),
+                arxiv_pool_readiness=readiness_payload,
+            )
         try:
             pre_sync_result = pre_sync_missing_mature_huldra_windows(
                 plan=readiness_plan,

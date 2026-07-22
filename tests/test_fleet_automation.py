@@ -4,6 +4,9 @@ from contextlib import contextmanager
 from datetime import date
 import importlib
 from pathlib import Path
+import subprocess
+import sys
+import textwrap
 from types import SimpleNamespace
 from typing import Iterator
 
@@ -95,6 +98,36 @@ def test_fleet_sequence_lease_supports_read_only_manifest_mount(
             assert fleet_sequence_lock_path(manifest_path).parent != config_dir
     finally:
         config_dir.chmod(0o755)
+
+
+def test_fleet_module_does_not_import_unix_locking_directly() -> None:
+    """The fleet CLI must remain importable on platforms without ``fcntl``."""
+    script = textwrap.dedent(
+        """
+        import builtins
+
+        original_import = builtins.__import__
+
+        def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+            importer = (globals or {}).get("__name__")
+            if name == "fcntl" and importer == "recoleta.fleet":
+                raise ModuleNotFoundError("No module named 'fcntl'")
+            return original_import(name, globals, locals, fromlist, level)
+
+        builtins.__import__ = guarded_import
+
+        import recoleta.fleet
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_scheduled_fleet_runner_reconciles_closed_windows_under_one_lease(

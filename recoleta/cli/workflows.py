@@ -509,6 +509,7 @@ def _granularity_workflow_context(
     arxiv_pool_pre_sync = _pre_sync_granularity_arxiv_pool(
         runtime=request.runtime,
         readiness=arxiv_pool_readiness,
+        requested_steps=plan.requested_steps,
     )
     if int((arxiv_pool_pre_sync or {}).get("requested_windows_total") or 0) > 0:
         arxiv_pool_readiness = _evaluate_granularity_arxiv_pool_readiness(
@@ -673,9 +674,18 @@ def _pre_sync_granularity_arxiv_pool(
     *,
     runtime: _ManagedWorkflowRuntime,
     readiness: dict[str, Any] | None,
+    requested_steps: list[str],
 ) -> dict[str, Any] | None:
     if readiness is None:
         return None
+    if STEP_INGEST not in requested_steps:
+        return {
+            "status": "skipped",
+            "reason": "ingest_not_requested",
+            "eligible_windows_total": 0,
+            "requested_windows_total": 0,
+            "deferred_windows_total": 0,
+        }
     readiness_plan = readiness.get("_workflow_readiness_plan")
     if readiness_plan is None:
         return None

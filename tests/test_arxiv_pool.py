@@ -2365,6 +2365,63 @@ def test_fleet_workflow_skip_ingest_skips_pool_pre_sync_but_still_gates_analysis
     assert emitted["arxiv_pool_readiness"]["blocked_windows_total"] == 14
 
 
+def test_huldra_fleet_skip_ingest_skips_pre_sync_but_still_gates_analysis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A skipped Huldra ingest must not enqueue maintenance work."""
+    manifest_path = _write_huldra_fleet_manifest(
+        tmp_path,
+        base_urls=("http://127.0.0.1:8765", "http://127.0.0.1:8765"),
+    )
+
+    import recoleta.cli.fleet as fleet_module
+
+    def missing_mature_readiness(plan):  # type: ignore[no-untyped-def]
+        return {
+            "status": "blocked",
+            "blocked_windows_total": len(plan.windows),
+            "immature_windows_total": 0,
+            "windows": [],
+        }
+
+    def unexpected_pre_sync(**_kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("Huldra pre-sync should be skipped with ingest")
+
+    monkeypatch.setattr(
+        fleet_module,
+        "evaluate_arxiv_pool_workflow_readiness",
+        missing_mature_readiness,
+    )
+    monkeypatch.setattr(
+        fleet_module,
+        "pre_sync_missing_mature_huldra_windows",
+        unexpected_pre_sync,
+    )
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        lambda **_kwargs: pytest.fail("strict readiness should block children"),
+    )
+
+    with pytest.raises(typer.Exit) as exc:
+        execute_fleet_granularity_workflow(
+            manifest_path=manifest_path,
+            workflow_name="week",
+            command="fleet run week",
+            anchor_date="2026-04-27",
+            skip="ingest",
+            json_output=True,
+        )
+
+    emitted = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert exc.value.exit_code == 1
+    assert emitted["arxiv_pool_pre_sync"]["status"] == "skipped"
+    assert emitted["arxiv_pool_pre_sync"]["reason"] == "ingest_not_requested"
+    assert emitted["arxiv_pool_readiness"]["blocked_windows_total"] == 14
+
+
 def test_fleet_arxiv_pool_readiness_blocks_strict_mode(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

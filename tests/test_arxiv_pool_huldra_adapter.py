@@ -313,6 +313,36 @@ def test_workflow_pre_sync_enforces_window_budget_without_request_burst(
     assert result["deferred_windows_total"] == 1
 
 
+def test_single_workflow_skip_ingest_skips_huldra_pre_sync(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The single-instance path must honor the same ingest skip contract."""
+    import recoleta.cli.workflows as workflow_module
+
+    def unexpected_pre_sync(**_kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("Huldra pre-sync should be skipped with ingest")
+
+    monkeypatch.setattr(
+        workflow_module,
+        "pre_sync_missing_mature_huldra_windows",
+        unexpected_pre_sync,
+    )
+
+    result = workflow_module._pre_sync_granularity_arxiv_pool(
+        runtime=None,  # type: ignore[arg-type]
+        readiness={"_workflow_readiness_plan": object()},
+        requested_steps=["analyze"],
+    )
+
+    assert result == {
+        "status": "skipped",
+        "reason": "ingest_not_requested",
+        "eligible_windows_total": 0,
+        "requested_windows_total": 0,
+        "deferred_windows_total": 0,
+    }
+
+
 def test_huldra_immature_analysis_ready_result_emits_no_papers() -> None:
     client = _FakeHuldraClient(
         _result(

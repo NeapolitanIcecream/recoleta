@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-import fcntl
 import hashlib
 import json
 import os
@@ -11,6 +10,7 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
+from filelock import FileLock, Timeout
 import yaml
 from slugify import slugify
 
@@ -50,20 +50,17 @@ def fleet_sequence_lease(manifest_path: Path) -> Iterator[None]:
 
     resolved = manifest_path.expanduser().resolve()
     lock_path = fleet_sequence_lock_path(resolved)
-    lock_file = lock_path.open("a+", encoding="utf-8")
+    lock = FileLock(lock_path)
     try:
-        try:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise FleetSequenceBusyError(
-                f"Fleet workflow is already running for manifest: {resolved.name}"
-            ) from exc
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        lock.acquire(timeout=0)
+    except Timeout as exc:
+        raise FleetSequenceBusyError(
+            f"Fleet workflow is already running for manifest: {resolved.name}"
+        ) from exc
+    try:
+        yield
     finally:
-        lock_file.close()
+        lock.release()
 
 
 def _load_document(path: Path) -> dict[str, Any]:
