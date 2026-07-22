@@ -121,23 +121,23 @@ def _analyze_source_probe_multiplier(sources: Any) -> int:
 def _analyze_budget_stage4_fields(
     settings: Any,
 ) -> tuple[dict[str, Any], list[str]]:
-    available: dict[str, Any] = {}
     missing: list[str] = []
+    available = _available_identity_fields(
+        settings,
+        ("llm_base_url", "llm_output_language", "analyze_content_max_chars"),
+        missing=missing,
+    )
+    available.update(_analyze_topic_identity_fields(settings, missing=missing))
+    available.update(_analyze_source_identity_fields(settings, missing=missing))
+    return available, sorted(missing)
 
-    for field_name in (
-        "llm_base_url",
-        "llm_output_language",
-        "analyze_content_max_chars",
-    ):
-        value = _identity_attribute(
-            settings,
-            field_name,
-            path=field_name,
-            missing=missing,
-        )
-        if value is not _MISSING_SETTING:
-            available[field_name] = value
 
+def _analyze_topic_identity_fields(
+    settings: Any,
+    *,
+    missing: list[str],
+) -> dict[str, Any]:
+    available: dict[str, Any] = {}
     topics = _identity_attribute(
         settings,
         "topics",
@@ -156,38 +156,63 @@ def _analyze_budget_stage4_fields(
         available["triage_required"] = bool(triage_enabled) and bool(topics)
     elif triage_enabled is not _MISSING_SETTING:
         available["triage_enabled"] = triage_enabled
+    return available
 
+
+def _analyze_source_identity_fields(
+    settings: Any,
+    *,
+    missing: list[str],
+) -> dict[str, Any]:
     sources = _identity_attribute(
         settings,
         "sources",
         path="sources",
         missing=missing,
     )
-    if sources is not _MISSING_SETTING:
-        available["source_probe_multiplier"] = _analyze_source_probe_multiplier(
-            sources
-        )
-        arxiv = _identity_attribute(
-            sources,
-            "arxiv",
-            path="sources.arxiv",
+    if sources is _MISSING_SETTING:
+        return {}
+    available: dict[str, Any] = {
+        "source_probe_multiplier": _analyze_source_probe_multiplier(sources)
+    }
+    arxiv = _identity_attribute(
+        sources,
+        "arxiv",
+        path="sources.arxiv",
+        missing=missing,
+    )
+    if arxiv is _MISSING_SETTING:
+        return available
+    arxiv_content = _available_identity_fields(
+        arxiv,
+        ("enrich_method", "enrich_failure_mode"),
+        path_prefix="sources.arxiv",
+        missing=missing,
+    )
+    if arxiv_content:
+        available["arxiv_content"] = arxiv_content
+    return available
+
+
+def _available_identity_fields(
+    owner: Any,
+    field_names: tuple[str, ...],
+    *,
+    missing: list[str],
+    path_prefix: str = "",
+) -> dict[str, Any]:
+    available: dict[str, Any] = {}
+    for field_name in field_names:
+        path = f"{path_prefix}.{field_name}" if path_prefix else field_name
+        value = _identity_attribute(
+            owner,
+            field_name,
+            path=path,
             missing=missing,
         )
-        if arxiv is not _MISSING_SETTING:
-            arxiv_content: dict[str, Any] = {}
-            for field_name in ("enrich_method", "enrich_failure_mode"):
-                value = _identity_attribute(
-                    arxiv,
-                    field_name,
-                    path=f"sources.arxiv.{field_name}",
-                    missing=missing,
-                )
-                if value is not _MISSING_SETTING:
-                    arxiv_content[field_name] = value
-            if arxiv_content:
-                available["arxiv_content"] = arxiv_content
-
-    return available, sorted(missing)
+        if value is not _MISSING_SETTING:
+            available[field_name] = value
+    return available
 
 
 def _identity_attribute(
