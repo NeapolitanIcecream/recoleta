@@ -11,10 +11,13 @@
       "archive/page/7/index.html",
       "archive/page/8/index.html",
       "archive/page/9/index.html",
-      "archive/page/10/index.html"
+      "archive/page/10/index.html",
+      "archive/page/11/index.html"
     ],
     "favicon": "assets/favicon.svg",
     "idea_pages": [
+      "ideas/embodied-ai--day--2026-07-21--ideas.html",
+      "ideas/software-intelligence--day--2026-07-21--ideas.html",
       "ideas/embodied-ai--day--2026-07-20--ideas.html",
       "ideas/software-intelligence--day--2026-07-20--ideas.html",
       "ideas/embodied-ai--week--2026-W29--ideas.html",
@@ -276,10 +279,23 @@
       "ideas/page/17/index.html",
       "ideas/page/18/index.html",
       "ideas/page/19/index.html",
-      "ideas/page/20/index.html"
+      "ideas/page/20/index.html",
+      "ideas/page/21/index.html"
     ],
     "index": "index.html",
     "item_pages": [
+      "items/software-intelligence--2026-07-21--jetbrains-context-repository-intelligence-for-coding-agents.html",
+      "items/embodied-ai--2026-07-21--masked-visual-actions-for-unified-world-modeling.html",
+      "items/software-intelligence--2026-07-21--coderescue-budget-calibrated-recovery-routing-for-coding-agents.html",
+      "items/embodied-ai--2026-07-21--abot-world-0-infinite-interactive-world-rollout-on-a-single-desktop-gpu.html",
+      "items/embodied-ai--2026-07-21--agentic-real2sim-physics-based-world-modeling-with-vision-language-agents.html",
+      "items/software-intelligence--2026-07-21--scicodepile-a-128gb-corpus-and-executable-benchmark-for-challenging-scientific-code-generation.html",
+      "items/software-intelligence--2026-07-21--tracedev-a-traceability-driven-multi-agent-framework-for-requirement-to-code-development.html",
+      "items/software-intelligence--2026-07-21--beyond-text-editing-algebraic-manipulation-of-source-code.html",
+      "items/embodied-ai--2026-07-21--dwm-separating-world-effects-from-actions-in-latent-world-models.html",
+      "items/software-intelligence--2026-07-21--llm-based-invariant-testing-for-software-functional-bugs.html",
+      "items/embodied-ai--2026-07-21--robointer1-5-a-holistic-intermediate-representation-suite-for-embodied-world-modeling-and-robotic-manipulation.html",
+      "items/software-intelligence--2026-07-21--spaghetti-architect-a-contamination-resistant-by-construction-labelled-multi-language-code-dataset-generator.html",
       "items/software-intelligence--2026-07-20--github-code-quality-is-now-generally-available.html",
       "items/embodied-ai--2026-07-20--patch-policy-efficient-embodied-control-via-dense-visual-representations.html",
       "items/embodied-ai--2026-07-20--fm-vla-force-based-memory-for-vision-language-action-models-in-contact-rich-manipulation.html",
@@ -2212,6 +2228,9 @@
       "embodied-datasets": [
         "topics/embodied-datasets.html"
       ],
+      "embodied-world-models": [
+        "topics/embodied-world-models.html"
+      ],
       "engineering-discipline": [
         "topics/engineering-discipline.html"
       ],
@@ -2439,6 +2458,9 @@
       ],
       "interactive-code-generation": [
         "topics/interactive-code-generation.html"
+      ],
+      "interactive-simulation": [
+        "topics/interactive-simulation.html"
       ],
       "interpretability": [
         "topics/interpretability.html"
@@ -2746,6 +2768,9 @@
       "real-time-control": [
         "topics/real-time-control.html"
       ],
+      "real-to-sim": [
+        "topics/real-to-sim.html"
+      ],
       "real-world-evaluation": [
         "topics/real-world-evaluation.html"
       ],
@@ -2810,6 +2835,9 @@
       ],
       "repository-exploration": [
         "topics/repository-exploration.html"
+      ],
+      "repository-intelligence": [
+        "topics/repository-intelligence.html"
       ],
       "repository-level-generation": [
         "topics/repository-level-generation.html"
@@ -3596,6 +3624,7 @@
       "topics/embodied-ai.html",
       "topics/embodied-control.html",
       "topics/embodied-datasets.html",
+      "topics/embodied-world-models.html",
       "topics/engineering-discipline.html",
       "topics/engineering-judgment.html",
       "topics/engineering-roi.html",
@@ -3671,6 +3700,7 @@
       "topics/inference-time-action-selection.html",
       "topics/interactive-benchmarks.html",
       "topics/interactive-code-generation.html",
+      "topics/interactive-simulation.html",
       "topics/interpretability.html",
       "topics/jaspr.html",
       "topics/kotlin-multiplatform.html",
@@ -3772,6 +3802,7 @@
       "topics/ratchets.html",
       "topics/real-robot-evaluation.html",
       "topics/real-time-control.html",
+      "topics/real-to-sim.html",
       "topics/real-world-evaluation.html",
       "topics/reasoning.html",
       "topics/recommender-systems.html",
@@ -3793,6 +3824,7 @@
       "topics/repository-evaluation.html",
       "topics/repository-execution.html",
       "topics/repository-exploration.html",
+      "topics/repository-intelligence.html",
       "topics/repository-level-generation.html",
       "topics/repository-mining.html",
       "topics/repository-reasoning.html",
@@ -4005,6 +4037,8 @@
       "topics/page/24/index.html"
     ],
     "trend_pages": [
+      "trends/embodied-ai--day--2026-07-21--trend--935.html",
+      "trends/software-intelligence--day--2026-07-21--trend--2050.html",
       "trends/embodied-ai--day--2026-07-20--trend--928.html",
       "trends/software-intelligence--day--2026-07-20--trend--2031.html",
       "trends/embodied-ai--week--2026-W29--trend--916.html",
@@ -4266,20 +4300,21 @@
       "trends/page/17/index.html",
       "trends/page/18/index.html",
       "trends/page/19/index.html",
-      "trends/page/20/index.html"
+      "trends/page/20/index.html",
+      "trends/page/21/index.html"
     ]
   },
-  "ideas_total": 239,
+  "ideas_total": 241,
   "item_export_scope": "linked",
-  "items_available_total": 7775,
-  "items_total": 1334,
-  "items_unreferenced_total": 6441,
+  "items_available_total": 7823,
+  "items_total": 1346,
+  "items_unreferenced_total": 6477,
   "pagination": {
     "card_page_size": 12,
     "dense_page_size": 24,
     "topic_column_page_size": 12,
     "topic_page_size": 12
   },
-  "topics_total": 567,
-  "trends_total": 239
+  "topics_total": 571,
+  "trends_total": 241
 }
