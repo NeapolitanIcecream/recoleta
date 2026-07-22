@@ -37,6 +37,47 @@ for the analyze batch even when individual items fail and remain
 `retryable_failed`. This keeps transient or content-quality backlog from causing
 unbounded default workflow retries.
 
+### Budget Configuration Identity
+
+The receipt fingerprint is a versioned projection of Stage 4 semantics, not a
+hash of the full application configuration. It includes:
+
+- the effective analyze model, including a workflow model override;
+- the LLM endpoint, output language, ordered user topics, and content character
+  limit;
+- the effective triage handoff gate (`TRIAGE_ENABLED` with non-empty `TOPICS`);
+- the arXiv stored-content selection and fallback modes used by analyze;
+- the derived source probe multiplier (the enabled-source count, capped at five)
+  used by Stage 4 candidate loading and source rebalancing.
+
+It intentionally excludes:
+
+- `ANALYZE_LIMIT`, which is compared with the receipt `selected_total`;
+- Stage 3.5 triage ranking parameters and source-pull limits, queries, URLs, and
+  venues, whose output is the durable item-state handoff consumed by Stage 4;
+- concurrency, persistence batch sizes, logs, debug artifacts, paths, workflow
+  scheduling, email, publishing, localization, translation, trends, and RAG
+  configuration.
+
+Adding a new `Settings` field does not change analyze budget identity unless the
+field is explicitly added to this projection with a schema-version decision.
+The projection reads these runtime fields directly rather than trusting a full
+settings serialization. For settings-like compatibility objects, it records
+every readable Stage 4 field plus an explicit missing-field set, so a partial
+serializer cannot hide a semantic change.
+The fingerprint controls whether another backlog batch runs. It is not
+item-level analysis freshness: changing topics, output language, content limits,
+or prompt code does not by itself requeue already analyzed items.
+
+For trusted production `Settings`, the planner continues to try legacy
+fingerprint shapes for unchanged older configurations. It does not offer those
+compatibility candidates for arbitrary settings-like objects or overridden safe
+serializers, because an incomplete serialization could omit Stage 4 semantics
+and incorrectly reuse a receipt. Legacy receipts contain only an opaque hash, so
+a receipt written before an unrelated configuration change cannot be safely
+reclassified and may cause one conservative extra analyze run before a projected
+receipt is written.
+
 ## Rerun Policy
 
 Default `run day|week|month` behavior:
@@ -79,4 +120,3 @@ Planner JSON should expose:
 If budget receipts are unavailable, planner behavior falls back to candidate
 inspection. That preserves compatibility for older repositories and lightweight
 test doubles.
-

@@ -5,10 +5,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from recoleta.config import LLM_MODEL_CONFIG_FIELDS, resolve_stage_llm_model
+from recoleta.config import LLM_MODEL_CONFIG_FIELDS, Settings, resolve_stage_llm_model
 from recoleta.types import sha256_hex
 
 WORKFLOW_FRESHNESS_SCHEMA_VERSION = 1
+_ANALYZE_BUDGET_CONFIG_SCHEMA_VERSION = 2
+_ANALYZE_SOURCE_PROBE_NAMES = ("arxiv", "hn", "hf_daily", "openreview", "rss")
+_MISSING_SETTING = object()
 _SOURCE_CHUNK_BATCH_LIMIT = 1000
 _PERSISTED_SOURCE_FINGERPRINT_FIELDS = (
     "schema_version",
@@ -67,6 +70,144 @@ def analyze_budget_config_fingerprint(
     *,
     llm_model: str | None = None,
 ) -> str:
+    """Fingerprint Stage 4 semantics; the numeric budget is compared separately."""
+    effective_model = resolve_stage_llm_model(
+        settings,
+        stage="analyze",
+        override=llm_model,
+    )
+    identity = _analyze_budget_config_identity(
+        settings,
+        effective_model=effective_model,
+    )
+    return sha256_hex(
+        json.dumps(
+            identity,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=repr,
+        )
+    )
+
+
+def _analyze_budget_config_identity(
+    settings: Any,
+    *,
+    effective_model: str,
+) -> dict[str, Any]:
+    stage4_fields, missing_stage4_fields = _analyze_budget_stage4_fields(settings)
+    return {
+        "kind": "analyze_budget_config",
+        "schema_version": _ANALYZE_BUDGET_CONFIG_SCHEMA_VERSION,
+        "effective_analyze_llm_model": effective_model,
+        **stage4_fields,
+        "missing_stage4_fields": missing_stage4_fields,
+    }
+
+
+def _analyze_source_probe_multiplier(sources: Any) -> int:
+    enabled_total = 0
+    for source_name in _ANALYZE_SOURCE_PROBE_NAMES:
+        source = getattr(sources, source_name, None)
+        if source is None:
+            continue
+        enabled = getattr(source, "enabled", None)
+        if enabled is None or bool(enabled):
+            enabled_total += 1
+    return 1 if enabled_total <= 1 else min(enabled_total, 5)
+
+
+def _analyze_budget_stage4_fields(
+    settings: Any,
+) -> tuple[dict[str, Any], list[str]]:
+    available: dict[str, Any] = {}
+    missing: list[str] = []
+
+    for field_name in (
+        "llm_base_url",
+        "llm_output_language",
+        "analyze_content_max_chars",
+    ):
+        value = _identity_attribute(
+            settings,
+            field_name,
+            path=field_name,
+            missing=missing,
+        )
+        if value is not _MISSING_SETTING:
+            available[field_name] = value
+
+    topics = _identity_attribute(
+        settings,
+        "topics",
+        path="topics",
+        missing=missing,
+    )
+    if topics is not _MISSING_SETTING:
+        available["topics"] = list(topics) if isinstance(topics, list) else topics
+    triage_enabled = _identity_attribute(
+        settings,
+        "triage_enabled",
+        path="triage_enabled",
+        missing=missing,
+    )
+    if topics is not _MISSING_SETTING and triage_enabled is not _MISSING_SETTING:
+        available["triage_required"] = bool(triage_enabled) and bool(topics)
+    elif triage_enabled is not _MISSING_SETTING:
+        available["triage_enabled"] = triage_enabled
+
+    sources = _identity_attribute(
+        settings,
+        "sources",
+        path="sources",
+        missing=missing,
+    )
+    if sources is not _MISSING_SETTING:
+        available["source_probe_multiplier"] = _analyze_source_probe_multiplier(
+            sources
+        )
+        arxiv = _identity_attribute(
+            sources,
+            "arxiv",
+            path="sources.arxiv",
+            missing=missing,
+        )
+        if arxiv is not _MISSING_SETTING:
+            arxiv_content: dict[str, Any] = {}
+            for field_name in ("enrich_method", "enrich_failure_mode"):
+                value = _identity_attribute(
+                    arxiv,
+                    field_name,
+                    path=f"sources.arxiv.{field_name}",
+                    missing=missing,
+                )
+                if value is not _MISSING_SETTING:
+                    arxiv_content[field_name] = value
+            if arxiv_content:
+                available["arxiv_content"] = arxiv_content
+
+    return available, sorted(missing)
+
+
+def _identity_attribute(
+    owner: Any,
+    field_name: str,
+    *,
+    path: str,
+    missing: list[str],
+) -> Any:
+    value = getattr(owner, field_name, _MISSING_SETTING)
+    if value is _MISSING_SETTING:
+        missing.append(path)
+    return value
+
+
+def _model_isolated_analyze_budget_config_fingerprint(
+    settings: Any,
+    *,
+    llm_model: str | None,
+) -> str:
     effective_model = resolve_stage_llm_model(
         settings,
         stage="analyze",
@@ -96,15 +237,38 @@ def analyze_budget_config_fingerprint_candidates(
     *,
     llm_model: str | None = None,
 ) -> tuple[str, ...]:
-    fingerprints = (
-        analyze_budget_config_fingerprint(settings, llm_model=llm_model),
-        _legacy_analyze_budget_config_fingerprint(settings, llm_model=llm_model),
-        _pre_stage_model_analyze_budget_config_fingerprint(
-            settings,
-            llm_model=llm_model,
-        ),
-    )
+    fingerprints = [
+        analyze_budget_config_fingerprint(settings, llm_model=llm_model)
+    ]
+    if _supports_legacy_analyze_budget_fingerprints(settings):
+        fingerprints.extend(
+            (
+                _model_isolated_analyze_budget_config_fingerprint(
+                    settings,
+                    llm_model=llm_model,
+                ),
+                _legacy_analyze_budget_config_fingerprint(
+                    settings,
+                    llm_model=llm_model,
+                ),
+                _pre_stage_model_analyze_budget_config_fingerprint(
+                    settings,
+                    llm_model=llm_model,
+                ),
+            )
+        )
     return tuple(dict.fromkeys(value for value in fingerprints if value))
+
+
+def _supports_legacy_analyze_budget_fingerprints(settings: Any) -> bool:
+    settings_type = type(settings)
+    return (
+        isinstance(settings, Settings)
+        and getattr(settings_type, "safe_model_dump", None)
+        is Settings.safe_model_dump
+        and getattr(settings_type, "safe_fingerprint", None)
+        is Settings.safe_fingerprint
+    )
 
 
 def _legacy_analyze_budget_config_fingerprint(

@@ -14,6 +14,7 @@ from recoleta.cli.workflow_planner import (
     plan_workflow_execution,
 )
 from recoleta.cli.workflow_runner import GranularityPlanRequest, build_granularity_plan
+from recoleta.config import EmailConfig, Settings
 from recoleta.types import sha256_hex
 from recoleta.workflow_freshness import (
     analyze_budget_config_fingerprint,
@@ -101,6 +102,37 @@ class _AnalyzeFingerprintSettings(_TriageSettings):
             "ideas_llm_model": self.ideas_llm_model,
             "translation_llm_model": self.translation_llm_model,
         }
+
+
+class _PartialAnalyzeFingerprintSettings(_AnalyzeFingerprintSettings):
+    def __init__(self, *, output_language: str) -> None:
+        super().__init__(trends_llm_model="gpt-trends")
+        self.llm_base_url = None
+        self.llm_output_language = output_language
+        self.analyze_content_max_chars = 32_768
+        disabled_source = SimpleNamespace(enabled=False)
+        self.sources = SimpleNamespace(
+            arxiv=SimpleNamespace(
+                enabled=False,
+                enrich_method="html_document",
+                enrich_failure_mode="fallback",
+            ),
+            hn=disabled_source,
+            hf_daily=disabled_source,
+            openreview=disabled_source,
+            rss=disabled_source,
+        )
+
+
+def _real_analyze_settings(tmp_path: Any, **overrides: Any) -> Settings:
+    values: dict[str, Any] = {
+        "recoleta_db_path": tmp_path / "recoleta.db",
+        "llm_model": "gpt-test",
+        "triage_enabled": True,
+        "topics": ["software agents"],
+        **overrides,
+    }
+    return Settings(_env_file=None, **values)  # pyright: ignore[reportCallIssue]
 
 
 class _ReadOnlyPlannerRepo:
@@ -900,7 +932,10 @@ def test_month_planner_propagates_analyze_model_refresh_through_lower_levels() -
 def test_planner_skips_analyze_when_budget_was_satisfied_with_backlog() -> None:
     source_day = date(2026, 3, 16)
     settings = _TriageSettings()
-    repo = _AnalyzeBudgetReceiptRepo(selected_total=settings.analyze_limit)
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=settings.analyze_limit,
+        accepted_fingerprints={analyze_budget_config_fingerprint(settings)},
+    )
 
     decisions = plan_workflow_execution(
         plan=_day_analyze_only_plan(settings=settings),
@@ -937,7 +972,10 @@ def test_planner_runs_analyze_when_budget_increases_above_receipt() -> None:
 
     decisions = plan_workflow_execution(
         plan=_day_analyze_only_plan(settings=settings),
-        repository=_AnalyzeBudgetReceiptRepo(selected_total=8),
+        repository=_AnalyzeBudgetReceiptRepo(
+            selected_total=8,
+            accepted_fingerprints={analyze_budget_config_fingerprint(settings)},
+        ),
         settings=settings,
     )
 
@@ -969,9 +1007,334 @@ def test_planner_preserves_analyze_budget_when_other_stage_model_changes() -> No
     assert analyze_decision.reason == "analyze_budget_satisfied"
 
 
-def test_planner_accepts_pre_stage_model_analyze_budget_receipt() -> None:
+def test_planner_preserves_analyze_budget_when_email_changes(tmp_path: Any) -> None:
+    previous_settings = _real_analyze_settings(tmp_path)
+    current_settings = previous_settings.model_copy(
+        update={
+            "email": EmailConfig(
+                public_site_url="https://research.example.test",
+                from_email="research@example.test",
+                to=["reader@example.test"],
+                granularities=["day"],
+            )
+        }
+    )
+    previous_fingerprint = analyze_budget_config_fingerprint(previous_settings)
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=current_settings.analyze_limit,
+        accepted_fingerprints={previous_fingerprint},
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=current_settings),
+        repository=repo,
+        settings=current_settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", date(2026, 3, 16))
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "analyze_budget_satisfied"
+
+
+def test_planner_preserves_analyze_budget_when_limit_decreases(tmp_path: Any) -> None:
+    previous_settings = _real_analyze_settings(tmp_path, analyze_limit=100)
+    current_settings = previous_settings.model_copy(update={"analyze_limit": 50})
+    previous_fingerprint = analyze_budget_config_fingerprint(previous_settings)
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=100,
+        accepted_fingerprints={previous_fingerprint},
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=current_settings),
+        repository=repo,
+        settings=current_settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", date(2026, 3, 16))
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "analyze_budget_satisfied"
+
+
+def test_planner_preserves_analyze_budget_when_prior_selection_covers_higher_limit(
+    tmp_path: Any,
+) -> None:
+    previous_settings = _real_analyze_settings(tmp_path, analyze_limit=8)
+    current_settings = previous_settings.model_copy(update={"analyze_limit": 10})
+    previous_fingerprint = analyze_budget_config_fingerprint(previous_settings)
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=12,
+        accepted_fingerprints={previous_fingerprint},
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=current_settings),
+        repository=repo,
+        settings=current_settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", date(2026, 3, 16))
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "analyze_budget_satisfied"
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"log_level": "DEBUG"},
+        {"analyze_max_concurrency": 8},
+        {"analyze_write_batch_size": 64},
+        {"triage_mode": "filter"},
+        {"trends_embedding_model": "test/trends-embedding-next"},
+    ],
+)
+def test_analyze_budget_identity_ignores_non_stage4_settings(
+    tmp_path: Any,
+    updates: dict[str, Any],
+) -> None:
+    settings = _real_analyze_settings(tmp_path)
+
+    assert analyze_budget_config_fingerprint(
+        settings
+    ) == analyze_budget_config_fingerprint(settings.model_copy(update=updates))
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"topics": ["distributed systems"]},
+        {"llm_output_language": "Chinese"},
+        {"analyze_content_max_chars": 4096},
+        {"llm_base_url": "https://llm.example.test/v1"},
+        {"triage_enabled": False},
+    ],
+)
+def test_analyze_budget_identity_tracks_stage4_semantics(
+    tmp_path: Any,
+    updates: dict[str, Any],
+) -> None:
+    settings = _real_analyze_settings(tmp_path)
+
+    assert analyze_budget_config_fingerprint(
+        settings
+    ) != analyze_budget_config_fingerprint(settings.model_copy(update=updates))
+
+
+def test_analyze_budget_identity_tracks_partial_dump_stage4_semantics() -> None:
+    english = _PartialAnalyzeFingerprintSettings(output_language="English")
+    chinese = _PartialAnalyzeFingerprintSettings(output_language="Chinese")
+
+    assert english.safe_model_dump() == chinese.safe_model_dump()
+    assert analyze_budget_config_fingerprint(
+        english
+    ) != analyze_budget_config_fingerprint(chinese)
+
+
+def test_planner_rejects_partial_dump_legacy_receipt_after_semantic_change() -> None:
+    previous_settings = _PartialAnalyzeFingerprintSettings(
+        output_language="English"
+    )
+    current_settings = _PartialAnalyzeFingerprintSettings(output_language="Chinese")
+    legacy_payload = previous_settings.safe_model_dump()
+    for field_name in (
+        "llm_model",
+        "analyze_llm_model",
+        "trends_llm_model",
+        "ideas_llm_model",
+        "translation_llm_model",
+    ):
+        legacy_payload.pop(field_name)
+    legacy_payload["effective_analyze_llm_model"] = "gpt-test"
+    legacy_fingerprint = sha256_hex(
+        json.dumps(
+            legacy_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=current_settings.analyze_limit,
+        accepted_fingerprints={legacy_fingerprint},
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=current_settings),
+        repository=repo,
+        settings=current_settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", date(2026, 3, 16))
+    assert analyze_decision.action == "run"
+    assert analyze_decision.reason == "candidate_items"
+
+
+def test_incomplete_analyze_identity_tracks_fields_omitted_from_dump() -> None:
+    previous_settings = _AnalyzeFingerprintSettings(trends_llm_model="gpt-trends")
+    current_settings = _AnalyzeFingerprintSettings(trends_llm_model="gpt-trends")
+    previous_settings.llm_output_language = "English"
+    current_settings.llm_output_language = "Chinese"
+
+    assert previous_settings.safe_model_dump() == current_settings.safe_model_dump()
+    previous_fingerprint = analyze_budget_config_fingerprint(previous_settings)
+    current_fingerprint = analyze_budget_config_fingerprint(current_settings)
+    assert previous_fingerprint != current_fingerprint
+
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=current_settings.analyze_limit,
+        accepted_fingerprints={previous_fingerprint},
+    )
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=current_settings),
+        repository=repo,
+        settings=current_settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", date(2026, 3, 16))
+    assert analyze_decision.action == "run"
+    assert analyze_decision.reason == "candidate_items"
+
+
+def test_analyze_budget_identity_ignores_disabled_triage_without_topics(
+    tmp_path: Any,
+) -> None:
+    settings = _real_analyze_settings(
+        tmp_path,
+        topics=[],
+        triage_enabled=False,
+    )
+
+    assert analyze_budget_config_fingerprint(
+        settings
+    ) == analyze_budget_config_fingerprint(
+        settings.model_copy(update={"triage_enabled": True})
+    )
+
+
+@pytest.mark.parametrize(
+    "arxiv_updates",
+    [
+        {"enrich_method": "pdf_text"},
+        {"enrich_failure_mode": "strict"},
+    ],
+)
+def test_analyze_budget_identity_tracks_arxiv_content_selection(
+    tmp_path: Any,
+    arxiv_updates: dict[str, Any],
+) -> None:
+    settings = _real_analyze_settings(tmp_path)
+    arxiv = settings.sources.arxiv.model_copy(update=arxiv_updates)
+    changed = settings.model_copy(
+        update={"sources": settings.sources.model_copy(update={"arxiv": arxiv})}
+    )
+
+    assert analyze_budget_config_fingerprint(
+        settings
+    ) != analyze_budget_config_fingerprint(changed)
+
+
+def test_analyze_budget_identity_tracks_stage4_source_probe_multiplier(
+    tmp_path: Any,
+) -> None:
+    settings = _real_analyze_settings(tmp_path)
+    hn = settings.sources.hn.model_copy(update={"enabled": True})
+    one_source = settings.model_copy(
+        update={"sources": settings.sources.model_copy(update={"hn": hn})}
+    )
+    hf_daily = settings.sources.hf_daily.model_copy(update={"enabled": True})
+    two_sources = settings.model_copy(
+        update={
+            "sources": settings.sources.model_copy(
+                update={"hn": hn, "hf_daily": hf_daily}
+            )
+        }
+    )
+
+    assert analyze_budget_config_fingerprint(
+        settings
+    ) == analyze_budget_config_fingerprint(one_source)
+    assert analyze_budget_config_fingerprint(
+        one_source
+    ) != analyze_budget_config_fingerprint(two_sources)
+
+
+def test_planner_accepts_model_isolated_full_settings_budget_receipt(
+    tmp_path: Any,
+) -> None:
+    settings = _real_analyze_settings(tmp_path)
+    previous_payload = settings.safe_model_dump()
+    for field_name in (
+        "llm_model",
+        "analyze_llm_model",
+        "trends_llm_model",
+        "ideas_llm_model",
+        "translation_llm_model",
+    ):
+        previous_payload.pop(field_name)
+    previous_payload["effective_analyze_llm_model"] = "gpt-test"
+    previous_fingerprint = sha256_hex(
+        json.dumps(
+            previous_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=settings.analyze_limit,
+        accepted_fingerprints={previous_fingerprint},
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=settings),
+        repository=repo,
+        settings=settings,
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", date(2026, 3, 16))
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "analyze_budget_satisfied"
+
+
+def test_planner_accepts_legacy_budget_receipt_for_workflow_model_override(
+    tmp_path: Any,
+) -> None:
+    settings = _real_analyze_settings(tmp_path)
+    override = "gpt-analyze-override"
+    previous_fingerprint = sha256_hex(
+        json.dumps(
+            {
+                "settings_fingerprint": settings.safe_fingerprint(),
+                "analyze_llm_model": override,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=settings.analyze_limit,
+        accepted_fingerprints={previous_fingerprint},
+    )
+
+    decisions = plan_workflow_execution(
+        plan=_day_analyze_only_plan(settings=settings),
+        repository=repo,
+        settings=settings,
+        options=WorkflowPlanningOptions(llm_model=override),
+    )
+
+    analyze_decision = _decision_for(decisions, "analyze", date(2026, 3, 16))
+    assert analyze_decision.action == "skip"
+    assert analyze_decision.reason == "analyze_budget_satisfied"
+
+
+def test_planner_accepts_pre_stage_model_analyze_budget_receipt(
+    tmp_path: Any,
+) -> None:
     source_day = date(2026, 3, 16)
-    settings = _AnalyzeFingerprintSettings(
+    settings = _real_analyze_settings(
+        tmp_path,
         trends_llm_model="gpt-trends-new",
     )
     pre_upgrade_payload = settings.safe_model_dump()
@@ -1012,7 +1375,11 @@ def test_planner_accepts_pre_stage_model_analyze_budget_receipt() -> None:
 def test_planner_ignores_analyze_budget_receipt_for_workflow_model_override() -> None:
     source_day = date(2026, 3, 16)
     settings = _TriageSettings()
-    repo = _AnalyzeBudgetReceiptRepo(selected_total=settings.analyze_limit)
+    configured_fingerprint = analyze_budget_config_fingerprint(settings)
+    repo = _AnalyzeBudgetReceiptRepo(
+        selected_total=settings.analyze_limit,
+        accepted_fingerprints={configured_fingerprint},
+    )
 
     decisions = plan_workflow_execution(
         plan=_day_analyze_only_plan(settings=settings),
@@ -1025,7 +1392,7 @@ def test_planner_ignores_analyze_budget_receipt_for_workflow_model_override() ->
     assert analyze_decision.action == "run"
     assert analyze_decision.reason == "candidate_items"
     assert repo.receipt_requests
-    assert repo.receipt_requests[0]["config_fingerprint"] != "fp-test"
+    assert repo.receipt_requests[0]["config_fingerprint"] != configured_fingerprint
 
 
 def test_week_planner_trusts_day_analyze_budget_receipts() -> None:
@@ -1033,7 +1400,10 @@ def test_week_planner_trusts_day_analyze_budget_receipts() -> None:
 
     decisions = plan_workflow_execution(
         plan=_week_analyze_only_plan(settings=settings),
-        repository=_AnalyzeBudgetReceiptRepo(selected_total=settings.analyze_limit),
+        repository=_AnalyzeBudgetReceiptRepo(
+            selected_total=settings.analyze_limit,
+            accepted_fingerprints={analyze_budget_config_fingerprint(settings)},
+        ),
         settings=settings,
     )
 
