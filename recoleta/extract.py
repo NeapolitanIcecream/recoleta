@@ -40,6 +40,8 @@ _PYPANDOC: Any | None = None
 _PANDOC_READY: bool | None = None
 _PANDOC_READY_ERROR: str | None = None
 _PANDOC_LOG_PATTERN = re.compile(r"^\[(ERROR|WARNING|INFO|DEBUG)\]\s*(.*)$")
+_BeforeHttpAttempt = Callable[[], Any]
+_RateLimitCallback = Callable[[httpx.Response], Any]
 
 
 def _ensure_pandoc_ready() -> tuple[bool, str | None, Any | None]:
@@ -230,7 +232,7 @@ def _raise_for_status_with_rate_limit_policy(
     response: httpx.Response,
     *,
     retry_on_429: bool,
-    on_rate_limited: Callable[[httpx.Response], Any] | None,
+    on_rate_limited: _RateLimitCallback | None,
 ) -> None:
     try:
         response.raise_for_status()
@@ -258,8 +260,8 @@ def fetch_url_html(
     client: httpx.Client,
     url: str,
     *,
-    before_attempt: Callable[[], Any] | None = None,
-    on_rate_limited: Callable[[httpx.Response], Any] | None = None,
+    before_attempt: _BeforeHttpAttempt | None = None,
+    on_rate_limited: _RateLimitCallback | None = None,
     retry_on_429: bool = True,
 ) -> str:
     if before_attempt is not None:
@@ -283,8 +285,8 @@ def fetch_url_bytes(
     client: httpx.Client,
     url: str,
     *,
-    before_attempt: Callable[[], Any] | None = None,
-    on_rate_limited: Callable[[httpx.Response], Any] | None = None,
+    before_attempt: _BeforeHttpAttempt | None = None,
+    on_rate_limited: _RateLimitCallback | None = None,
     retry_on_429: bool = True,
 ) -> bytes:
     if before_attempt is not None:

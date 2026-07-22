@@ -9,6 +9,9 @@ import time
 
 import httpx
 
+_Clock = Callable[[], float]
+_Sleeper = Callable[[float], None]
+
 
 class ArxivContentAdmission:
     """Process-safe admission and cooldown for requests to arxiv.org content."""
@@ -19,8 +22,8 @@ class ArxivContentAdmission:
         db_path: Path,
         requests_per_second: float,
         cooldown_seconds: int,
-        clock: Callable[[], float] = time.time,
-        sleeper: Callable[[float], None] = time.sleep,
+        clock: _Clock = time.time,
+        sleeper: _Sleeper = time.sleep,
     ) -> None:
         self.db_path = Path(db_path).expanduser()
         self.interval_seconds = 1.0 / max(0.0001, float(requests_per_second))

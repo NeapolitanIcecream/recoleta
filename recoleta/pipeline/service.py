@@ -1129,71 +1129,68 @@ class PipelineService:
     def _ensure_arxiv_latex_source_content(
         self,
         *,
-        client: httpx.Client,
-        item_id: int,
-        canonical_url: str,
-        source_item_id: str | None,
-        diag: dict[str, Any] | None = None,
-        arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None = None,
+        request: ArxivContentRequest,
     ) -> tuple[str, bool]:
         db_read_started = time.perf_counter()
         existing_latex = self._get_latest_content_text(
-            item_id=item_id, content_type="latex_source"
+            item_id=request.item_id, content_type="latex_source"
         )
-        if diag is not None:
-            diag["db_read_ms"] = diag.get("db_read_ms", 0) + int(
+        if request.diag is not None:
+            request.diag["db_read_ms"] = request.diag.get("db_read_ms", 0) + int(
                 (time.perf_counter() - db_read_started) * 1000
             )
         if existing_latex is not None:
             self._annotate_content_diag(
-                diag,
+                request.diag,
                 content_type="latex_source",
                 content_text=existing_latex,
             )
             return existing_latex, False
         source_url = self._build_arxiv_source_url(
-            canonical_url=canonical_url,
-            source_item_id=source_item_id,
+            canonical_url=request.canonical_url,
+            source_item_id=request.source_item_id,
         )
         if not source_url:
             raise ValueError("missing arXiv source url")
         fetch_started = time.perf_counter()
         before_attempt, on_rate_limited = _arxiv_admission_callbacks(
-            admission=arxiv_html_throttle,
-            diag=diag,
+            admission=request.arxiv_html_throttle,
+            diag=request.diag,
         )
         source_bytes = fetch_url_bytes(
-            client,
+            request.client,
             source_url,
             before_attempt=before_attempt,
             on_rate_limited=on_rate_limited,
             retry_on_429=False,
         )
-        if diag is not None:
-            diag["fetch_ms"] = diag.get("fetch_ms", 0) + int(
+        if request.diag is not None:
+            request.diag["fetch_ms"] = request.diag.get("fetch_ms", 0) + int(
                 (time.perf_counter() - fetch_started) * 1000
             )
-            diag["input_bytes"] = diag.get("input_bytes", 0) + len(source_bytes)
+            request.diag["input_bytes"] = request.diag.get(
+                "input_bytes", 0
+            ) + len(source_bytes)
         extract_started = time.perf_counter()
         extracted_source = extract_arxiv_latex_source(source_bytes)
-        if diag is not None:
-            diag["extract_ms"] = diag.get("extract_ms", 0) + int(
+        if request.diag is not None:
+            request.diag["extract_ms"] = request.diag.get("extract_ms", 0) + int(
                 (time.perf_counter() - extract_started) * 1000
             )
         if extracted_source is None:
             raise RuntimeError("empty arXiv latex source extraction")
         db_write_started = time.perf_counter()
         self.repository.upsert_content(
-            item_id=item_id,
+            item_id=request.item_id,
             content_type="latex_source",
             text=extracted_source,
         )
-        if diag is not None:
-            diag["db_write_ms"] = diag.get("db_write_ms", 0) + int(
+        if request.diag is not None:
+            request.diag["db_write_ms"] = request.diag.get("db_write_ms", 0) + int(
                 (time.perf_counter() - db_write_started) * 1000
             )
         self._annotate_content_diag(
-            diag,
+            request.diag,
             content_type="latex_source",
             content_text=extracted_source,
         )

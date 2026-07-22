@@ -146,6 +146,17 @@ class _GranularityDryRunRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class _GranularityPayloadRequest:
+    command: str
+    runtime: _ManagedWorkflowRuntime
+    plan: Any
+    outcome: _WorkflowLoopOutcome
+    planner_decisions: list[Any]
+    arxiv_pool_pre_sync: dict[str, Any] | None
+    arxiv_pool_readiness: dict[str, Any] | None
+
+
+@dataclass(frozen=True, slots=True)
 class _GranularityWorkflowContext:
     plan: Any
     execution_context: WorkflowExecutionContext
@@ -602,32 +613,27 @@ def _execute_granularity_dry_run(
 
 
 def _granularity_workflow_payload(
-    *,
-    command: str,
-    runtime: _ManagedWorkflowRuntime,
-    plan: Any,
-    outcome: _WorkflowLoopOutcome,
-    planner_decisions: list[Any],
-    arxiv_pool_pre_sync: dict[str, Any] | None,
-    arxiv_pool_readiness: dict[str, Any] | None,
+    request: _GranularityPayloadRequest,
 ) -> dict[str, Any]:
     payload = granularity_workflow_payload(
         context=WorkflowPayloadContext(
-            command=command,
-            run_id=runtime.run_id,
-            plan=plan,
-            metrics=runtime.repository.list_metrics(run_id=runtime.run_id),
-            executed_steps=outcome.executed_steps,
-            billing_metrics_by_step=outcome.billing_metrics_by_step,
-            terminal_state=outcome.terminal_state,
-            step_results=outcome.step_results,
-            planner_decisions=planner_decisions,
+            command=request.command,
+            run_id=request.runtime.run_id,
+            plan=request.plan,
+            metrics=request.runtime.repository.list_metrics(
+                run_id=request.runtime.run_id
+            ),
+            executed_steps=request.outcome.executed_steps,
+            billing_metrics_by_step=request.outcome.billing_metrics_by_step,
+            terminal_state=request.outcome.terminal_state,
+            step_results=request.outcome.step_results,
+            planner_decisions=request.planner_decisions,
             arxiv_pool_readiness=_public_arxiv_pool_readiness(
-                arxiv_pool_readiness
+                request.arxiv_pool_readiness
             ),
         )
     )
-    payload["arxiv_pool_pre_sync"] = arxiv_pool_pre_sync
+    payload["arxiv_pool_pre_sync"] = request.arxiv_pool_pre_sync
     return payload
 
 
@@ -1047,13 +1053,15 @@ def execute_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
                 )
             ),
             payload_builder=lambda context, outcome: _granularity_workflow_payload(
-                command=command,
-                runtime=runtime,
-                plan=context.plan,
-                outcome=outcome,
-                planner_decisions=context.planner_decisions,
-                arxiv_pool_pre_sync=context.arxiv_pool_pre_sync,
-                arxiv_pool_readiness=context.arxiv_pool_readiness,
+                _GranularityPayloadRequest(
+                    command=command,
+                    runtime=runtime,
+                    plan=context.plan,
+                    outcome=outcome,
+                    planner_decisions=context.planner_decisions,
+                    arxiv_pool_pre_sync=context.arxiv_pool_pre_sync,
+                    arxiv_pool_readiness=context.arxiv_pool_readiness,
+                )
             ),
             failure_messages=_GRANULARITY_FAILURE_MESSAGES,
         )

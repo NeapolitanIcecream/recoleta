@@ -1462,18 +1462,21 @@ def daemon_start() -> None:
     run_daemon_start_command()
 
 
+_FLEET_DAEMON_MANIFEST_OPTION = typer.Option(
+    ...,
+    "--manifest",
+    envvar="RECOLETA_FLEET_MANIFEST",
+    file_okay=True,
+    dir_okay=False,
+    readable=True,
+    resolve_path=True,
+    help="Fleet manifest containing daemon schedules and child instances.",
+)
+
+
 @fleet_daemon_app.command("start")
 def fleet_daemon_start(
-    manifest_path: Path = typer.Option(
-        ...,
-        "--manifest",
-        envvar="RECOLETA_FLEET_MANIFEST",
-        file_okay=True,
-        dir_okay=False,
-        readable=True,
-        resolve_path=True,
-        help="Fleet manifest containing daemon schedules and child instances.",
-    ),
+    manifest_path: Path = _FLEET_DAEMON_MANIFEST_OPTION,
 ) -> None:
     """Start the scheduler declared by the fleet manifest."""
     run_fleet_daemon_start_command(manifest_path=manifest_path)

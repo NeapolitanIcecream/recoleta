@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Protocol, cast
+from typing import Any, Callable, NamedTuple, Protocol, cast
 
 import httpx
 from loguru import logger
@@ -112,6 +112,12 @@ class _ParallelRunState:
     created_lock: threading.Lock
 
 
+class _EnrichItemPartitions(NamedTuple):
+    arxiv_parallel: list[Any]
+    html_parallel: list[Any]
+    serial: list[Any]
+
+
 @dataclass(slots=True, frozen=True)
 class _RunnerConsumeRequest:
     stats: Any
@@ -209,12 +215,7 @@ class EnrichStageService(Protocol):
     def _ensure_arxiv_latex_source_content(
         self,
         *,
-        client: httpx.Client,
-        item_id: int,
-        canonical_url: str,
-        source_item_id: str | None,
-        diag: dict[str, Any] | None = None,
-        arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None = None,
+        request: ArxivContentRequest,
     ) -> tuple[str, bool]: ...
 
     def _annotate_content_diag(
@@ -364,12 +365,7 @@ def _ensure_arxiv_latex_mode(
 ) -> tuple[str, bool]:
     try:
         return service._ensure_arxiv_latex_source_content(
-            client=request.client,
-            item_id=request.item_id,
-            canonical_url=request.canonical_url,
-            source_item_id=request.source_item_id,
-            diag=request.diag,
-            arxiv_html_throttle=request.arxiv_html_throttle,
+            request=request,
         )
     except Exception as method_exc:
         if (
@@ -1025,56 +1021,18 @@ class _EnrichStageRunner:
     def run(self) -> None:
         with self.service.repository.sql_diagnostics() as sql_diag:
             items = self._load_items()
-            if any(
-                str(getattr(item, "source", "") or "").strip().lower() == "arxiv"
-                for item in items
-            ):
-                self.arxiv_html_throttle = _build_arxiv_html_throttle(self.service)
+            self._configure_arxiv_content_admission(items)
             stats = _EnrichStats(service=self.service)
-            if self.enable_parallel or self.enable_html_maintext_parallel:
-                (
-                    arxiv_parallel_items,
-                    html_parallel_items,
-                    serial_items,
-                ) = self._partition_items(items)
-            else:
-                arxiv_parallel_items = []
-                html_parallel_items = []
-                serial_items = list(items)
-            stats.parallel_html_maintext_items_total = len(html_parallel_items)
+            partitions = self._partition_items(items)
+            stats.parallel_html_maintext_items_total = len(partitions.html_parallel)
             stats.parallel_html_maintext_max_workers = (
-                self.html_maintext_max_concurrency if html_parallel_items else 0
+                self.html_maintext_max_concurrency if partitions.html_parallel else 0
             )
-            with Progress(
-                TextColumn("{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                TimeElapsedColumn(),
-                console=self.service._progress_console,
-            ) as progress:
-                task_id = progress.add_task("Enriching items", total=len(items))
-                self._run_serial_items(
-                    items=serial_items,
-                    progress=progress,
-                    task_id=task_id,
-                    stats=stats,
-                )
-                if arxiv_parallel_items:
-                    self._run_parallel_items(
-                        items=arxiv_parallel_items,
-                        progress=progress,
-                        task_id=task_id,
-                        stats=stats,
-                        max_workers=self.html_document_max_concurrency,
-                    )
-                if html_parallel_items:
-                    self._run_parallel_items(
-                        items=html_parallel_items,
-                        progress=progress,
-                        task_id=task_id,
-                        stats=stats,
-                        max_workers=self.html_maintext_max_concurrency,
-                    )
+            self._run_partitioned_items(
+                items=items,
+                partitions=partitions,
+                stats=stats,
+            )
             stats.record_metrics(
                 run_id=self.request.run_id,
                 sql_diag=sql_diag,
@@ -1086,6 +1044,51 @@ class _EnrichStageRunner:
                 stats.skipped,
                 stats.failed,
             )
+
+    def _configure_arxiv_content_admission(self, items: list[Any]) -> None:
+        if any(
+            str(getattr(item, "source", "") or "").strip().lower() == "arxiv"
+            for item in items
+        ):
+            self.arxiv_html_throttle = _build_arxiv_html_throttle(self.service)
+
+    def _run_partitioned_items(
+        self,
+        *,
+        items: list[Any],
+        partitions: _EnrichItemPartitions,
+        stats: _EnrichStats,
+    ) -> None:
+        with Progress(
+            TextColumn("{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=self.service._progress_console,
+        ) as progress:
+            task_id = progress.add_task("Enriching items", total=len(items))
+            self._run_serial_items(
+                items=partitions.serial,
+                progress=progress,
+                task_id=task_id,
+                stats=stats,
+            )
+            if partitions.arxiv_parallel:
+                self._run_parallel_items(
+                    items=partitions.arxiv_parallel,
+                    progress=progress,
+                    task_id=task_id,
+                    stats=stats,
+                    max_workers=self.html_document_max_concurrency,
+                )
+            if partitions.html_parallel:
+                self._run_parallel_items(
+                    items=partitions.html_parallel,
+                    progress=progress,
+                    task_id=task_id,
+                    stats=stats,
+                    max_workers=self.html_maintext_max_concurrency,
+                )
 
     def _load_items(self) -> list[Any]:
         candidate_limit = self.service._stage_candidate_limit(limit=self.request.limit)
@@ -1187,9 +1190,7 @@ class _EnrichStageRunner:
                 interrupted=interrupted,
             )
 
-    def _partition_items(
-        self, items: list[Any]
-    ) -> tuple[list[Any], list[Any], list[Any]]:
+    def _partition_items(self, items: list[Any]) -> _EnrichItemPartitions:
         arxiv_parallel_items: list[Any] = []
         html_parallel_items: list[Any] = []
         serial_items: list[Any] = []
@@ -1206,7 +1207,11 @@ class _EnrichStageRunner:
                 html_parallel_items.append(item)
                 continue
             serial_items.append(item)
-        return arxiv_parallel_items, html_parallel_items, serial_items
+        return _EnrichItemPartitions(
+            arxiv_parallel=arxiv_parallel_items,
+            html_parallel=html_parallel_items,
+            serial=serial_items,
+        )
 
     def _process_one(self, *, client: httpx.Client, item: Any) -> dict[str, Any]:
         raw_item_id = getattr(item, "id", None)
