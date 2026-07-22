@@ -32,8 +32,9 @@ Secrets:
 - `TELEGRAM_CHAT_ID`: required when `PUBLISH_TARGETS` includes `telegram` (env-only).
 - `RECOLETA_RESEND_API_KEY`: required for `recoleta run email send` and
   `recoleta fleet run email send` (env-only).
-- `ARXIV_POOL.huldra_base_url`: required when `SOURCES.arxiv.mode=pool`,
-  `ARXIV_POOL.enabled=true`, and `ARXIV_POOL.backend=huldra`.
+- `ARXIV_POOL.huldra_base_url`: Huldra service URL. It defaults to
+  `http://127.0.0.1:8765` and must remain non-empty when the effective backend
+  is `huldra`.
 - `ARXIV_POOL.db_path`: required when `SOURCES.arxiv.mode=pool`,
   `ARXIV_POOL.enabled=true`, and `ARXIV_POOL.backend=local_sqlite`.
 
@@ -174,7 +175,8 @@ Recommended fields:
 - `SOURCES`:
   - `arxiv`:
     - `enabled`: bool (default `false`). All sources are disabled by default and must be explicitly enabled.
-    - `mode`: `direct|pool` (default `direct`). Use `pool` when Recoleta should read arXiv metadata from the configured arXiv pool backend.
+    - `mode`: `pool|direct` (default `pool`). `direct` is a deprecated,
+      explicit rollback path and is never selected as a fallback.
     - `queries`: list of arXiv query strings
     - `max_results_per_run`
     - `max_total_per_run`
@@ -186,6 +188,11 @@ Recommended fields:
     - `html_document_log_sample_rate`: in parallel mode, keep per-item info logs sampled and demote the rest to debug (default `0.05`)
     - `html_document_skip_cleanup_when_complete`: skip cleanup/conversion when `html_document_md` is already present (default `true`)
     - `html_document_use_batched_db_writes`: batch content upserts into fewer commits to reduce SQLite lock contention (default `true`)
+    - `content_admission_db_path`: shared SQLite admission/cooldown state for
+      arxiv.org content attempts (default
+      `~/.cache/recoleta/arxiv-content-admission.sqlite3`)
+    - `content_cooldown_seconds`: shared cooldown after an arxiv.org content
+      rate-limit response (default `3600`)
   - `hn`:
     - `enabled`: bool (default `false`)
     - `rss_urls`: list (e.g. `https://news.ycombinator.com/rss`)
@@ -211,12 +218,18 @@ Notes:
 - When `SOURCES.arxiv.mode=pool`, instance ingest does not call arXiv directly.
   Configure `ARXIV_POOL` / `arxiv_pool` and prewarm requested windows with
   `recoleta arxiv-pool sync` or a fleet pre-sync.
+- arxiv.org content enrichment is deliberately outside Huldra's metadata-only
+  boundary. Recoleta serializes HTML, PDF, and e-print attempts through
+  `content_admission_db_path`. A 429 persists a shared cooldown, is not retried
+  immediately, and does not trigger a fallback request to another content
+  endpoint.
 
 ArXiv pool fields:
 
-- `ARXIV_POOL.enabled`: bool (default `false`). Required when
-  `SOURCES.arxiv.mode=pool`.
-- `ARXIV_POOL.backend`: `local_sqlite|huldra` (default `local_sqlite`).
+- `ARXIV_POOL.enabled`: bool. When an enabled arXiv source uses the default
+  `pool` mode and this field is omitted, Recoleta enables the pool
+  automatically. An explicit `false` is rejected for an enabled pool source.
+- `ARXIV_POOL.backend`: `huldra|local_sqlite` (default `huldra`).
 - `ARXIV_POOL.huldra_base_url`:
   [Huldra](https://github.com/NeapolitanIcecream/huldra) service URL, required
   for `backend=huldra`.
@@ -225,16 +238,21 @@ ArXiv pool fields:
 - `ARXIV_POOL.huldra_wait_timeout_seconds`: optional wait cap for Huldra
   sync/backfill calls. When unset, Recoleta derives a timeout from the requested
   windows.
-- `ARXIV_POOL.db_path`: SQLite pool path, required for `backend=local_sqlite`.
+- `ARXIV_POOL.workflow_pre_sync_enabled`: allow workflows to ensure bounded
+  missing mature Huldra windows before ingest (default `true`).
+- `ARXIV_POOL.workflow_pre_sync_max_windows`: maximum windows ensured by one
+  workflow invocation (default `31`, minimum `1`).
+- `ARXIV_POOL.db_path`: SQLite pool path, required for the deprecated
+  `backend=local_sqlite`. A `db_path` without that explicit backend is rejected.
 - `ARXIV_POOL.maturity_lag_days`: number of days before a pool window is mature
   (default `1`).
 - `ARXIV_POOL.readiness_gate`: `off|warn|strict` (default `strict`).
 - `ARXIV_POOL.allow_immature_windows`: bool (default `false`).
 
-Huldra is an optional dependency. Install it for Huldra-backed arXiv ingest:
+Huldra is part of the standard Recoleta installation:
 
 ```bash
-uv sync --extra huldra
+uv sync
 ```
 
 Example:
@@ -260,10 +278,53 @@ ARXIV_POOL:
   huldra_base_url: http://127.0.0.1:8765
   huldra_request_timeout_seconds: 30
   huldra_wait_timeout_seconds: null
+  workflow_pre_sync_enabled: true
+  workflow_pre_sync_max_windows: 31
   maturity_lag_days: 1
   readiness_gate: strict
   allow_immature_windows: false
 ```
+
+### Legacy arXiv rollback paths
+
+The built-in direct adapter and Recoleta-owned SQLite metadata pool are
+deprecated. They remain available only through explicit configuration; Huldra
+errors never cause an implicit fallback.
+
+For temporary direct-adapter rollback, install its isolated dependency and
+disable the pool:
+
+```bash
+uv sync --extra legacy-arxiv
+```
+
+```yaml
+SOURCES:
+  arxiv:
+    enabled: true
+    mode: direct
+    queries: [cat:cs.AI]
+ARXIV_POOL:
+  enabled: false
+```
+
+For temporary local-pool rollback, keep pool mode and name the legacy backend
+and database explicitly:
+
+```yaml
+SOURCES:
+  arxiv:
+    enabled: true
+    mode: pool
+    queries: [cat:cs.AI]
+ARXIV_POOL:
+  enabled: true
+  backend: local_sqlite
+  db_path: ~/.local/share/recoleta/arxiv_pool.db
+```
+
+An enabled Huldra pool combined with `mode: direct`, or a Huldra backend
+combined with `db_path`, is a configuration error.
 
 ## HTML maintext enrich parallelism (optional)
 
@@ -413,6 +474,9 @@ Daemon schedules:
   - `workflow`: `now|day|week|month|deploy`
   - either `interval_minutes`
   - or `weekday` + `hour_utc` + `minute_utc`
+  - `catch_up_windows`: maximum mature workflow windows reconciled by one
+    trigger (default `1`, range `1..31`); it does not change interval or weekly
+    trigger shape
 
 Migration note:
 

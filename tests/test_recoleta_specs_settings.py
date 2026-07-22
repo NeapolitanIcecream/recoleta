@@ -49,6 +49,66 @@ def test_settings_defaults_arxiv_html_fetches_to_robots_friendly_serial_rate(
     )
 
 
+def test_settings_defaults_enabled_arxiv_to_huldra_pool(
+    configured_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                }
+            }
+        ),
+    )
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.sources.arxiv.mode == "pool"
+    assert settings.arxiv_pool.enabled is True
+    assert settings.arxiv_pool.backend == "huldra"
+    assert settings.arxiv_pool.huldra_base_url == "http://127.0.0.1:8765"
+
+
+def test_settings_defaults_huldra_workflow_request_budget_and_content_admission(
+    configured_env: Path,
+) -> None:
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.arxiv_pool.workflow_pre_sync_enabled is True
+    assert settings.arxiv_pool.workflow_pre_sync_max_windows == 31
+    assert settings.sources.arxiv.content_admission_db_path == Path(
+        "~/.cache/recoleta/arxiv-content-admission.sqlite3"
+    )
+    assert settings.sources.arxiv.content_cooldown_seconds == 3600
+
+
+def test_settings_loads_arxiv_content_admission_configuration(
+    configured_env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    admission_db = tmp_path / "arxiv-content-admission.sqlite3"
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                    "content_admission_db_path": str(admission_db),
+                    "content_cooldown_seconds": 7200,
+                }
+            }
+        ),
+    )
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.sources.arxiv.content_admission_db_path == admission_db
+    assert settings.sources.arxiv.content_cooldown_seconds == 7200
+
+
 def test_settings_loads_backup_output_dir_from_env(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -225,9 +285,12 @@ def test_settings_loads_arxiv_pool_configuration(
         json.dumps(
             {
                 "enabled": True,
+                "backend": "local_sqlite",
                 "db_path": str(pool_path),
                 "request_interval_seconds": 0,
                 "cooldown_seconds": 120,
+                "workflow_pre_sync_enabled": False,
+                "workflow_pre_sync_max_windows": 7,
                 "maturity_lag_days": 2,
                 "readiness_gate": "warn",
                 "allow_immature_windows": True,
@@ -250,13 +313,28 @@ def test_settings_loads_arxiv_pool_configuration(
     settings = Settings()  # pyright: ignore[reportCallIssue]
 
     assert settings.arxiv_pool.enabled is True
+    assert settings.arxiv_pool.backend == "local_sqlite"
     assert settings.arxiv_pool.db_path == pool_path
     assert settings.arxiv_pool.request_interval_seconds == 0
     assert settings.arxiv_pool.cooldown_seconds == 120
+    assert settings.arxiv_pool.workflow_pre_sync_enabled is False
+    assert settings.arxiv_pool.workflow_pre_sync_max_windows == 7
     assert settings.arxiv_pool.maturity_lag_days == 2
     assert settings.arxiv_pool.readiness_gate == "warn"
     assert settings.arxiv_pool.allow_immature_windows is True
     assert settings.sources.arxiv.mode == "pool"
+
+
+def test_settings_rejects_non_positive_workflow_pre_sync_window_budget(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps({"workflow_pre_sync_max_windows": 0}),
+    )
+
+    with pytest.raises(ValueError, match="workflow_pre_sync_max_windows"):
+        Settings()  # pyright: ignore[reportCallIssue]
 
 
 def test_settings_loads_huldra_arxiv_pool_backend(
@@ -296,12 +374,170 @@ def test_settings_loads_huldra_arxiv_pool_backend(
     assert settings.arxiv_pool.huldra_wait_timeout_seconds == 1200
 
 
-def test_settings_rejects_huldra_arxiv_pool_backend_without_endpoint(
+def test_settings_defaults_huldra_arxiv_pool_backend_endpoint(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(
         "ARXIV_POOL",
         json.dumps({"enabled": True, "backend": "huldra"}),
+    )
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.arxiv_pool.huldra_base_url == "http://127.0.0.1:8765"
+
+
+def test_settings_huldra_backend_without_source_mode_uses_pool(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps(
+            {
+                "enabled": True,
+                "backend": "huldra",
+                "huldra_base_url": "http://huldra.internal:8765",
+            }
+        ),
+    )
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                }
+            }
+        ),
+    )
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.sources.arxiv.mode == "pool"
+    assert settings.arxiv_pool.backend == "huldra"
+
+
+def test_settings_rejects_explicitly_disabled_pool_for_enabled_arxiv(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ARXIV_POOL", json.dumps({"enabled": False}))
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                }
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match="ARXIV_POOL.enabled=true"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_rejects_direct_mode_with_enabled_huldra_pool(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps({"enabled": True, "backend": "huldra"}),
+    )
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "mode": "direct",
+                    "queries": ["cat:cs.AI"],
+                }
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match=r"mode=direct.*ARXIV_POOL.enabled=true"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_allows_explicit_deprecated_direct_mode_when_pool_disabled(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "mode": "direct",
+                    "queries": ["cat:cs.AI"],
+                }
+            }
+        ),
+    )
+
+    with pytest.warns(DeprecationWarning, match="legacy arXiv direct adapter"):
+        settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.sources.arxiv.mode == "direct"
+    assert settings.arxiv_pool.enabled is False
+
+
+def test_settings_requires_explicit_local_backend_for_legacy_pool_db(
+    configured_env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps(
+            {
+                "enabled": True,
+                "db_path": str(tmp_path / "arxiv_pool.db"),
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match=r"db_path.*backend=local_sqlite"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_rejects_huldra_endpoint_on_legacy_local_pool(
+    configured_env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps(
+            {
+                "enabled": True,
+                "backend": "local_sqlite",
+                "db_path": str(tmp_path / "arxiv_pool.db"),
+                "huldra_base_url": "http://127.0.0.1:8765",
+            }
+        ),
+    )
+
+    with pytest.raises(ValueError, match=r"huldra_base_url.*local_sqlite"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_settings_rejects_blank_huldra_endpoint_for_enabled_arxiv(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "ARXIV_POOL",
+        json.dumps({"huldra_base_url": ""}),
+    )
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                }
+            }
+        ),
     )
 
     with pytest.raises(ValueError, match="huldra_base_url"):
@@ -332,7 +568,7 @@ def test_settings_rejects_invalid_arxiv_pool_backend(
         Settings()  # pyright: ignore[reportCallIssue]
 
 
-def test_settings_rejects_arxiv_pool_source_mode_without_pool_config(
+def test_settings_arxiv_pool_source_mode_uses_default_huldra_pool(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(
@@ -348,8 +584,11 @@ def test_settings_rejects_arxiv_pool_source_mode_without_pool_config(
         ),
     )
 
-    with pytest.raises(ValueError, match="ARXIV_POOL.enabled=true"):
-        Settings()  # pyright: ignore[reportCallIssue]
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.arxiv_pool.enabled is True
+    assert settings.arxiv_pool.backend == "huldra"
+    assert settings.arxiv_pool.huldra_base_url == "http://127.0.0.1:8765"
 
 
 def test_settings_rejects_invalid_arxiv_enrich_configuration(
@@ -978,6 +1217,7 @@ def test_settings_loads_workflow_and_daemon_configuration_from_config_file(
                 "  schedules:",
                 "    - workflow: day",
                 "      interval_minutes: 60",
+                "      catch_up_windows: 3",
                 "    - workflow: week",
                 "      weekday: mon",
                 "      hour_utc: 2",
@@ -997,7 +1237,36 @@ def test_settings_loads_workflow_and_daemon_configuration_from_config_file(
     assert settings.workflows.deploy.translation == "off"
     assert len(settings.daemon.schedules) == 2
     assert settings.daemon.schedules[0].workflow == "day"
+    assert settings.daemon.schedules[0].catch_up_windows == 3
     assert settings.daemon.schedules[1].weekday == "mon"
+    assert settings.daemon.schedules[1].catch_up_windows == 1
+
+
+@pytest.mark.parametrize("catch_up_windows", [0, 32])
+def test_settings_rejects_out_of_range_daemon_catch_up_windows(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    catch_up_windows: int,
+) -> None:
+    config_path = tmp_path / "recoleta.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f'RECOLETA_DB_PATH: "{tmp_path / "recoleta.db"}"',
+                'LLM_MODEL: "openai/gpt-4o-mini"',
+                "DAEMON:",
+                "  schedules:",
+                "    - workflow: day",
+                "      interval_minutes: 60",
+                f"      catch_up_windows: {catch_up_windows}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RECOLETA_CONFIG_PATH", str(config_path))
+
+    with pytest.raises(ValueError, match="catch_up_windows"):
+        Settings()  # pyright: ignore[reportCallIssue]
 
 
 def test_settings_rejects_invalid_daemon_schedule_shape(

@@ -77,7 +77,7 @@ def test_pdf_enrich_is_strict_and_does_not_fallback_to_html(
     monkeypatch.setattr(
         enrich_stage,
         "fetch_url_bytes",
-        lambda _client, _url: blank_pdf,  # noqa: ARG005
+        lambda _client, _url, **_kwargs: blank_pdf,  # noqa: ARG005
     )
     monkeypatch.setattr(
         enrich_stage,

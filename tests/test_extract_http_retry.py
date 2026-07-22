@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import httpx
+import pytest
 
 from recoleta.extract import fetch_url_html
 
@@ -71,3 +72,41 @@ def test_fetch_url_html_honors_long_retry_after_before_retrying_429() -> None:
     assert html == "<html><body>ok</body></html>"
     assert client.calls == 2
     assert slept == [120.0]
+
+
+def test_fetch_url_html_acquires_admission_before_every_attempt() -> None:
+    attempts: list[int] = []
+    client = _RetryAfterClient()
+    retrying = cast(Any, fetch_url_html).retry
+    previous_sleep = retrying.sleep
+    retrying.sleep = lambda _seconds: None
+    try:
+        html = fetch_url_html(
+            client,  # type: ignore[arg-type]
+            "https://arxiv.org/html/1706.03762",
+            before_attempt=lambda: attempts.append(len(attempts) + 1),
+        )
+    finally:
+        retrying.sleep = previous_sleep
+
+    assert html == "<html><body>ok</body></html>"
+    assert attempts == [1, 2]
+
+
+def test_fetch_url_html_can_defer_429_without_retrying_or_falling_through() -> None:
+    rate_limited: list[int] = []
+    client = _RetryAfterClient(retry_after="120")
+
+    with pytest.raises(httpx.HTTPStatusError) as caught:
+        fetch_url_html(
+            client,  # type: ignore[arg-type]
+            "https://arxiv.org/html/1706.03762",
+            retry_on_429=False,
+            on_rate_limited=lambda response: rate_limited.append(
+                response.status_code
+            ),
+        )
+
+    assert caught.value.response.status_code == 429
+    assert client.calls == 1
+    assert rate_limited == [429]

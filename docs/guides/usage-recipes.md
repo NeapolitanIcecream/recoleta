@@ -75,9 +75,12 @@ uv run recoleta fleet run deploy --manifest /path/to/fleet.yaml
 What to know:
 
 - fleet commands run every child instance listed in the manifest.
-- there is no fleet-aware `daemon` command. Schedule `recoleta fleet run ...`
-  from cron, systemd, CI, or another external scheduler when you need recurring
-  fleet runs.
+- `fleet daemon start --manifest ...` reads schedules from the top-level fleet
+  manifest. Child configs must not contain their own `daemon` section.
+- scheduled day, week, and month jobs select only closed UTC periods, reconcile
+  at most `catch_up_windows` targets oldest first, and hold one host-local file
+  lease for the complete sequence. A concurrent manual or scheduled fleet
+  workflow is rejected instead of interleaving child runs.
 - `fleet run day`, `fleet run week`, `fleet run month`, and
   `fleet run deploy` accept the same advanced `--include` / `--skip` pattern as
   the single-instance workflow commands. `fleet run day|week|month` also accepts
@@ -90,14 +93,15 @@ What to know:
 
 ## Use [Huldra](https://github.com/NeapolitanIcecream/huldra)-backed arXiv ingest
 
-Use Huldra when arXiv metadata should be cached and rate-limited outside each
-Recoleta instance. Install the optional dependency first:
+Huldra is Recoleta's default arXiv metadata backend and is installed by the
+standard setup:
 
 ```bash
-uv sync --extra huldra
+uv sync
 ```
 
-Then configure arXiv as a pool-backed source:
+Run or point at a Huldra service, then configure the source. `mode`, `backend`,
+and the localhost URL below are defaults but are shown for clarity:
 
 ```yaml
 sources:
@@ -114,6 +118,8 @@ arxiv_pool:
   huldra_base_url: "http://127.0.0.1:8765"
   huldra_request_timeout_seconds: 30
   huldra_wait_timeout_seconds: null
+  workflow_pre_sync_enabled: true
+  workflow_pre_sync_max_windows: 31
   maturity_lag_days: 1
   readiness_gate: strict
   allow_immature_windows: false
@@ -132,6 +138,7 @@ What to know:
 - `huldra_base_url` must point at the Huldra service used by this workspace.
 - instance ingest reads Huldra cache-only results and does not call arXiv
   directly when `sources.arxiv.mode=pool`.
+- Huldra failures do not fall back to the deprecated direct adapter.
 - `arxiv-pool sync`, `arxiv-pool backfill`, and fleet pre-sync ask Huldra to
   drain the requested windows before ingest continues.
 - `--force` is rejected for Huldra-backed sync/backfill until Huldra exposes a
@@ -141,6 +148,11 @@ What to know:
   reason.
 - Huldra owns its database and cache lifecycle. `recoleta admin gc` only
   maintains the configured Recoleta workspace; it does not prune Huldra state.
+- arxiv.org HTML, PDF, and e-print enrichment uses a separate shared SQLite
+  admission database. A 429 persists a cooldown across Recoleta processes,
+  disables the immediate HTTP retry, and prevents HTML enrichment from issuing
+  a fallback PDF request. Configure `sources.arxiv.content_admission_db_path`
+  and `content_cooldown_seconds` when the defaults are unsuitable.
 - The process supervisor owns retention for Huldra stdout and stderr. Send them
   to a bounded journal or a rotating file sink rather than one append-only log.
 - Use the maintenance commands documented by the deployed Huldra version. Before
@@ -374,10 +386,12 @@ daemon:
   schedules:
     - workflow: day
       interval_minutes: 60
+      catch_up_windows: 1
     - workflow: week
       weekday: mon
       hour_utc: 2
       minute_utc: 0
+      catch_up_windows: 1
     - workflow: deploy
       weekday: mon
       hour_utc: 2
@@ -391,8 +405,35 @@ containers:
 uv run recoleta run now
 ```
 
-`daemon start` schedules one instance config at a time. If you operate a fleet,
-schedule `recoleta fleet run ...` externally instead.
+`daemon start` schedules one instance config at a time. For a fleet, put the
+same `daemon` block at the top level of `fleet.yaml`, alongside `instances`,
+then start the fleet scheduler:
+
+```yaml
+schema_version: 1
+daemon:
+  schedules:
+    - workflow: day
+      interval_minutes: 60
+      catch_up_windows: 2
+    - workflow: week
+      weekday: mon
+      hour_utc: 2
+      minute_utc: 0
+      catch_up_windows: 2
+instances:
+  - name: agents
+    config_path: ./instances/agents/recoleta.yaml
+```
+
+```bash
+uv run recoleta fleet daemon start --manifest /path/to/fleet.yaml
+```
+
+Run only one fleet scheduler per manifest. The process-level APScheduler guard
+and a host-local file lease keyed by the resolved manifest path protect against
+overlapping jobs on one host, including when the manifest is mounted read-only.
+They are not a distributed lock across machines.
 
 Read-only operator checks:
 

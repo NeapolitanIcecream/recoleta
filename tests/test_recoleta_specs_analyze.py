@@ -1614,7 +1614,9 @@ def test_analyze_prefers_pdf_enrichment_for_arxiv_items(
 
     expected_pdf_url = "https://arxiv.org/pdf/1605.08386v1.pdf"
 
-    def fake_fetch_url_bytes(_client, url: str) -> bytes:  # noqa: ARG001
+    def fake_fetch_url_bytes(
+        _client, url: str, **_kwargs: object
+    ) -> bytes:  # noqa: ARG001
         assert url == expected_pdf_url
         return b"%PDF-mock"
 
@@ -1702,7 +1704,9 @@ def test_analyze_uses_latex_source_enrichment_for_arxiv_items(
 
     expected_source_url = "https://arxiv.org/e-print/1605.08386v1"
 
-    def fake_fetch_url_bytes(_client, url: str) -> bytes:  # noqa: ARG001
+    def fake_fetch_url_bytes(
+        _client, url: str, **_kwargs: object
+    ) -> bytes:  # noqa: ARG001
         assert url == expected_source_url
         return b"mock source archive"
 
@@ -1791,7 +1795,9 @@ def test_analyze_uses_html_document_enrichment_for_arxiv_items(
 
     expected_html_url = "https://arxiv.org/html/1605.08386v1"
 
-    def fake_fetch_url_html(_client, url: str) -> str:  # noqa: ARG001
+    def fake_fetch_url_html(
+        _client, url: str, **_kwargs: object
+    ) -> str:  # noqa: ARG001
         assert url == expected_html_url
         return "<html><body><main><p>raw html body</p></main></body></html>"
 
@@ -1876,7 +1882,9 @@ def test_arxiv_strict_enrich_does_not_fallback_when_method_fails(
     )
     service.ingest(run_id="run-arxiv-strict-failure", drafts=[draft])
 
-    def fail_fetch_url_html(_client, url: str) -> str:  # noqa: ARG001
+    def fail_fetch_url_html(
+        _client, url: str, **_kwargs: object
+    ) -> str:  # noqa: ARG001
         request = httpx.Request("GET", url)
         response = httpx.Response(503, request=request, text="service unavailable")
         raise httpx.HTTPStatusError(
@@ -1899,6 +1907,70 @@ def test_arxiv_strict_enrich_does_not_fallback_when_method_fails(
     by_name: dict[str, Metric] = {metric.name: metric for metric in metrics}
     assert by_name["pipeline.enrich.failed_total"].value == 1
     assert by_name["pipeline.enrich.arxiv.method_failed.html_document_total"].value == 1
+
+
+def test_arxiv_latex_rate_limit_does_not_amplify_into_pdf_request(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import httpx
+    import recoleta.pipeline.enrich_stage as enrich_stage
+    import recoleta.pipeline.service as pipeline_service
+
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                    "enrich_method": "latex_source",
+                    "enrich_failure_mode": "fallback",
+                    "content_admission_db_path": str(
+                        configured_env / "arxiv-content-admission.sqlite3"
+                    ),
+                }
+            }
+        ),
+    )
+    settings, repository = _build_runtime()
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+    service.ingest(
+        run_id="run-arxiv-latex-429",
+        drafts=[
+            ItemDraft.from_values(
+                source="arxiv",
+                source_item_id="1605.08386v1",
+                canonical_url="https://arxiv.org/abs/1605.08386v1",
+                title="Arxiv LaTeX rate limit",
+            )
+        ],
+    )
+    requested_urls: list[str] = []
+
+    def rate_limited_source(
+        _client, url: str, **_kwargs: object
+    ) -> bytes:  # noqa: ARG001
+        requested_urls.append(url)
+        if "/e-print/" not in url:
+            raise AssertionError("429 must not trigger a PDF request")
+        request = httpx.Request("GET", url)
+        response = httpx.Response(429, request=request, headers={"Retry-After": "60"})
+        raise httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    monkeypatch.setattr(pipeline_service, "fetch_url_bytes", rate_limited_source)
+    monkeypatch.setattr(enrich_stage, "fetch_url_bytes", rate_limited_source)
+
+    service.enrich(run_id="run-arxiv-latex-429", limit=10)
+
+    assert requested_urls == ["https://arxiv.org/e-print/1605.08386v1"]
+    with Session(repository.engine) as session:
+        assert session.exec(select(Item)).one().state == ITEM_STATE_RETRYABLE_FAILED
 
 
 def test_analyze_writes_llm_request_and_response_artifacts(

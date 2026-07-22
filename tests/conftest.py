@@ -26,6 +26,7 @@ def configured_env(
     vault_path = tmp_path / "vault"
     vault_path.mkdir(parents=True)
 
+    monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault_path))
     monkeypatch.setenv("RECOLETA_DB_PATH", str(tmp_path / "recoleta.db"))
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-bot-token")

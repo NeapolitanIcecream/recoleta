@@ -71,6 +71,12 @@ def run_daemon_start_command() -> Any:
     return impl()
 
 
+def run_fleet_daemon_start_command(**kwargs: Any) -> Any:
+    from recoleta.cli.fleet import run_fleet_daemon_start_command as impl
+
+    return impl(**kwargs)
+
+
 def execute_fleet_granularity_workflow(**kwargs: Any) -> Any:
     from recoleta.cli.fleet import execute_fleet_granularity_workflow as impl
 
@@ -138,12 +144,16 @@ app.add_typer(run_app, name="run")
 fleet_app = typer.Typer(help="Fleet orchestration workflows.", no_args_is_help=True)
 fleet_run_app = typer.Typer(help="Fleet workflow entrypoints.", no_args_is_help=True)
 fleet_site_app = typer.Typer(help="Fleet site workflows.", no_args_is_help=True)
+fleet_daemon_app = typer.Typer(
+    help="Fleet background workflow scheduling.", no_args_is_help=True
+)
 fleet_run_email_app = typer.Typer(
     help="Fleet manual trend email workflows.",
     no_args_is_help=True,
 )
 fleet_app.add_typer(fleet_run_app, name="run")
 fleet_app.add_typer(fleet_site_app, name="site")
+fleet_app.add_typer(fleet_daemon_app, name="daemon")
 fleet_run_app.add_typer(fleet_run_email_app, name="email")
 app.add_typer(fleet_app, name="fleet")
 
@@ -1450,6 +1460,26 @@ def run_site_serve(
 def daemon_start() -> None:
     """Start the configured workflow scheduler."""
     run_daemon_start_command()
+
+
+_FLEET_DAEMON_MANIFEST_OPTION = typer.Option(
+    ...,
+    "--manifest",
+    envvar="RECOLETA_FLEET_MANIFEST",
+    file_okay=True,
+    dir_okay=False,
+    readable=True,
+    resolve_path=True,
+    help="Fleet manifest containing daemon schedules and child instances.",
+)
+
+
+@fleet_daemon_app.command("start")
+def fleet_daemon_start(
+    manifest_path: Path = _FLEET_DAEMON_MANIFEST_OPTION,
+) -> None:
+    """Start the scheduler declared by the fleet manifest."""
+    run_fleet_daemon_start_command(manifest_path=manifest_path)
 
 
 @inspect_app.command("health")

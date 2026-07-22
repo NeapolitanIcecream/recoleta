@@ -40,7 +40,7 @@ RECOLETA_CONFIG_PATH=./recoleta.yaml
 RECOLETA_LLM_API_KEY="sk-replace-me"
 ENV
 
-uv sync --extra huldra
+uv sync
 uv run recoleta run now
 ```
 

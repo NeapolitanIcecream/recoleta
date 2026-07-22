@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 from typing import Any
+import warnings
 
 from platformdirs import user_data_dir
 from pydantic import (
@@ -81,6 +82,7 @@ _ALLOWED_WORKFLOW_TRANSLATION_MODES = {"auto", "off"}
 _ALLOWED_WORKFLOW_TRANSLATE_INCLUDE = {"items", "trends", "ideas"}
 _ALLOWED_WORKFLOW_TRANSLATE_FAILURE = {"fail", "partial_success", "skip"}
 _ALLOWED_DAEMON_WEEKDAYS = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+_DEFAULT_HULDRA_BASE_URL = "http://127.0.0.1:8765"
 _UNSUPPORTED_TOPIC_STREAM_FILE_KEYS = ("TOPIC_STREAMS", "topic_streams")
 _UNSUPPORTED_TOPIC_STREAM_ENV_KEYS = ("TOPIC_STREAMS",)
 _DEPRECATED_SCHEDULER_INTERVAL_KEYS = (
@@ -598,6 +600,7 @@ class DaemonScheduleConfig(BaseModel):
     weekday: str | None = None
     hour_utc: int | None = Field(default=None, ge=0, le=23)
     minute_utc: int | None = Field(default=None, ge=0, le=59)
+    catch_up_windows: int = Field(default=1, ge=1, le=31)
 
     @field_validator("workflow", mode="before")
     @classmethod
@@ -967,7 +970,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
 class ArxivSourceConfig(BaseModel):
     enabled: bool = False
     queries: list[str] = Field(default_factory=list)
-    mode: str = Field(default="direct")
+    mode: str = Field(default="pool")
     max_results_per_run: int = 50
     max_total_per_run: int | None = Field(default=None, ge=1, le=2000)
     enrich_method: str = Field(default="html_document")
@@ -980,13 +983,17 @@ class ArxivSourceConfig(BaseModel):
         default=1.0 / 15.0, gt=0.0, le=20.0
     )
     html_document_log_sample_rate: float = Field(default=0.05, ge=0.0, le=1.0)
+    content_admission_db_path: Path = Path(
+        "~/.cache/recoleta/arxiv-content-admission.sqlite3"
+    )
+    content_cooldown_seconds: int = Field(default=3600, ge=1)
 
     @field_validator("mode", mode="before")
     @classmethod
     def _normalize_mode(cls, value: Any) -> str:
         normalized = str(value or "").strip().lower()
         if not normalized:
-            return "direct"
+            return "pool"
         if normalized not in _ALLOWED_ARXIV_SOURCE_MODES:
             raise ValueError("SOURCES.arxiv.mode must be one of: direct, pool")
         return normalized
@@ -1134,13 +1141,15 @@ class SourcesConfig(BaseModel):
 
 class ArxivPoolConfig(BaseModel):
     enabled: bool = False
-    backend: str = "local_sqlite"
+    backend: str = "huldra"
     db_path: Path | None = None
     request_interval_seconds: float = Field(default=5.0, ge=0.0)
     cooldown_seconds: int = Field(default=3600, ge=1)
-    huldra_base_url: str | None = None
+    huldra_base_url: str | None = _DEFAULT_HULDRA_BASE_URL
     huldra_request_timeout_seconds: float = Field(default=30.0, gt=0.0)
     huldra_wait_timeout_seconds: float | None = Field(default=None, gt=0.0)
+    workflow_pre_sync_enabled: bool = True
+    workflow_pre_sync_max_windows: int = Field(default=31, ge=1)
     maturity_lag_days: int = Field(default=1, ge=0)
     readiness_gate: str = "strict"
     allow_immature_windows: bool = False
@@ -1150,7 +1159,7 @@ class ArxivPoolConfig(BaseModel):
     def _normalize_backend(cls, value: Any) -> str:
         normalized = str(value or "").strip().lower()
         if not normalized:
-            return "local_sqlite"
+            return "huldra"
         if normalized not in _ALLOWED_ARXIV_POOL_BACKENDS:
             raise ValueError(
                 "ARXIV_POOL.backend must be one of: local_sqlite, huldra"
@@ -1177,6 +1186,18 @@ class ArxivPoolConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_enabled_backend_requirements(self) -> "ArxivPoolConfig":
+        fields_set = set(getattr(self, "model_fields_set", set()) or set())
+        if self.backend == "huldra" and self.db_path is not None:
+            raise ValueError(
+                "ARXIV_POOL.db_path is only valid for the deprecated "
+                "backend=local_sqlite; set that backend explicitly for rollback"
+            )
+        if self.backend == "local_sqlite":
+            if "huldra_base_url" in fields_set and self.huldra_base_url:
+                raise ValueError(
+                    "ARXIV_POOL.huldra_base_url is not valid with backend=local_sqlite"
+                )
+            self.huldra_base_url = None
         if not self.enabled:
             return self
         if self.backend == "local_sqlite" and self.db_path is None:
@@ -1476,9 +1497,42 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_arxiv_pool_mode_requires_pool_config(self) -> "Settings":
-        if self.sources.arxiv.mode == "pool" and not self.arxiv_pool.enabled:
+        arxiv_source = self.sources.arxiv
+        if not arxiv_source.enabled:
+            return self
+        if arxiv_source.mode == "direct":
+            if self.arxiv_pool.enabled:
+                raise ValueError(
+                    "SOURCES.arxiv.mode=direct cannot be combined with "
+                    "ARXIV_POOL.enabled=true; disable the pool for the explicit "
+                    "legacy direct rollback path"
+                )
+            warnings.warn(
+                "SOURCES.arxiv.mode=direct selects the deprecated legacy arXiv "
+                "direct adapter; install recoleta[legacy-arxiv] and migrate to "
+                "the default Huldra pool",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return self
+        pool_fields_set = set(
+            getattr(self.arxiv_pool, "model_fields_set", set()) or set()
+        )
+        if not self.arxiv_pool.enabled:
+            if "enabled" in pool_fields_set:
+                raise ValueError(
+                    "SOURCES.arxiv.mode=pool requires ARXIV_POOL.enabled=true"
+                )
+            self.arxiv_pool.enabled = True
+        if self.arxiv_pool.backend == "local_sqlite":
+            if self.arxiv_pool.db_path is None:
+                raise ValueError(
+                    "ARXIV_POOL.db_path is required when enabled=true and "
+                    "backend=local_sqlite"
+                )
+        elif not self.arxiv_pool.huldra_base_url:
             raise ValueError(
-                "SOURCES.arxiv.mode=pool requires ARXIV_POOL.enabled=true"
+                "ARXIV_POOL.huldra_base_url is required when backend=huldra"
             )
         return self
 

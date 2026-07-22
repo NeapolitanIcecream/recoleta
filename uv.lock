@@ -1091,8 +1091,8 @@ wheels = [
 
 [[package]]
 name = "huldra-arxiv"
-version = "0.3.0"
-source = { git = "https://github.com/NeapolitanIcecream/huldra.git?rev=ac44c9e175a844d48f5151a7fda62dd0e9a1db9e#ac44c9e175a844d48f5151a7fda62dd0e9a1db9e" }
+version = "0.4.0"
+source = { git = "https://github.com/NeapolitanIcecream/huldra.git?rev=409a48165ca348f243311d7b5d00323f92fdb658#409a48165ca348f243311d7b5d00323f92fdb658" }
 dependencies = [
     { name = "fastapi" },
     { name = "feedparser" },
@@ -2643,12 +2643,13 @@ source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "apscheduler" },
-    { name = "arxiv" },
     { name = "babel" },
     { name = "beautifulsoup4" },
     { name = "feedparser" },
+    { name = "filelock" },
     { name = "httpx" },
     { name = "huggingface-hub" },
+    { name = "huldra-arxiv" },
     { name = "lancedb" },
     { name = "latex2mathml" },
     { name = "litellm" },
@@ -2679,8 +2680,8 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-huldra = [
-    { name = "huldra-arxiv" },
+legacy-arxiv = [
+    { name = "arxiv" },
 ]
 
 [package.dev-dependencies]
@@ -2698,13 +2699,14 @@ dev = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.46.0" },
     { name = "apscheduler", specifier = ">=3.11.2" },
-    { name = "arxiv", specifier = ">=2.4.0" },
+    { name = "arxiv", marker = "extra == 'legacy-arxiv'", specifier = ">=2.4.0" },
     { name = "babel", specifier = ">=2.18.0" },
     { name = "beautifulsoup4", specifier = ">=4.14.3" },
     { name = "feedparser", specifier = ">=6.0.12" },
+    { name = "filelock", specifier = ">=3.24.3" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "huggingface-hub", specifier = ">=0.36.2" },
-    { name = "huldra-arxiv", marker = "extra == 'huldra'", git = "https://github.com/NeapolitanIcecream/huldra.git?rev=ac44c9e175a844d48f5151a7fda62dd0e9a1db9e" },
+    { name = "huldra-arxiv", git = "https://github.com/NeapolitanIcecream/huldra.git?rev=409a48165ca348f243311d7b5d00323f92fdb658" },
     { name = "lancedb", specifier = ">=0.29.2" },
     { name = "latex2mathml", specifier = ">=3.81.0" },
     { name = "litellm", specifier = ">=1.76.1" },
@@ -2733,7 +2735,7 @@ requires-dist = [
     { name = "trafilatura", specifier = ">=2.0.0" },
     { name = "typer", specifier = ">=0.24.1" },
 ]
-provides-extras = ["huldra"]
+provides-extras = ["legacy-arxiv", "huldra"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2922,8 +2924,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography", marker = "sys_platform != 'darwin'" },
-    { name = "jeepney", marker = "sys_platform != 'darwin'" },
+    { name = "cryptography" },
+    { name = "jeepney" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [

@@ -29,6 +29,75 @@ from recoleta.sources import (
 )
 
 
+def test_arxiv_pull_request_defaults_to_pool_mode() -> None:
+    request = ArxivPullRequest(queries=["cat:cs.AI"])
+
+    assert request.mode == "pool"
+
+
+def test_default_arxiv_pool_path_does_not_import_legacy_arxiv_sdk() -> None:
+    probe = "\n".join(
+        [
+            "import builtins",
+            "real_import = builtins.__import__",
+            "def guarded_import(name, *args, **kwargs):",
+            "    if name == 'arxiv':",
+            "        raise AssertionError('default pool path imported legacy arxiv SDK')",
+            "    return real_import(name, *args, **kwargs)",
+            "builtins.__import__ = guarded_import",
+            "from recoleta.sources import ArxivPullRequest, SourcePullResult, fetch_arxiv_drafts",
+            "request = ArxivPullRequest(queries=['cat:cs.AI'], include_stats=True)",
+            "result = fetch_arxiv_drafts(request=request)",
+            "assert request.mode == 'pool'",
+            "assert isinstance(result, SourcePullResult)",
+        ]
+    )
+
+    subprocess.run([sys.executable, "-c", probe], check=True)
+
+
+def test_explicit_direct_mode_reports_legacy_extra_when_sdk_is_missing() -> None:
+    probe = "\n".join(
+        [
+            "import builtins",
+            "real_import = builtins.__import__",
+            "def guarded_import(name, *args, **kwargs):",
+            "    if name == 'arxiv':",
+            "        raise ModuleNotFoundError(\"No module named 'arxiv'\")",
+            "    return real_import(name, *args, **kwargs)",
+            "builtins.__import__ = guarded_import",
+            "from recoleta.sources import ArxivPullRequest, fetch_arxiv_drafts",
+            "request = ArxivPullRequest(queries=['cat:cs.AI'], mode='direct')",
+            "try:",
+            "    fetch_arxiv_drafts(request=request)",
+            "except RuntimeError as exc:",
+            "    assert 'legacy-arxiv' in str(exc)",
+            "else:",
+            "    raise AssertionError('direct mode unexpectedly worked without legacy SDK')",
+        ]
+    )
+
+    subprocess.run([sys.executable, "-c", probe], check=True)
+
+
+def test_unknown_arxiv_mode_is_rejected_without_direct_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import recoleta.source_pullers as source_pullers
+
+    def forbidden_legacy_sdk() -> object:
+        raise AssertionError("unknown mode fell back to the direct adapter")
+
+    monkeypatch.setattr(
+        source_pullers, "_load_legacy_arxiv_sdk", forbidden_legacy_sdk
+    )
+
+    with pytest.raises(ValueError, match="mode must be one of: pool, direct"):
+        fetch_arxiv_drafts(
+            request=ArxivPullRequest(queries=["cat:cs.AI"], mode="unknown")
+        )
+
+
 def test_source_fetchers_preserve_legacy_keyword_api(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -571,10 +640,14 @@ def test_fetch_arxiv_drafts_adds_submitted_date_range_when_window_requested(
             _ = search
             return iter([])
 
-    import recoleta.sources as source_module
+    import recoleta.source_pullers as source_pullers
 
-    monkeypatch.setattr(source_module.arxiv, "Search", FakeSearch)
-    monkeypatch.setattr(source_module.arxiv, "Client", FakeClient)
+    fake_arxiv = SimpleNamespace(
+        Search=FakeSearch,
+        Client=FakeClient,
+        SortCriterion=SimpleNamespace(SubmittedDate="submitted-date"),
+    )
+    monkeypatch.setattr(source_pullers, "_load_legacy_arxiv_sdk", lambda: fake_arxiv)
 
     fetch_arxiv_drafts(
         request=ArxivPullRequest(
@@ -582,6 +655,7 @@ def test_fetch_arxiv_drafts_adds_submitted_date_range_when_window_requested(
             max_results_per_run=5,
             period_start=datetime(2025, 1, 20, tzinfo=UTC),
             period_end=datetime(2025, 1, 21, tzinfo=UTC),
+            mode="direct",
         )
     )
 
@@ -589,7 +663,7 @@ def test_fetch_arxiv_drafts_adds_submitted_date_range_when_window_requested(
         {
             "query": "(cat:cs.AI) AND submittedDate:[202501200000 TO 202501202359]",
             "max_results": 5,
-            "sort_by": source_module.arxiv.SortCriterion.SubmittedDate,
+            "sort_by": fake_arxiv.SortCriterion.SubmittedDate,
         }
     ]
 
@@ -832,15 +906,20 @@ def test_fetch_arxiv_drafts_uses_saved_watermark_when_no_window_requested(
             _ = search
             return iter([])
 
-    import recoleta.sources as source_module
+    import recoleta.source_pullers as source_pullers
 
-    monkeypatch.setattr(source_module.arxiv, "Search", FakeSearch)
-    monkeypatch.setattr(source_module.arxiv, "Client", FakeClient)
+    fake_arxiv = SimpleNamespace(
+        Search=FakeSearch,
+        Client=FakeClient,
+        SortCriterion=SimpleNamespace(SubmittedDate="submitted-date"),
+    )
+    monkeypatch.setattr(source_pullers, "_load_legacy_arxiv_sdk", lambda: fake_arxiv)
 
     fetch_arxiv_drafts(
         request=ArxivPullRequest(
             queries=["cat:cs.AI"],
             max_results_per_run=5,
+            mode="direct",
             pull_state_lookup=lambda scope_kind, scope_key: (
                 SourcePullStateSnapshot(
                     scope_kind=scope_kind,

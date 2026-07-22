@@ -681,11 +681,12 @@ def test_pool_backed_arxiv_ingest_reads_cached_drafts_without_upstream(
 
     import recoleta.source_pullers as source_pullers
 
-    class ForbiddenClient:
-        def __init__(self) -> None:
-            raise AssertionError("pool mode must not instantiate arxiv.Client")
+    def forbidden_legacy_sdk() -> object:
+        raise AssertionError("pool mode must not import the legacy arxiv SDK")
 
-    monkeypatch.setattr(source_pullers.arxiv, "Client", ForbiddenClient)
+    monkeypatch.setattr(
+        source_pullers, "_load_legacy_arxiv_sdk", forbidden_legacy_sdk
+    )
 
     result = fetch_arxiv_drafts(
         request=ArxivPullRequest(
@@ -1867,6 +1868,46 @@ def test_fleet_pre_sync_plan_collects_unique_pool_windows(tmp_path: Path) -> Non
     }
 
 
+def test_local_fleet_pre_sync_budget_advances_past_cached_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: cached prefixes must not consume the local pre-sync budget."""
+    manifest_path, pool_path = _write_pool_fleet_manifest(
+        tmp_path,
+        workflow_pre_sync_max_windows=1,
+    )
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+    store = ArxivPoolStore(pool_path)
+    _record_completed_window(store, plan.windows[0])
+    synced_windows: list[ArxivPoolWindow] = []
+
+    class FakeSync:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def sync_windows(
+            self,
+            windows: list[ArxivPoolWindow],
+        ) -> ArxivPoolSyncResult:
+            synced_windows.extend(windows)
+            return ArxivPoolSyncResult(requested_windows_total=len(windows))
+
+    import recoleta.cli.fleet as fleet_module
+
+    monkeypatch.setattr(fleet_module, "ArxivPoolSync", FakeSync)
+
+    result = run_fleet_arxiv_pool_pre_sync(plan)
+
+    assert plan.pre_sync_max_windows == 1
+    assert result.requested_windows_total == 1
+    assert synced_windows == [plan.windows[1]]
+
+
 def test_fleet_pre_sync_plan_rejects_mixed_pool_backends(tmp_path: Path) -> None:
     manifest_path = _write_mixed_backend_fleet_manifest(tmp_path)
 
@@ -2185,6 +2226,96 @@ def test_fleet_workflow_runs_pool_pre_sync_before_child_ingest(
     assert payload["arxiv_pool_pre_sync"]["sync"]["requested_windows_total"] == 14
 
 
+@pytest.mark.parametrize(
+    ("enabled", "budget", "expected_requests"),
+    [(False, 31, 0), (True, 1, 1)],
+)
+def test_huldra_fleet_workflow_honors_pre_sync_controls_and_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    enabled: bool,
+    budget: int,
+    expected_requests: int,
+) -> None:
+    install_fake_huldra(monkeypatch)
+    from tests.spec_support import FakeHuldraMaintenanceResult
+
+    manifest_path = _write_huldra_fleet_manifest(
+        tmp_path,
+        base_urls=("http://127.0.0.1:8765", "http://127.0.0.1:8765"),
+        workflow_pre_sync_enabled=(enabled, enabled),
+        workflow_pre_sync_max_windows=(budget, budget),
+    )
+    synced_requests: list[Any] = []
+
+    class FakeHuldraClient:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def __enter__(self) -> "FakeHuldraClient":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def sync_windows(self, requests: list[Any], **_kwargs: Any) -> Any:
+            synced_requests.extend(requests)
+            return FakeHuldraMaintenanceResult(requested_total=len(requests))
+
+    import huldra.client
+    import recoleta.cli.fleet as fleet_module
+
+    monkeypatch.setattr(huldra.client, "HuldraClient", FakeHuldraClient)
+
+    def missing_mature_readiness(plan):  # type: ignore[no-untyped-def]
+        return {
+            "status": "blocked",
+            "blocked_windows_total": len(plan.windows),
+            "immature_windows_total": 0,
+            "windows": [
+                {
+                    "query_text": window.query_text,
+                    "period_start": window.period_start.isoformat(),
+                    "period_end": window.period_end.isoformat(),
+                    "max_results": window.max_results,
+                    "mature": True,
+                    "analysis_ready": False,
+                    "blocked_reason": "missing_window",
+                }
+                for window in plan.windows
+            ],
+        }
+
+    monkeypatch.setattr(
+        fleet_module,
+        "evaluate_arxiv_pool_workflow_readiness",
+        missing_mature_readiness,
+    )
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        lambda **_kwargs: pytest.fail("strict readiness should block children"),
+    )
+
+    with pytest.raises(typer.Exit):
+        execute_fleet_granularity_workflow(
+            manifest_path=manifest_path,
+            workflow_name="week",
+            command="fleet run week",
+            anchor_date="2026-04-27",
+            json_output=True,
+        )
+
+    payload = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert len(synced_requests) == expected_requests
+    assert payload["arxiv_pool_pre_sync"]["requested_windows_total"] == expected_requests
+    if enabled:
+        assert payload["arxiv_pool_pre_sync"]["deferred_windows_total"] == 13
+    else:
+        assert payload["arxiv_pool_pre_sync"]["reason"] == "disabled"
+
+
 def test_fleet_workflow_dry_run_skips_pool_pre_sync_and_marks_children_dry_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2269,6 +2400,63 @@ def test_fleet_workflow_skip_ingest_skips_pool_pre_sync_but_still_gates_analysis
     emitted = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert exc.value.exit_code == 1
     assert events == []
+    assert emitted["arxiv_pool_pre_sync"]["status"] == "skipped"
+    assert emitted["arxiv_pool_pre_sync"]["reason"] == "ingest_not_requested"
+    assert emitted["arxiv_pool_readiness"]["blocked_windows_total"] == 14
+
+
+def test_huldra_fleet_skip_ingest_skips_pre_sync_but_still_gates_analysis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A skipped Huldra ingest must not enqueue maintenance work."""
+    manifest_path = _write_huldra_fleet_manifest(
+        tmp_path,
+        base_urls=("http://127.0.0.1:8765", "http://127.0.0.1:8765"),
+    )
+
+    import recoleta.cli.fleet as fleet_module
+
+    def missing_mature_readiness(plan):  # type: ignore[no-untyped-def]
+        return {
+            "status": "blocked",
+            "blocked_windows_total": len(plan.windows),
+            "immature_windows_total": 0,
+            "windows": [],
+        }
+
+    def unexpected_pre_sync(**_kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("Huldra pre-sync should be skipped with ingest")
+
+    monkeypatch.setattr(
+        fleet_module,
+        "evaluate_arxiv_pool_workflow_readiness",
+        missing_mature_readiness,
+    )
+    monkeypatch.setattr(
+        fleet_module,
+        "pre_sync_missing_mature_huldra_windows",
+        unexpected_pre_sync,
+    )
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        lambda **_kwargs: pytest.fail("strict readiness should block children"),
+    )
+
+    with pytest.raises(typer.Exit) as exc:
+        execute_fleet_granularity_workflow(
+            manifest_path=manifest_path,
+            workflow_name="week",
+            command="fleet run week",
+            anchor_date="2026-04-27",
+            skip="ingest",
+            json_output=True,
+        )
+
+    emitted = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert exc.value.exit_code == 1
     assert emitted["arxiv_pool_pre_sync"]["status"] == "skipped"
     assert emitted["arxiv_pool_pre_sync"]["reason"] == "ingest_not_requested"
     assert emitted["arxiv_pool_readiness"]["blocked_windows_total"] == 14
@@ -2526,6 +2714,7 @@ def _write_pool_fleet_manifest(
     allow_immature_windows: bool | tuple[bool, bool] = False,
     request_interval_seconds: float | tuple[float, float] = 0,
     cooldown_seconds: int | tuple[int, int] = 3600,
+    workflow_pre_sync_max_windows: int | tuple[int, int] = 31,
 ) -> tuple[Path, Path]:
     pool_path = tmp_path / "fleet-arxiv-pool.db"
     child_paths: list[Path] = []
@@ -2541,6 +2730,7 @@ def _write_pool_fleet_manifest(
                     "PUBLISH_TARGETS": ["markdown"],
                     "ARXIV_POOL": {
                         "enabled": True,
+                        "backend": "local_sqlite",
                         "db_path": str(pool_path),
                         "request_interval_seconds": _child_setting(
                             request_interval_seconds, index
@@ -2550,6 +2740,9 @@ def _write_pool_fleet_manifest(
                         "readiness_gate": _child_setting(readiness_gate, index),
                         "allow_immature_windows": _child_setting(
                             allow_immature_windows, index
+                        ),
+                        "workflow_pre_sync_max_windows": _child_setting(
+                            workflow_pre_sync_max_windows, index
                         ),
                     },
                     "SOURCES": {
@@ -2597,6 +2790,7 @@ def _write_pool_config(*, tmp_path: Path, pool_path: Path) -> Path:
                 "PUBLISH_TARGETS": ["markdown"],
                 "ARXIV_POOL": {
                     "enabled": True,
+                    "backend": "local_sqlite",
                     "db_path": str(pool_path),
                     "request_interval_seconds": 0,
                 },
@@ -2651,6 +2845,8 @@ def _write_huldra_fleet_manifest(
     queries: tuple[str, str] = ("cat:cs.AI", "cat:cs.LG"),
     huldra_request_timeout_seconds: tuple[float, float] = (30.0, 30.0),
     huldra_wait_timeout_seconds: tuple[float | None, float | None] = (None, None),
+    workflow_pre_sync_enabled: tuple[bool, bool] = (True, True),
+    workflow_pre_sync_max_windows: tuple[int, int] = (31, 31),
 ) -> Path:
     child_paths: list[Path] = []
     for index, name in enumerate(("embodied_ai", "software")):
@@ -2661,6 +2857,8 @@ def _write_huldra_fleet_manifest(
             "backend": "huldra",
             "huldra_base_url": base_urls[index],
             "huldra_request_timeout_seconds": huldra_request_timeout_seconds[index],
+            "workflow_pre_sync_enabled": workflow_pre_sync_enabled[index],
+            "workflow_pre_sync_max_windows": workflow_pre_sync_max_windows[index],
         }
         wait_timeout = huldra_wait_timeout_seconds[index]
         if wait_timeout is not None:

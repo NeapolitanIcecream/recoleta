@@ -192,6 +192,32 @@ class RunStoreMixin:
             )
             return list(session.exec(statement))
 
+    def list_successful_workflow_period_starts(
+        self,
+        *,
+        target_granularity: str,
+    ) -> list[datetime]:
+        normalized_granularity = str(target_granularity or "").strip().lower()
+        if not normalized_granularity:
+            return []
+        with Session(self.engine) as session:
+            period_start = cast(Any, Run.target_period_start)
+            statement = (
+                select(period_start)
+                .where(
+                    Run.status == RUN_STATUS_SUCCEEDED,
+                    Run.target_granularity == normalized_granularity,
+                    period_start.is_not(None),
+                )
+                .distinct()
+                .order_by(period_start)
+            )
+            return [
+                value
+                for value in session.exec(statement).all()
+                if isinstance(value, datetime)
+            ]
+
     def get_run(self, *, run_id: str) -> Run | None:
         normalized_run_id = str(run_id or "").strip()
         if not normalized_run_id:

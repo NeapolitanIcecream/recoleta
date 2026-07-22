@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import importlib
 from inspect import signature
-
-import pytest
 
 
 def test_huldra_public_arxiv_models_expose_recoleta_contract() -> None:
-    huldra_models = pytest.importorskip("huldra.models")
+    huldra_models = importlib.import_module("huldra.models")
     ArxivRequest = huldra_models.ArxivRequest
     ArxivResult = huldra_models.ArxivResult
     HuldraMaintenanceRequestResult = huldra_models.HuldraMaintenanceRequestResult
@@ -39,8 +38,8 @@ def test_huldra_public_arxiv_models_expose_recoleta_contract() -> None:
 
 
 def test_huldra_client_exposes_sync_and_backfill_methods() -> None:
-    huldra_client = pytest.importorskip("huldra.client")
-    huldra_models = pytest.importorskip("huldra.models")
+    huldra_client = importlib.import_module("huldra.client")
+    huldra_models = importlib.import_module("huldra.models")
     HuldraClient = huldra_client.HuldraClient
     ArxivRequest = huldra_models.ArxivRequest
     CachePolicy = huldra_models.CachePolicy

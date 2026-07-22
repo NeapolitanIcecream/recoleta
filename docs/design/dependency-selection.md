@@ -36,7 +36,10 @@ Note on `aiohttp`:
 ### Source ingestion
 
 - `feedparser`: parse RSS feeds (HN RSS, newsletters).
-- `arxiv`: arXiv API wrapper.
+- `huldra-arxiv`: default arXiv metadata broker client/server, installed with
+  Recoleta and responsible for shared cache and upstream admission.
+- `arxiv` (optional `legacy-arxiv` extra): deprecated direct-adapter SDK kept
+  only for explicit rollback; default Huldra paths do not import it.
 - `openreview-py`: OpenReview API client.
 - `huggingface-hub`: access Hugging Face endpoints (papers/datasets/models metadata when applicable).
 

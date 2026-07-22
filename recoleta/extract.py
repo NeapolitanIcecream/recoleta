@@ -8,7 +8,7 @@ import re
 import subprocess
 import tarfile
 import time
-from typing import Any
+from typing import Any, Callable
 
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
@@ -40,6 +40,8 @@ _PYPANDOC: Any | None = None
 _PANDOC_READY: bool | None = None
 _PANDOC_READY_ERROR: str | None = None
 _PANDOC_LOG_PATTERN = re.compile(r"^\[(ERROR|WARNING|INFO|DEBUG)\]\s*(.*)$")
+_BeforeHttpAttempt = Callable[[], Any]
+_RateLimitCallback = Callable[[httpx.Response], Any]
 
 
 def _ensure_pandoc_ready() -> tuple[bool, str | None, Any | None]:
@@ -178,6 +180,8 @@ def _run_pandoc_html_to_markdown(
 
 
 def _should_retry_httpx(exc: BaseException) -> bool:
+    if isinstance(exc, _DeferredRateLimitError):
+        return False
     if isinstance(exc, httpx.RequestError):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
@@ -220,15 +224,54 @@ class _HttpRetryAfterWait(wait_base):
         return self._fallback(retry_state)
 
 
+class _DeferredRateLimitError(httpx.HTTPStatusError):
+    """A 429 that the caller persisted and intentionally defers."""
+
+
+def _raise_for_status_with_rate_limit_policy(
+    response: httpx.Response,
+    *,
+    retry_on_429: bool,
+    on_rate_limited: _RateLimitCallback | None,
+) -> None:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if response.status_code != 429:
+            raise
+        if on_rate_limited is not None:
+            on_rate_limited(response)
+        if retry_on_429:
+            raise
+        raise _DeferredRateLimitError(
+            str(exc),
+            request=exc.request,
+            response=exc.response,
+        ) from exc
+
+
 @retry(
     retry=retry_if_exception(_should_retry_httpx),
     stop=stop_after_attempt(3),
     wait=_HttpRetryAfterWait(),
     reraise=True,
 )
-def fetch_url_html(client: httpx.Client, url: str) -> str:
+def fetch_url_html(
+    client: httpx.Client,
+    url: str,
+    *,
+    before_attempt: _BeforeHttpAttempt | None = None,
+    on_rate_limited: _RateLimitCallback | None = None,
+    retry_on_429: bool = True,
+) -> str:
+    if before_attempt is not None:
+        before_attempt()
     response = client.get(url)
-    response.raise_for_status()
+    _raise_for_status_with_rate_limit_policy(
+        response,
+        retry_on_429=retry_on_429,
+        on_rate_limited=on_rate_limited,
+    )
     return response.text
 
 
@@ -238,9 +281,22 @@ def fetch_url_html(client: httpx.Client, url: str) -> str:
     wait=_HttpRetryAfterWait(),
     reraise=True,
 )
-def fetch_url_bytes(client: httpx.Client, url: str) -> bytes:
+def fetch_url_bytes(
+    client: httpx.Client,
+    url: str,
+    *,
+    before_attempt: _BeforeHttpAttempt | None = None,
+    on_rate_limited: _RateLimitCallback | None = None,
+    retry_on_429: bool = True,
+) -> bytes:
+    if before_attempt is not None:
+        before_attempt()
     response = client.get(url)
-    response.raise_for_status()
+    _raise_for_status_with_rate_limit_policy(
+        response,
+        retry_on_429=retry_on_429,
+        on_rate_limited=on_rate_limited,
+    )
     return response.content
 
 

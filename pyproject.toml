@@ -7,12 +7,13 @@ requires-python = ">=3.14"
 dependencies = [
     "anthropic>=0.46.0",
     "apscheduler>=3.11.2",
-    "arxiv>=2.4.0",
     "babel>=2.18.0",
     "beautifulsoup4>=4.14.3",
     "feedparser>=6.0.12",
+    "filelock>=3.24.3",
     "httpx>=0.28.1",
     "huggingface-hub>=0.36.2",
+    "huldra-arxiv @ git+https://github.com/NeapolitanIcecream/huldra.git@409a48165ca348f243311d7b5d00323f92fdb658",
     "lancedb>=0.29.2",
     "latex2mathml>=3.81.0",
     "litellm>=1.76.1",
@@ -43,9 +44,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-huldra = [
-    "huldra-arxiv @ git+https://github.com/NeapolitanIcecream/huldra.git@ac44c9e175a844d48f5151a7fda62dd0e9a1db9e",
+legacy-arxiv = [
+    "arxiv>=2.4.0",
 ]
+# Compatibility alias for pre-migration install commands. Huldra is now part of
+# the standard installation, so this extra intentionally adds no dependencies.
+huldra = []
 
 [project.scripts]
 recoleta = "recoleta.cli:main"

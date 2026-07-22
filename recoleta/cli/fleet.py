@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from recoleta.cli.arxiv_pool_readiness import (
     arxiv_pool_workflow_readiness_should_block,
     build_arxiv_pool_workflow_readiness_plan,
     evaluate_arxiv_pool_workflow_readiness,
+    pre_sync_missing_mature_huldra_windows,
 )
 from recoleta.cli.command_support import emit_command_error
 from recoleta.cli.email import (
@@ -33,14 +35,20 @@ from recoleta.cli.workflows import (
     STEP_INGEST,
     STEP_SITE_BUILD,
     STEP_TRANSLATE,
+    _build_scheduler,
     _parse_step_list,
+    _run_scheduler,
+    _schedule_job_id,
+    _schedule_trigger_args,
     _validate_step_overrides,
     execute_granularity_workflow,
 )
 from recoleta.fleet import (
+    FleetSequenceBusyError,
     _fleet_instance_slug,
     child_default_language_code,
     child_site_input_dir,
+    fleet_sequence_lease,
     load_child_settings,
     load_fleet_manifest,
 )
@@ -63,9 +71,13 @@ from recoleta.arxiv_pool import (
 from recoleta.storage import Repository
 from recoleta.cli.workflow_runner import (
     GranularityPlanRequest,
+    build_workflow_run_repository,
     build_granularity_plan,
+    completed_workflow_anchor_dates,
     normalize_anchor_date,
     period_bounds_for_granularity,
+    scheduled_anchor_dates,
+    today_utc,
 )
 from recoleta.trend_email import (
     TrendEmailSendRequest,
@@ -74,6 +86,10 @@ from recoleta.trend_email import (
 )
 
 _READINESS_GATE_RANK = {"off": 0, "warn": 1, "strict": 2}
+
+
+def _today_utc():
+    return today_utc()
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,6 +192,8 @@ class FleetArxivPoolPreSyncPlan:
     maturity_lag_days: int = 1
     readiness_gate: str = "strict"
     allow_immature_windows: bool = False
+    pre_sync_enabled: bool = True
+    pre_sync_max_windows: int = 31
 
     def as_payload(self) -> dict[str, Any]:
         backend = self.backend_descriptor.kind if self.backend_descriptor else None
@@ -198,6 +216,8 @@ class FleetArxivPoolPreSyncPlan:
             "maturity_lag_days": self.maturity_lag_days,
             "readiness_gate": self.readiness_gate,
             "allow_immature_windows": self.allow_immature_windows,
+            "pre_sync_enabled": self.pre_sync_enabled,
+            "pre_sync_max_windows": self.pre_sync_max_windows,
         }
 
 
@@ -485,6 +505,130 @@ def run_fleet_email_send_command(**kwargs: Any) -> dict[str, Any]:
     return payload
 
 
+def run_fleet_daemon_start_command(*, manifest_path: Path) -> None:
+    manifest = load_fleet_manifest(manifest_path)
+    run_history_repositories = [
+        build_workflow_run_repository(
+            settings=load_child_settings(instance.config_path)
+        )
+        for instance in manifest.instances
+    ]
+    console = cli._runtime_symbols()["Console"]()
+    scheduler = _build_scheduler()
+    _register_fleet_daemon_schedules(
+        scheduler=scheduler,
+        manifest=manifest,
+        run_history_repositories=run_history_repositories,
+    )
+    console.print(
+        f"[cyan]fleet daemon started[/cyan] instances={len(manifest.instances)}"
+    )
+    _run_scheduler(scheduler=scheduler)
+
+
+def _register_fleet_daemon_schedules(
+    *,
+    scheduler: Any,
+    manifest: Any,
+    run_history_repositories: list[Any],
+) -> None:
+    for schedule_index, schedule in enumerate(manifest.daemon.schedules):
+        workflow_name = str(schedule.workflow or "").strip().lower()
+        trigger, trigger_kwargs = _schedule_trigger_args(schedule=schedule)
+        scheduler.add_job(
+            _scheduled_fleet_workflow_runner(
+                manifest_path=manifest.manifest_path,
+                workflow_name=workflow_name,
+                schedule=schedule,
+                run_history_repositories=run_history_repositories,
+            ),
+            trigger,
+            **trigger_kwargs,
+            id="fleet:"
+            + _schedule_job_id(
+                workflow_name=workflow_name,
+                schedule=schedule,
+                schedule_index=schedule_index,
+            ),
+            replace_existing=True,
+        )
+
+
+def _scheduled_fleet_workflow_runner(
+    *,
+    manifest_path: Path,
+    workflow_name: str,
+    schedule: Any,
+    run_history_repositories: list[Any],
+) -> Any:
+    def _run() -> None:
+        try:
+            with fleet_sequence_lease(manifest_path):
+                if workflow_name == "now":
+                    execute_fleet_granularity_workflow(
+                        manifest_path=manifest_path,
+                        workflow_name=workflow_name,
+                        command="fleet daemon now",
+                        _sequence_lock_held=True,
+                    )
+                    return
+                if workflow_name in {"day", "week", "month"}:
+                    completed_anchor_dates = _fleet_completed_workflow_anchor_dates(
+                        repositories=run_history_repositories,
+                        workflow_name=workflow_name,
+                    )
+                    for anchor in scheduled_anchor_dates(
+                        workflow_name=workflow_name,
+                        today=_today_utc(),
+                        catch_up_windows=int(schedule.catch_up_windows),
+                        completed_anchor_dates=completed_anchor_dates,
+                    ):
+                        execute_fleet_granularity_workflow(
+                            manifest_path=manifest_path,
+                            workflow_name=workflow_name,
+                            command=f"fleet daemon {workflow_name}",
+                            anchor_date=anchor.isoformat(),
+                            _sequence_lock_held=True,
+                        )
+                    return
+                if workflow_name == "deploy":
+                    execute_fleet_deploy_workflow(
+                        manifest_path=manifest_path,
+                        command="fleet daemon deploy",
+                        _sequence_lock_held=True,
+                    )
+                    return
+                raise ValueError(f"unsupported fleet daemon workflow: {workflow_name}")
+        except FleetSequenceBusyError:
+            cli._runtime_symbols()["logger"].bind(
+                module="cli.fleet.daemon"
+            ).warning(
+                "Fleet daemon schedule skipped workflow={} reason=sequence_busy",
+                workflow_name,
+            )
+
+    return _run
+
+
+def _fleet_completed_workflow_anchor_dates(
+    *,
+    repositories: list[Any],
+    workflow_name: str,
+) -> list[date]:
+    completed_by_repository = [
+        set(
+            completed_workflow_anchor_dates(
+                repository=repository,
+                workflow_name=workflow_name,
+            )
+        )
+        for repository in repositories
+    ]
+    if not completed_by_repository:
+        return []
+    return sorted(set.intersection(*completed_by_repository))
+
+
 def execute_fleet_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
     request = _fleet_granularity_workflow_request(kwargs)
     include_steps = _parse_step_list(request.include)
@@ -506,6 +650,39 @@ def execute_fleet_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
             f"planned_expensive_steps={payload['planned_expensive_steps']}"
         )
         return payload
+    if bool(kwargs.get("_sequence_lock_held", False)):
+        return _execute_fleet_granularity_request(
+            request,
+            include_steps=include_steps,
+            skip_steps=skip_steps,
+        )
+    try:
+        with fleet_sequence_lease(request.manifest_path):
+            return _execute_fleet_granularity_request(
+                request,
+                include_steps=include_steps,
+                skip_steps=skip_steps,
+            )
+    except FleetSequenceBusyError:
+        payload = _fleet_sequence_busy_payload(
+            manifest_path=request.manifest_path,
+            command=request.command,
+            workflow_name=request.workflow_name,
+        )
+        _emit_fleet_sequence_busy(
+            payload=payload,
+            command=request.command,
+            json_output=request.json_output,
+        )
+        raise cli.typer.Exit(code=1) from None
+
+
+def _execute_fleet_granularity_request(
+    request: FleetGranularityWorkflowRequest,
+    *,
+    include_steps: list[str],
+    skip_steps: list[str],
+) -> dict[str, Any]:
     context = _fleet_granularity_readiness_context(
         manifest_path=request.manifest_path,
         workflow_name=request.workflow_name,
@@ -614,6 +791,45 @@ def _fleet_granularity_readiness_context(
         manifest=manifest,
         skip_steps=skip_steps,
     )
+    if (
+        readiness_plan.backend_descriptor is not None
+        and readiness_plan.backend_descriptor.kind == "huldra"
+    ):
+        readiness_payload = evaluate_arxiv_pool_workflow_readiness(readiness_plan)
+        if pre_sync_plan.status != "planned":
+            return FleetGranularityReadinessContext(
+                manifest=manifest,
+                requested_steps=requested_steps,
+                readiness_plan=readiness_plan,
+                arxiv_pool_pre_sync=pre_sync_plan.as_payload(),
+                arxiv_pool_readiness=readiness_payload,
+            )
+        try:
+            pre_sync_result = pre_sync_missing_mature_huldra_windows(
+                plan=readiness_plan,
+                readiness=readiness_payload,
+                enabled=pre_sync_plan.pre_sync_enabled,
+                max_windows=pre_sync_plan.pre_sync_max_windows,
+            )
+        except Exception as exc:  # noqa: BLE001
+            pre_sync_result = {
+                "status": "failed",
+                "reason": "huldra_pre_sync_error",
+                "error_type": type(exc).__name__,
+                "eligible_windows_total": 0,
+                "requested_windows_total": 0,
+                "deferred_windows_total": 0,
+            }
+        pre_sync_payload = {**pre_sync_plan.as_payload(), **pre_sync_result}
+        if int(pre_sync_result.get("requested_windows_total") or 0) > 0:
+            readiness_payload = evaluate_arxiv_pool_workflow_readiness(readiness_plan)
+        return FleetGranularityReadinessContext(
+            manifest=manifest,
+            requested_steps=requested_steps,
+            readiness_plan=readiness_plan,
+            arxiv_pool_pre_sync=pre_sync_payload,
+            arxiv_pool_readiness=readiness_payload,
+        )
     pre_sync_payload, readiness_payload = _fleet_arxiv_pool_pre_sync_payload(
         pre_sync_plan=pre_sync_plan,
         readiness_plan=readiness_plan,
@@ -633,6 +849,17 @@ def _fleet_arxiv_pool_pre_sync_payload(
     readiness_plan: Any,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     pre_sync_payload: dict[str, Any] = pre_sync_plan.as_payload()
+    if pre_sync_plan.status == "planned" and not pre_sync_plan.pre_sync_enabled:
+        pre_sync_payload = {
+            **pre_sync_payload,
+            "status": "skipped",
+            "reason": "disabled",
+        }
+        if readiness_plan.status in {"planned", "blocked"}:
+            return pre_sync_payload, evaluate_arxiv_pool_workflow_readiness(
+                readiness_plan
+            )
+        return pre_sync_payload, None
     if pre_sync_plan.status == "planned":
         try:
             sync_result = run_fleet_arxiv_pool_pre_sync(pre_sync_plan)
@@ -716,6 +943,33 @@ def _emit_fleet_granularity_blocked(
     console.print(
         f"[yellow]{command} blocked[/yellow] "
         f"arxiv_pool_windows={readiness['blocked_windows_total']}"
+    )
+
+
+def _fleet_sequence_busy_payload(
+    *,
+    manifest_path: Path,
+    command: str,
+    workflow_name: str,
+) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "reason": "fleet_sequence_busy",
+        "command": command,
+        "manifest_path": str(manifest_path.expanduser().resolve()),
+        "workflow_name": workflow_name,
+        "children": [],
+    }
+
+
+def _emit_fleet_sequence_busy(
+    *, payload: dict[str, Any], command: str, json_output: bool
+) -> None:
+    if json_output:
+        cli._emit_json(payload)
+        return
+    cli._runtime_symbols()["Console"]().print(
+        f"[yellow]{command} blocked[/yellow] reason=fleet_sequence_busy"
     )
 
 
@@ -844,6 +1098,9 @@ def build_fleet_arxiv_pool_pre_sync_plan(
         cooldown_seconds,
         readiness_policy,
     ) = _merged_fleet_arxiv_pool_plan_settings(arxiv_settings)
+    pre_sync_enabled, pre_sync_max_windows = _merged_fleet_pre_sync_controls(
+        arxiv_settings
+    )
     return FleetArxivPoolPreSyncPlan(
         status="planned",
         reason=None,
@@ -867,6 +1124,8 @@ def build_fleet_arxiv_pool_pre_sync_plan(
         maturity_lag_days=readiness_policy.maturity_lag_days,
         readiness_gate=readiness_policy.readiness_gate,
         allow_immature_windows=readiness_policy.allow_immature_windows,
+        pre_sync_enabled=pre_sync_enabled,
+        pre_sync_max_windows=pre_sync_max_windows,
     )
 
 
@@ -987,6 +1246,20 @@ def _merged_fleet_arxiv_pool_plan_settings(
     )
 
 
+def _merged_fleet_pre_sync_controls(arxiv_settings: list[Any]) -> tuple[bool, int]:
+    pool_settings = [settings.arxiv_pool for settings in arxiv_settings]
+    return (
+        all(
+            bool(getattr(pool, "workflow_pre_sync_enabled", True))
+            for pool in pool_settings
+        ),
+        min(
+            int(getattr(pool, "workflow_pre_sync_max_windows", 31) or 31)
+            for pool in pool_settings
+        ),
+    )
+
+
 def _fleet_arxiv_pool_windows(
     *,
     arxiv_settings: list[Any],
@@ -1019,10 +1292,14 @@ def _fleet_arxiv_pool_windows(
 def run_fleet_arxiv_pool_pre_sync(
     plan: FleetArxivPoolPreSyncPlan,
 ) -> ArxivPoolSyncResult:
+    if not plan.pre_sync_enabled:
+        return ArxivPoolSyncResult(requested_windows_total=0)
+    pre_sync_budget = max(1, int(plan.pre_sync_max_windows))
     if (
         plan.backend_descriptor is not None
         and plan.backend_descriptor.kind == "huldra"
     ):
+        selected_windows = plan.windows[:pre_sync_budget]
         HuldraClient = require_huldra_client()
 
         readiness_policy = ArxivPoolReadinessPolicy(
@@ -1037,7 +1314,7 @@ def run_fleet_arxiv_pool_pre_sync(
                 client_id="recoleta:fleet",
                 timeout_seconds=plan.huldra_request_timeout_seconds,
             )
-            for window in plan.windows
+            for window in selected_windows
         ]
         wait_timeout = huldra_wait_timeout_seconds(
             configured_timeout_seconds=plan.huldra_wait_timeout_seconds,
@@ -1055,11 +1332,15 @@ def run_fleet_arxiv_pool_pre_sync(
         return arxiv_pool_sync_result_from_huldra(result)
     if plan.pool_db_path is None:
         return ArxivPoolSyncResult(requested_windows_total=0)
+    store = ArxivPoolStore(plan.pool_db_path)
+    selected_windows = [
+        window for window in plan.windows if not store.is_window_completed(window)
+    ][:pre_sync_budget]
     return ArxivPoolSync(
-        store=ArxivPoolStore(plan.pool_db_path),
+        store=store,
         request_interval_seconds=plan.request_interval_seconds,
         cooldown_seconds=plan.cooldown_seconds,
-    ).sync_windows(plan.windows)
+    ).sync_windows(selected_windows)
 
 
 def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
@@ -1086,6 +1367,26 @@ def execute_fleet_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
         llm_model=kwargs.get("model"),
         json_output=bool(kwargs.get("json_output", False)),
     )
+    if bool(kwargs.get("_sequence_lock_held", False)):
+        return _execute_fleet_deploy_request(request)
+    try:
+        with fleet_sequence_lease(request.manifest_path):
+            return _execute_fleet_deploy_request(request)
+    except FleetSequenceBusyError:
+        payload = _fleet_sequence_busy_payload(
+            manifest_path=request.manifest_path,
+            command=request.command,
+            workflow_name="deploy",
+        )
+        _emit_fleet_sequence_busy(
+            payload=payload,
+            command=request.command,
+            json_output=request.json_output,
+        )
+        raise cli.typer.Exit(code=1) from None
+
+
+def _execute_fleet_deploy_request(request: FleetDeployRequest) -> dict[str, Any]:
     manifest = load_fleet_manifest(request.manifest_path)
     child_results = _run_fleet_deploy_children(
         manifest=manifest,

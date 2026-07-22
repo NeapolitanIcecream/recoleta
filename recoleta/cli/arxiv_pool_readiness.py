@@ -13,9 +13,13 @@ from recoleta.arxiv_pool import (
     ArxivPoolWindow,
     arxiv_pool_backend_descriptor_from_settings,
     arxiv_pool_readiness_policy_from_settings,
+    arxiv_pool_sync_result_from_huldra,
     build_arxiv_pool_backend_from_descriptor,
+    build_huldra_arxiv_request_for_window,
     build_arxiv_pool_windows_for_period,
     evaluate_arxiv_pool_readiness,
+    huldra_wait_timeout_seconds,
+    require_huldra_client,
 )
 from recoleta.cli.workflow_models import (
     STEP_ANALYZE,
@@ -61,6 +65,8 @@ class ArxivPoolWorkflowReadinessPlan:
     maturity_lag_days: int = 1
     readiness_gate: str = "strict"
     allow_immature_windows: bool = False
+    huldra_request_timeout_seconds: float = 30.0
+    huldra_wait_timeout_seconds: float | None = None
 
     def as_payload(self) -> dict[str, Any]:
         backend = self.backend_descriptor.kind if self.backend_descriptor else None
@@ -154,6 +160,134 @@ def build_arxiv_pool_workflow_readiness_plan(
         maturity_lag_days=readiness_policy.maturity_lag_days,
         readiness_gate=readiness_policy.readiness_gate,
         allow_immature_windows=readiness_policy.allow_immature_windows,
+        huldra_request_timeout_seconds=_merged_huldra_request_timeout(
+            arxiv_settings
+        ),
+        huldra_wait_timeout_seconds=_merged_huldra_wait_timeout(arxiv_settings),
+    )
+
+
+def pre_sync_missing_mature_huldra_windows(
+    *,
+    plan: ArxivPoolWorkflowReadinessPlan,
+    readiness: dict[str, Any],
+    enabled: bool,
+    max_windows: int,
+) -> dict[str, Any]:
+    descriptor = plan.backend_descriptor
+    if not enabled:
+        return _pre_sync_payload(status="skipped", reason="disabled")
+    if plan.status != "planned" or descriptor is None:
+        return _pre_sync_payload(status="skipped", reason="not_planned")
+    if descriptor.kind != "huldra":
+        return _pre_sync_payload(status="skipped", reason="non_huldra_backend")
+
+    readiness_by_key = {
+        _readiness_window_key(value): value
+        for value in list(readiness.get("windows") or [])
+        if isinstance(value, dict)
+    }
+    eligible = [
+        window
+        for window in plan.windows
+        if _window_needs_pre_sync(
+            readiness_by_key.get(_arxiv_pool_window_key(window))
+        )
+    ]
+    budget = max(1, int(max_windows))
+    selected = eligible[:budget]
+    if not selected:
+        return _pre_sync_payload(
+            status="skipped",
+            reason="no_missing_mature_windows",
+            eligible_windows_total=len(eligible),
+        )
+
+    readiness_policy = ArxivPoolReadinessPolicy(
+        maturity_lag_days=plan.maturity_lag_days,
+        readiness_gate=plan.readiness_gate,
+        allow_immature_windows=plan.allow_immature_windows,
+    )
+    requests = [
+        build_huldra_arxiv_request_for_window(
+            window=window,
+            readiness_policy=readiness_policy,
+            client_id="recoleta:workflow",
+            timeout_seconds=plan.huldra_request_timeout_seconds,
+        )
+        for window in selected
+    ]
+    wait_timeout = (
+        float(plan.huldra_wait_timeout_seconds)
+        if plan.huldra_wait_timeout_seconds is not None
+        else huldra_wait_timeout_seconds(
+            configured_timeout_seconds=None,
+            requested_windows_total=len(requests),
+        )
+    )
+    HuldraClient = require_huldra_client()
+    with HuldraClient(
+        base_url=descriptor.identity,
+        timeout=plan.huldra_request_timeout_seconds,
+    ) as client:
+        result = client.sync_windows(
+            requests,
+            wait=True,
+            wait_timeout_seconds=wait_timeout,
+        )
+    sync_payload = arxiv_pool_sync_result_from_huldra(result).as_payload()
+    return {
+        "status": "completed",
+        "reason": None,
+        "eligible_windows_total": len(eligible),
+        "deferred_windows_total": max(0, len(eligible) - len(selected)),
+        **sync_payload,
+    }
+
+
+def _pre_sync_payload(
+    *,
+    status: str,
+    reason: str,
+    eligible_windows_total: int = 0,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "reason": reason,
+        "eligible_windows_total": eligible_windows_total,
+        "requested_windows_total": 0,
+        "deferred_windows_total": 0,
+    }
+
+
+def _window_needs_pre_sync(readiness: dict[str, Any] | None) -> bool:
+    if readiness is None:
+        return False
+    if not bool(readiness.get("mature")) or bool(readiness.get("analysis_ready")):
+        return False
+    return str(readiness.get("blocked_reason") or "") in {
+        "missing_window",
+        "queued_window",
+        "failed_window",
+        "timeout_window",
+    }
+
+
+def _arxiv_pool_window_key(window: ArxivPoolWindow) -> tuple[str, str, str, int]:
+    return (
+        window.query_text,
+        window.period_start.isoformat(),
+        window.period_end.isoformat(),
+        window.max_results,
+    )
+
+
+def _readiness_window_key(value: dict[str, Any]) -> tuple[str, str, str, int]:
+    return (
+        str(value.get("query_text") or ""),
+        str(value.get("period_start") or ""),
+        str(value.get("period_end") or ""),
+        int(value.get("max_results") or 0),
     )
 
 
@@ -260,6 +394,21 @@ def _merged_huldra_request_timeout(arxiv_settings: list[Any]) -> float:
         )
         for settings in arxiv_settings
     )
+
+
+def _merged_huldra_wait_timeout(arxiv_settings: list[Any]) -> float | None:
+    values = [
+        getattr(
+            getattr(settings, "arxiv_pool", settings),
+            "huldra_wait_timeout_seconds",
+            None,
+        )
+        for settings in arxiv_settings
+    ]
+    numeric = [float(value) for value in values if value is not None]
+    if not numeric:
+        return None
+    return max(numeric)
 
 
 def _merged_arxiv_pool_readiness_policy(

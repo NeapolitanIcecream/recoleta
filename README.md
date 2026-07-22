@@ -79,8 +79,9 @@ Multi-instance deployments now use one child config per instance plus a
 - [`uv`](https://docs.astral.sh/uv/)
 - An LLM provider supported by LiteLLM
 - Pandoc if you want `html_document_md` output from arXiv `html_document`
-- [Huldra](https://github.com/NeapolitanIcecream/huldra) and the `huldra`
-  extra if your arXiv source uses the Huldra-backed pool
+- A running [Huldra](https://github.com/NeapolitanIcecream/huldra) service if
+  you enable the arXiv source; the Huldra client and server CLI are included in
+  the standard Recoleta installation
 - Optional integrations:
   - Obsidian vault for direct note writing
   - Telegram bot token and chat ID for chat delivery
@@ -97,10 +98,11 @@ uv sync
 uv run recoleta --help
 ```
 
-For Huldra-backed arXiv ingest, include the optional dependency:
+Huldra is the default arXiv metadata backend and is installed by `uv sync`.
+Only the deprecated direct adapter needs an extra:
 
 ```bash
-uv sync --extra huldra
+uv sync --extra legacy-arxiv
 ```
 
 <a id="recoleta-docker"></a>
@@ -112,6 +114,15 @@ browser-rendered PDFs.
 - `runtime`: single-instance workflows, fleet orchestration, stage primitives,
   inspection, repair, admin, and related utilities
 - `runtime-full`: `runtime` plus Pandoc and Chromium
+
+Both targets include the `huldra` CLI. The Recoleta container does not
+implicitly start a broker: run Huldra's `daemon` and `worker` as separately
+supervised processes sharing `HULDRA_DB_PATH`, or point Recoleta at an existing
+service. To verify the bundled CLI:
+
+```bash
+docker run --rm --entrypoint huldra recoleta:runtime --help
+```
 
 The image uses these default paths:
 
@@ -331,6 +342,8 @@ arxiv_pool:
   huldra_base_url: "http://127.0.0.1:8765"
   huldra_request_timeout_seconds: 30
   huldra_wait_timeout_seconds: null
+  workflow_pre_sync_enabled: true
+  workflow_pre_sync_max_windows: 31
   maturity_lag_days: 1
   readiness_gate: strict
   allow_immature_windows: false
@@ -375,10 +388,10 @@ Run the default UTC-day workflow:
 uv run recoleta run now
 ```
 
-When arXiv is configured with `mode: pool` and `arxiv_pool.backend: huldra`,
-Recoleta reads arXiv metadata through Huldra instead of calling arXiv directly
-from instance ingest. `huldra_base_url` must point at the Huldra service your
-operator runs. For a one-off prewarm or repair, run:
+When arXiv is enabled, Recoleta defaults to `mode: pool`, automatically enables
+the Huldra backend, and uses `http://127.0.0.1:8765` unless configured
+otherwise. Instance ingest never falls back to direct arXiv metadata calls. For
+a one-off prewarm or repair, run:
 
 ```bash
 uv run recoleta arxiv-pool sync --date 2026-01-02 --lookback-days 3
@@ -487,9 +500,9 @@ The fleet manifest sits above those child output trees.
 Use a preset when you want working sources and output paths without editing the
 full example config first.
 
-Presets that include arXiv use Huldra-backed pool mode. Install with
-`uv sync --extra huldra` and edit `arxiv_pool.huldra_base_url` if your Huldra
-service is not on `http://127.0.0.1:8765`.
+Presets that include arXiv use the standard Huldra-backed pool mode. Edit
+`arxiv_pool.huldra_base_url` if your Huldra service is not on
+`http://127.0.0.1:8765`.
 
 - [`presets/agents-radar.yaml`](./presets/agents-radar.yaml): track agent
   tooling, code agents, and evals
@@ -516,6 +529,7 @@ uv run recoleta fleet run month --manifest ./fleet/fleet.yaml
 uv run recoleta fleet site build --manifest ./fleet/fleet.yaml
 uv run recoleta fleet site serve --manifest ./fleet/fleet.yaml
 uv run recoleta fleet run deploy --manifest ./fleet/fleet.yaml
+uv run recoleta fleet daemon start --manifest ./fleet/fleet.yaml
 
 # replay one UTC day, week, or month
 uv run recoleta run day --date 2026-03-09
