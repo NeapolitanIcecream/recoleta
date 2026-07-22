@@ -7,6 +7,8 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-22
+
 ### Changed
 
 - Enabled arXiv sources now default to Huldra-backed pool mode. Huldra ships in
@@ -17,6 +19,8 @@ Versioning.
   import it.
 - Scheduled day, week, and month workflows now target only closed UTC periods
   and reconcile a bounded number of missed windows oldest first.
+- Trend emails now use a clearer title hierarchy with Outlook-safe spacing and
+  explicit background colors.
 
 ### Added
 
@@ -26,6 +30,17 @@ Versioning.
 - Cross-process SQLite admission and cooldown for arxiv.org HTML, PDF, and
   e-print content fetches. A content 429 is not retried immediately and does not
   trigger an HTML-to-PDF fallback request.
+
+### Fixed
+
+- Fleet and single-instance dry-runs no longer evaluate Huldra readiness or
+  submit missing windows, preserving the zero-side-effect dry-run contract.
+- Translation payloads retain their validated model field order so complex
+  fields cannot cause later top-level fields to be emitted at the wrong level.
+- Analyze budget receipts now fingerprint Stage 4 semantics instead of broad,
+  unrelated settings while retaining trusted legacy receipt compatibility.
+- Installed CLI entrypoints now use Typer's public context type and remain
+  compatible with unlocked dependency resolution through Typer 0.27.
 
 ## [0.5.0] - 2026-07-17
 

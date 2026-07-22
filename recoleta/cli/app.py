@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import click
-from click import Context, get_current_context
+from click import get_current_context
 import json
 from pathlib import Path
 from typing import Annotated, Any
+from typer import Context
 
 from recoleta.app.runtime import typer
 from recoleta.cli.analyze import run_analyze_command
