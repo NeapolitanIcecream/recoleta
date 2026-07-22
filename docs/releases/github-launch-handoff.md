@@ -70,26 +70,26 @@ If you want categories later, start with:
 For the current release pass:
 
 - changelog source: [`CHANGELOG.md`](../../CHANGELOG.md)
-- release draft: [`docs/releases/v0.5.0-draft.md`](./v0.5.0-draft.md)
-- launch copy: [`docs/releases/v0.5.0-launch-kit.md`](./v0.5.0-launch-kit.md)
-- demo/script outlines: [`docs/releases/v0.5.0-content-pack.md`](./v0.5.0-content-pack.md)
+- release draft: [`docs/releases/v0.6.0-draft.md`](./v0.6.0-draft.md)
+- launch copy: [`docs/releases/v0.6.0-launch-kit.md`](./v0.6.0-launch-kit.md)
+- demo/script outlines: [`docs/releases/v0.6.0-content-pack.md`](./v0.6.0-content-pack.md)
 - first-run proof assets: [`docs/guides/first-output-tour.md`](../guides/first-output-tour.md)
 
 Suggested tag:
 
-- `v0.5.0`
+- `v0.6.0`
 
 Suggested release title:
 
-- `v0.5.0: Evidence-gated artifacts and stage-specific models`
+- `v0.6.0: Huldra-first arXiv automation`
 
 ## Suggested checklist
 
 1. Confirm `README.md` links and badges are current.
-2. Confirm `CHANGELOG.md` and `docs/releases/v0.5.0-draft.md` match.
-3. Reuse `docs/releases/v0.5.0-launch-kit.md` for the release body or launch post.
+2. Confirm `CHANGELOG.md` and `docs/releases/v0.6.0-draft.md` match.
+3. Reuse `docs/releases/v0.6.0-launch-kit.md` for the release body or launch post.
 4. Upload the social preview PNG.
 5. Update the repo About section and website.
 6. Add the chosen GitHub topics.
 7. Enable Discussions.
-8. Publish the `v0.5.0` GitHub release.
+8. Publish the `v0.6.0` GitHub release.
