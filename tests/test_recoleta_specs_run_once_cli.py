@@ -791,6 +791,60 @@ def test_run_day_dry_run_emits_plan_without_managed_run_or_service_calls(
     assert fake_repo.finished == []
 
 
+def test_run_day_dry_run_does_not_submit_huldra_readiness_requests(
+    configured_env,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: a Huldra dry-run must not enqueue real broker work."""
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    fake_settings = _FakeSettings(
+        tmp_path=tmp_path,
+        arxiv_pool_db_path=tmp_path / "unused-local-pool.db",
+    )
+    fake_settings.arxiv_pool.backend = "huldra"
+    fake_settings.arxiv_pool.huldra_base_url = "http://127.0.0.1:8765"
+    fake_settings.arxiv_pool.huldra_request_timeout_seconds = 5
+    fake_settings.arxiv_pool.huldra_wait_timeout_seconds = 60
+    fake_repo = _DayCompletePlannerRepo()
+    fake_service = _FakeService()
+    submitted_requests: list[object] = []
+
+    class FakeHuldraClient:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def ensure(self, request: object) -> object:
+            submitted_requests.append(request)
+            raise AssertionError("dry-run must not submit Huldra requests")
+
+    import huldra.client
+
+    monkeypatch.setattr(huldra.client, "HuldraClient", FakeHuldraClient)
+    monkeypatch.setattr(
+        recoleta.cli,
+        "_build_runtime",
+        lambda *, config_path=None, db_path=None: (  # noqa: ARG005
+            fake_settings,
+            fake_repo,
+            fake_service,
+        ),
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "2026-03-16", "--dry-run", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert submitted_requests == []
+    assert payload["arxiv_pool_readiness"] == {
+        "status": "skipped",
+        "reason": "dry_run",
+    }
+
+
 def test_run_day_marks_terminal_state_partial_when_translation_fails_but_site_build_succeeds(
     configured_env,
     monkeypatch: pytest.MonkeyPatch,

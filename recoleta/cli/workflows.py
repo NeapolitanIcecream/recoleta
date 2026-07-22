@@ -592,15 +592,11 @@ def _execute_granularity_dry_run(
             translate_granularities=translate_granularities,
         ),
     )
-    arxiv_pool_readiness = _evaluate_granularity_arxiv_pool_readiness(
-        settings=settings,
-        plan=plan,
-    )
     payload = _granularity_dry_run_payload(
         command=request.command,
         plan=plan,
         planner_decisions=planner_decisions,
-        arxiv_pool_readiness=arxiv_pool_readiness,
+        arxiv_pool_readiness={"status": "skipped", "reason": "dry_run"},
     )
     if request.json_output:
         if request.emit_output:
