@@ -130,7 +130,7 @@ def test_fleet_module_does_not_import_unix_locking_directly() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_scheduled_fleet_runner_reconciles_closed_windows_under_one_lease(
+def test_scheduled_fleet_runner_reconciles_oldest_outstanding_windows_under_one_lease(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -149,20 +149,31 @@ def test_scheduled_fleet_runner_reconciles_closed_windows_under_one_lease(
     monkeypatch.setattr(fleet_cli, "fleet_sequence_lease", _fake_lease)
     monkeypatch.setattr(
         fleet_cli,
+        "_fleet_completed_workflow_anchor_dates",
+        lambda **_kwargs: [
+            date(2026, 7, 16),
+            date(2026, 7, 20),
+            date(2026, 7, 21),
+        ],
+        raising=False,
+    )
+    monkeypatch.setattr(
+        fleet_cli,
         "execute_fleet_granularity_workflow",
         lambda **kwargs: calls.append(dict(kwargs)),
     )
 
     fleet_cli._scheduled_fleet_workflow_runner(
         manifest_path=manifest_path,
-        workflow_name="week",
+        workflow_name="day",
         schedule=SimpleNamespace(catch_up_windows=2),
+        run_history_repositories=[object()],
     )()
 
     assert lease_events == ["acquire", "release"]
     assert [call["anchor_date"] for call in calls] == [
-        "2026-07-06",
-        "2026-07-13",
+        "2026-07-17",
+        "2026-07-18",
     ]
     assert all(call["_sequence_lock_held"] is True for call in calls)
 

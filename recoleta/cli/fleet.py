@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -70,7 +71,9 @@ from recoleta.arxiv_pool import (
 from recoleta.storage import Repository
 from recoleta.cli.workflow_runner import (
     GranularityPlanRequest,
+    build_workflow_run_repository,
     build_granularity_plan,
+    completed_workflow_anchor_dates,
     normalize_anchor_date,
     period_bounds_for_granularity,
     scheduled_anchor_dates,
@@ -504,16 +507,31 @@ def run_fleet_email_send_command(**kwargs: Any) -> dict[str, Any]:
 
 def run_fleet_daemon_start_command(*, manifest_path: Path) -> None:
     manifest = load_fleet_manifest(manifest_path)
+    run_history_repositories = [
+        build_workflow_run_repository(
+            settings=load_child_settings(instance.config_path)
+        )
+        for instance in manifest.instances
+    ]
     console = cli._runtime_symbols()["Console"]()
     scheduler = _build_scheduler()
-    _register_fleet_daemon_schedules(scheduler=scheduler, manifest=manifest)
+    _register_fleet_daemon_schedules(
+        scheduler=scheduler,
+        manifest=manifest,
+        run_history_repositories=run_history_repositories,
+    )
     console.print(
         f"[cyan]fleet daemon started[/cyan] instances={len(manifest.instances)}"
     )
     _run_scheduler(scheduler=scheduler)
 
 
-def _register_fleet_daemon_schedules(*, scheduler: Any, manifest: Any) -> None:
+def _register_fleet_daemon_schedules(
+    *,
+    scheduler: Any,
+    manifest: Any,
+    run_history_repositories: list[Any],
+) -> None:
     for schedule_index, schedule in enumerate(manifest.daemon.schedules):
         workflow_name = str(schedule.workflow or "").strip().lower()
         trigger, trigger_kwargs = _schedule_trigger_args(schedule=schedule)
@@ -522,6 +540,7 @@ def _register_fleet_daemon_schedules(*, scheduler: Any, manifest: Any) -> None:
                 manifest_path=manifest.manifest_path,
                 workflow_name=workflow_name,
                 schedule=schedule,
+                run_history_repositories=run_history_repositories,
             ),
             trigger,
             **trigger_kwargs,
@@ -540,6 +559,7 @@ def _scheduled_fleet_workflow_runner(
     manifest_path: Path,
     workflow_name: str,
     schedule: Any,
+    run_history_repositories: list[Any],
 ) -> Any:
     def _run() -> None:
         try:
@@ -553,10 +573,15 @@ def _scheduled_fleet_workflow_runner(
                     )
                     return
                 if workflow_name in {"day", "week", "month"}:
+                    completed_anchor_dates = _fleet_completed_workflow_anchor_dates(
+                        repositories=run_history_repositories,
+                        workflow_name=workflow_name,
+                    )
                     for anchor in scheduled_anchor_dates(
                         workflow_name=workflow_name,
                         today=_today_utc(),
                         catch_up_windows=int(schedule.catch_up_windows),
+                        completed_anchor_dates=completed_anchor_dates,
                     ):
                         execute_fleet_granularity_workflow(
                             manifest_path=manifest_path,
@@ -583,6 +608,25 @@ def _scheduled_fleet_workflow_runner(
             )
 
     return _run
+
+
+def _fleet_completed_workflow_anchor_dates(
+    *,
+    repositories: list[Any],
+    workflow_name: str,
+) -> list[date]:
+    completed_by_repository = [
+        set(
+            completed_workflow_anchor_dates(
+                repository=repository,
+                workflow_name=workflow_name,
+            )
+        )
+        for repository in repositories
+    ]
+    if not completed_by_repository:
+        return []
+    return sorted(set.intersection(*completed_by_repository))
 
 
 def execute_fleet_granularity_workflow(**kwargs: Any) -> dict[str, Any]:

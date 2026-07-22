@@ -24,6 +24,7 @@ from recoleta.cli.workflow_runner import (
     WorkflowLoopRequest,
     WorkflowPayloadContext,
     begin_workflow_runtime,
+    build_workflow_run_repository,
     build_deploy_plan as _build_deploy_plan,
     build_granularity_plan as _build_granularity_plan,
     execute_workflow_loop,
@@ -32,6 +33,7 @@ from recoleta.cli.workflow_runner import (
     granularity_stack as _granularity_stack,
     granularity_workflow_payload,
     latest_complete_utc_day,
+    completed_workflow_anchor_dates,
     parse_step_list as _parse_step_list,
     scheduled_anchor_dates,
     today_utc,
@@ -1124,11 +1126,16 @@ def execute_deploy_workflow(**kwargs: Any) -> dict[str, Any]:
 
 def run_daemon_start_command() -> None:
     settings = cli._build_settings()
+    repository = build_workflow_run_repository(settings=settings)
     console = cli._runtime_symbols()["Console"](
         stderr=bool(getattr(settings, "log_json", False))
     )
     scheduler = _build_scheduler()
-    _register_daemon_schedules(scheduler=scheduler, settings=settings)
+    _register_daemon_schedules(
+        scheduler=scheduler,
+        settings=settings,
+        repository=repository,
+    )
     console.print("[cyan]daemon started[/cyan]")
     _run_scheduler(scheduler=scheduler)
 
@@ -1145,13 +1152,22 @@ def _build_scheduler() -> Any:
     )
 
 
-def _register_daemon_schedules(*, scheduler: Any, settings: Any) -> None:
+def _register_daemon_schedules(
+    *,
+    scheduler: Any,
+    settings: Any,
+    repository: Any,
+) -> None:
     schedules = list(getattr(settings.daemon, "schedules", []) or [])
     for schedule_index, schedule in enumerate(schedules):
         workflow_name = str(getattr(schedule, "workflow", "") or "").strip().lower()
         trigger, trigger_kwargs = _schedule_trigger_args(schedule=schedule)
         scheduler.add_job(
-            _scheduled_workflow_runner(workflow_name, schedule),
+            _scheduled_workflow_runner(
+                workflow_name,
+                schedule,
+                repository=repository,
+            ),
             trigger,
             **trigger_kwargs,
             id=_schedule_job_id(
@@ -1186,7 +1202,12 @@ def _schedule_trigger_args(*, schedule: Any) -> tuple[str, dict[str, Any]]:
     )
 
 
-def _scheduled_workflow_runner(workflow_name: str, schedule: Any | None = None) -> Any:
+def _scheduled_workflow_runner(
+    workflow_name: str,
+    schedule: Any | None = None,
+    *,
+    repository: Any,
+) -> Any:
     def _run() -> None:
         if workflow_name == "now":
             execute_granularity_workflow(
@@ -1198,10 +1219,15 @@ def _scheduled_workflow_runner(workflow_name: str, schedule: Any | None = None) 
             catch_up_windows = int(
                 getattr(schedule, "catch_up_windows", 1) if schedule is not None else 1
             )
+            completed_anchor_dates = completed_workflow_anchor_dates(
+                repository=repository,
+                workflow_name=workflow_name,
+            )
             for anchor in scheduled_anchor_dates(
                 workflow_name=workflow_name,
                 today=_today_utc(),
                 catch_up_windows=catch_up_windows,
+                completed_anchor_dates=completed_anchor_dates,
             ):
                 execute_granularity_workflow(
                     workflow_name=workflow_name,

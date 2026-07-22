@@ -105,11 +105,48 @@ def scheduled_anchor_dates(
     workflow_name: str,
     today: date,
     catch_up_windows: int,
+    completed_anchor_dates: list[date] | None = None,
 ) -> list[date]:
-    """Return closed unattended targets, oldest first, within a fixed budget."""
+    """Return closed unattended targets, prioritizing oldest known gaps."""
 
     normalized = str(workflow_name or "").strip().lower()
     limit = max(1, int(catch_up_windows))
+    recent = _recent_scheduled_anchor_dates(
+        workflow_name=normalized,
+        today=today,
+        limit=limit,
+    )
+    latest = recent[-1]
+    completed = {
+        anchor
+        for anchor in completed_anchor_dates or []
+        if isinstance(anchor, date) and anchor <= latest
+    }
+    if not completed:
+        return recent
+
+    cursor = _next_scheduled_anchor(
+        workflow_name=normalized,
+        anchor=min(completed),
+    )
+    outstanding: list[date] = []
+    while cursor <= latest and len(outstanding) < limit:
+        if cursor not in completed:
+            outstanding.append(cursor)
+        cursor = _next_scheduled_anchor(
+            workflow_name=normalized,
+            anchor=cursor,
+        )
+    return outstanding
+
+
+def _recent_scheduled_anchor_dates(
+    *,
+    workflow_name: str,
+    today: date,
+    limit: int,
+) -> list[date]:
+    normalized = str(workflow_name or "").strip().lower()
     if normalized == "day":
         latest = today - timedelta(days=1)
         return [latest - timedelta(days=offset) for offset in reversed(range(limit))]
@@ -129,6 +166,38 @@ def scheduled_anchor_dates(
         anchors.reverse()
         return anchors
     raise ValueError("scheduled workflow must be one of: day, week, month")
+
+
+def _next_scheduled_anchor(*, workflow_name: str, anchor: date) -> date:
+    if workflow_name == "day":
+        return anchor + timedelta(days=1)
+    if workflow_name == "week":
+        return anchor + timedelta(days=7)
+    if workflow_name == "month":
+        return (anchor.replace(day=28) + timedelta(days=4)).replace(day=1)
+    raise ValueError("scheduled workflow must be one of: day, week, month")
+
+
+def build_workflow_run_repository(*, settings: Any) -> Any:
+    repository_cls = cli._runtime_symbols()["Repository"]
+    repository = repository_cls(db_path=Path(settings.recoleta_db_path))
+    repository.init_schema()
+    return repository
+
+
+def completed_workflow_anchor_dates(
+    *,
+    repository: Any,
+    workflow_name: str,
+) -> list[date]:
+    return sorted(
+        {
+            period_start.date()
+            for period_start in repository.list_successful_workflow_period_starts(
+                target_granularity=workflow_name,
+            )
+        }
+    )
 
 
 def _previous_month_start(value: date) -> date:

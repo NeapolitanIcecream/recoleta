@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import signal
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 import recoleta.cli as cli
 import recoleta.cli.workflows as workflows
-from recoleta.cli.workflow_runner import scheduled_anchor_dates
+from recoleta.cli.workflow_runner import (
+    completed_workflow_anchor_dates,
+    scheduled_anchor_dates,
+)
+from recoleta.storage import Repository
 
 
 class _FakeSignalInterrupt(KeyboardInterrupt):
@@ -83,6 +88,12 @@ def _install_scheduler_double(
         daemon=SimpleNamespace(schedules=resolved_schedules),
     )
     monkeypatch.setattr(cli, "_build_settings", lambda: settings, raising=True)
+    monkeypatch.setattr(
+        workflows,
+        "build_workflow_run_repository",
+        lambda **_kwargs: object(),
+        raising=True,
+    )
     original_import_symbol = cli._import_symbol
 
     def _fake_import_symbol(module_name: str, *, attr_name: str | None = None):
@@ -191,11 +202,61 @@ def test_scheduled_anchor_dates_use_only_closed_periods_and_bound_catch_up() -> 
     ) == [date(2026, 5, 1), date(2026, 6, 1)]
 
 
-def test_scheduled_runner_reconciles_bounded_windows_oldest_first(
+def test_scheduled_anchor_dates_select_oldest_gaps_before_applying_limit() -> None:
+    assert scheduled_anchor_dates(
+        workflow_name="day",
+        today=date(2026, 7, 22),
+        catch_up_windows=2,
+        completed_anchor_dates=[
+            date(2026, 7, 16),
+            date(2026, 7, 20),
+            date(2026, 7, 21),
+        ],
+    ) == [date(2026, 7, 17), date(2026, 7, 18)]
+
+
+def test_completed_workflow_anchor_dates_reads_successful_run_state(
+    tmp_path: Path,
+) -> None:
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    for anchor, success in (
+        (date(2026, 7, 16), True),
+        (date(2026, 7, 17), False),
+        (date(2026, 7, 20), True),
+    ):
+        run = repository.create_run(config_fingerprint="test")
+        period_start = datetime.combine(anchor, datetime.min.time(), tzinfo=UTC)
+        repository.update_run_context(
+            run_id=run.id,
+            operation_kind="workflow.run.day",
+            target_granularity="day",
+            target_period_start=period_start,
+            target_period_end=period_start + timedelta(days=1),
+        )
+        repository.finish_run(run.id, success=success)
+
+    assert completed_workflow_anchor_dates(
+        repository=repository,
+        workflow_name="day",
+    ) == [date(2026, 7, 16), date(2026, 7, 20)]
+
+
+def test_scheduled_runner_reconciles_oldest_outstanding_windows_first(
     monkeypatch,
 ) -> None:
     calls: list[dict[str, object]] = []
     monkeypatch.setattr(workflows, "_today_utc", lambda: date(2026, 7, 22))
+    monkeypatch.setattr(
+        workflows,
+        "completed_workflow_anchor_dates",
+        lambda **_kwargs: [
+            date(2026, 7, 16),
+            date(2026, 7, 20),
+            date(2026, 7, 21),
+        ],
+        raising=False,
+    )
     monkeypatch.setattr(
         workflows,
         "execute_granularity_workflow",
@@ -203,7 +264,7 @@ def test_scheduled_runner_reconciles_bounded_windows_oldest_first(
     )
     schedule = SimpleNamespace(catch_up_windows=2)
 
-    workflows._scheduled_workflow_runner("week", schedule)()
+    workflows._scheduled_workflow_runner("day", schedule, repository=object())()
 
-    assert [call["anchor_date"] for call in calls] == ["2026-07-06", "2026-07-13"]
-    assert all(call["command"] == "daemon week" for call in calls)
+    assert [call["anchor_date"] for call in calls] == ["2026-07-17", "2026-07-18"]
+    assert all(call["command"] == "daemon day" for call in calls)
