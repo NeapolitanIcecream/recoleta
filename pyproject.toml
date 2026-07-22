@@ -12,7 +12,7 @@ dependencies = [
     "feedparser>=6.0.12",
     "httpx>=0.28.1",
     "huggingface-hub>=0.36.2",
-    "huldra-arxiv @ git+https://github.com/NeapolitanIcecream/huldra.git@86744ee698aa8055e9f8bb612306aa6b8a8e783f",
+    "huldra-arxiv @ git+https://github.com/NeapolitanIcecream/huldra.git@409a48165ca348f243311d7b5d00323f92fdb658",
     "lancedb>=0.29.2",
     "latex2mathml>=3.81.0",
     "litellm>=1.76.1",
