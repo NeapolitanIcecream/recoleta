@@ -1868,6 +1868,46 @@ def test_fleet_pre_sync_plan_collects_unique_pool_windows(tmp_path: Path) -> Non
     }
 
 
+def test_local_fleet_pre_sync_budget_advances_past_cached_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: cached prefixes must not consume the local pre-sync budget."""
+    manifest_path, pool_path = _write_pool_fleet_manifest(
+        tmp_path,
+        workflow_pre_sync_max_windows=1,
+    )
+    plan = build_fleet_arxiv_pool_pre_sync_plan(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        anchor_date="2026-05-20",
+    )
+    store = ArxivPoolStore(pool_path)
+    _record_completed_window(store, plan.windows[0])
+    synced_windows: list[ArxivPoolWindow] = []
+
+    class FakeSync:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def sync_windows(
+            self,
+            windows: list[ArxivPoolWindow],
+        ) -> ArxivPoolSyncResult:
+            synced_windows.extend(windows)
+            return ArxivPoolSyncResult(requested_windows_total=len(windows))
+
+    import recoleta.cli.fleet as fleet_module
+
+    monkeypatch.setattr(fleet_module, "ArxivPoolSync", FakeSync)
+
+    result = run_fleet_arxiv_pool_pre_sync(plan)
+
+    assert plan.pre_sync_max_windows == 1
+    assert result.requested_windows_total == 1
+    assert synced_windows == [plan.windows[1]]
+
+
 def test_fleet_pre_sync_plan_rejects_mixed_pool_backends(tmp_path: Path) -> None:
     manifest_path = _write_mixed_backend_fleet_manifest(tmp_path)
 
@@ -2674,6 +2714,7 @@ def _write_pool_fleet_manifest(
     allow_immature_windows: bool | tuple[bool, bool] = False,
     request_interval_seconds: float | tuple[float, float] = 0,
     cooldown_seconds: int | tuple[int, int] = 3600,
+    workflow_pre_sync_max_windows: int | tuple[int, int] = 31,
 ) -> tuple[Path, Path]:
     pool_path = tmp_path / "fleet-arxiv-pool.db"
     child_paths: list[Path] = []
@@ -2699,6 +2740,9 @@ def _write_pool_fleet_manifest(
                         "readiness_gate": _child_setting(readiness_gate, index),
                         "allow_immature_windows": _child_setting(
                             allow_immature_windows, index
+                        ),
+                        "workflow_pre_sync_max_windows": _child_setting(
+                            workflow_pre_sync_max_windows, index
                         ),
                     },
                     "SOURCES": {

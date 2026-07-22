@@ -1294,11 +1294,12 @@ def run_fleet_arxiv_pool_pre_sync(
 ) -> ArxivPoolSyncResult:
     if not plan.pre_sync_enabled:
         return ArxivPoolSyncResult(requested_windows_total=0)
-    selected_windows = plan.windows[: max(1, int(plan.pre_sync_max_windows))]
+    pre_sync_budget = max(1, int(plan.pre_sync_max_windows))
     if (
         plan.backend_descriptor is not None
         and plan.backend_descriptor.kind == "huldra"
     ):
+        selected_windows = plan.windows[:pre_sync_budget]
         HuldraClient = require_huldra_client()
 
         readiness_policy = ArxivPoolReadinessPolicy(
@@ -1331,8 +1332,12 @@ def run_fleet_arxiv_pool_pre_sync(
         return arxiv_pool_sync_result_from_huldra(result)
     if plan.pool_db_path is None:
         return ArxivPoolSyncResult(requested_windows_total=0)
+    store = ArxivPoolStore(plan.pool_db_path)
+    selected_windows = [
+        window for window in plan.windows if not store.is_window_completed(window)
+    ][:pre_sync_budget]
     return ArxivPoolSync(
-        store=ArxivPoolStore(plan.pool_db_path),
+        store=store,
         request_interval_seconds=plan.request_interval_seconds,
         cooldown_seconds=plan.cooldown_seconds,
     ).sync_windows(selected_windows)
