@@ -359,8 +359,9 @@ class ArxivPoolFetchError(RuntimeError):
 
 HULDRA_DEPENDENCY_MISSING_REASON = "huldra_dependency_missing"
 HULDRA_DEPENDENCY_MISSING_MESSAGE = (
-    "Huldra arXiv pool backend requires the optional Huldra dependency; "
-    "install Recoleta with the huldra extra to use ARXIV_POOL.backend=huldra."
+    "The standard Recoleta installation requires Huldra for the default arXiv "
+    "pool backend, but the Huldra package could not be imported; reinstall or "
+    "synchronize Recoleta's base dependencies."
 )
 
 

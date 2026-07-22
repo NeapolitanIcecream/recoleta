@@ -4,12 +4,12 @@ Use this guide when you operate an instance-first fleet made of several child
 configs. If you arrived here from an older shared `topic_streams` deployment,
 finish the split first and keep the old workspace read-only.
 
-This is the development-mode operating model:
+This is the operating model:
 
-- run the fleet by hand from one fleet manifest
+- rehearse the fleet by hand from one fleet manifest
 - keep each child instance isolated
 - keep the old shared DB as a read-only archive
-- do not wire the fleet into an automatic scheduler until you are ready
+- add schedules to that manifest only after one-shot runs and health checks pass
 
 ## Current deployment closure note
 
@@ -78,6 +78,48 @@ for replays and backlog repair.
 checks every child and every lower-level window, but fresh day-level expensive
 work is skipped automatically. Use `--dry-run --json` to inspect the per-child
 plan before a replay. Use `--force` only for deliberate regeneration.
+
+## Automated fleet operation
+
+Keep schedules at the top level of `fleet.yaml`; child configs intentionally
+reject `daemon` so one child cannot create a second scheduler:
+
+```yaml
+schema_version: 1
+daemon:
+  schedules:
+    - workflow: day
+      interval_minutes: 60
+      catch_up_windows: 2
+    - workflow: week
+      weekday: mon
+      hour_utc: 2
+      minute_utc: 0
+      catch_up_windows: 2
+    - workflow: deploy
+      weekday: mon
+      hour_utc: 2
+      minute_utc: 30
+instances:
+  - name: embodied_ai
+    config_path: ./instances/embodied_ai/recoleta.yaml
+  - name: software_intelligence
+    config_path: ./instances/software_intelligence/recoleta.yaml
+```
+
+Start it under one process supervisor:
+
+```bash
+uv run recoleta fleet daemon start --manifest /path/to/fleet.yaml
+```
+
+Scheduled day, week, and month jobs operate only on closed UTC periods and
+reconcile at most `catch_up_windows` periods oldest first. One
+host-local file lease keyed by the resolved manifest path covers the entire
+catch-up sequence and is released by the OS if the process exits. Manual fleet
+runs use the same lease, so an
+overlap fails fast instead of interleaving children. This is a single-host
+guarantee; do not start the same manifest on multiple machines.
 
 ## Development rules
 

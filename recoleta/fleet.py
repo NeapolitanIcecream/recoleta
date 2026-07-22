@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
+import fcntl
+import hashlib
 import json
+import os
 from pathlib import Path
+import tempfile
 from typing import Any
 
 import yaml
 from slugify import slugify
 
-from recoleta.config import Settings
+from recoleta.config import DaemonConfig, Settings
+
+
+class FleetSequenceBusyError(RuntimeError):
+    """Raised when another process owns the fleet workflow sequence lease."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +32,38 @@ class FleetManifest:
     manifest_path: Path
     schema_version: int
     instances: list[FleetInstance]
+    daemon: DaemonConfig
+
+
+def fleet_sequence_lock_path(manifest_path: Path) -> Path:
+    resolved = manifest_path.expanduser().resolve()
+    digest = hashlib.sha256(str(resolved).encode("utf-8")).hexdigest()
+    user_id = getattr(os, "getuid", lambda: "user")()
+    lock_root = Path(tempfile.gettempdir()) / f"recoleta-fleet-locks-{user_id}"
+    lock_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return lock_root / f"{digest}.lock"
+
+
+@contextmanager
+def fleet_sequence_lease(manifest_path: Path) -> Iterator[None]:
+    """Hold a crash-safe, host-local lease for one complete fleet sequence."""
+
+    resolved = manifest_path.expanduser().resolve()
+    lock_path = fleet_sequence_lock_path(resolved)
+    lock_file = lock_path.open("a+", encoding="utf-8")
+    try:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise FleetSequenceBusyError(
+                f"Fleet workflow is already running for manifest: {resolved.name}"
+            ) from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    finally:
+        lock_file.close()
 
 
 def _load_document(path: Path) -> dict[str, Any]:
@@ -101,6 +143,12 @@ def load_fleet_manifest(manifest_path: Path) -> FleetManifest:
     schema_version = int(raw.get("schema_version") or 1)
     if schema_version != 1:
         raise ValueError("Unsupported fleet manifest schema_version")
+    raw_daemon = raw.get("daemon", raw.get("DAEMON", {}))
+    if raw_daemon is None:
+        raw_daemon = {}
+    if not isinstance(raw_daemon, dict):
+        raise ValueError("fleet daemon must be a mapping/object")
+    daemon = DaemonConfig.model_validate(raw_daemon)
     raw_instances = raw.get("instances")
     if not isinstance(raw_instances, list) or not raw_instances:
         raise ValueError("Fleet manifest must define at least one child instance")
@@ -139,4 +187,5 @@ def load_fleet_manifest(manifest_path: Path) -> FleetManifest:
         manifest_path=resolved_manifest_path,
         schema_version=schema_version,
         instances=instances,
+        daemon=daemon,
     )

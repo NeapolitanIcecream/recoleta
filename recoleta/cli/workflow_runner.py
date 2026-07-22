@@ -100,6 +100,42 @@ def normalize_anchor_date(anchor_date: str | None, *, workflow_name: str) -> dat
     return cli._parse_anchor_date_option(str(anchor_date).strip())
 
 
+def scheduled_anchor_dates(
+    *,
+    workflow_name: str,
+    today: date,
+    catch_up_windows: int,
+) -> list[date]:
+    """Return closed unattended targets, oldest first, within a fixed budget."""
+
+    normalized = str(workflow_name or "").strip().lower()
+    limit = max(1, int(catch_up_windows))
+    if normalized == "day":
+        latest = today - timedelta(days=1)
+        return [latest - timedelta(days=offset) for offset in reversed(range(limit))]
+    if normalized == "week":
+        current_week_start = today - timedelta(days=today.isoweekday() - 1)
+        latest = current_week_start - timedelta(days=7)
+        return [
+            latest - timedelta(days=7 * offset)
+            for offset in reversed(range(limit))
+        ]
+    if normalized == "month":
+        cursor = _previous_month_start(today)
+        anchors: list[date] = []
+        for _ in range(limit):
+            anchors.append(cursor)
+            cursor = _previous_month_start(cursor)
+        anchors.reverse()
+        return anchors
+    raise ValueError("scheduled workflow must be one of: day, week, month")
+
+
+def _previous_month_start(value: date) -> date:
+    first = value.replace(day=1)
+    return (first - timedelta(days=1)).replace(day=1)
+
+
 def granularity_stack(
     *, target_granularity: str, recursive_lower_levels: bool
 ) -> list[str]:

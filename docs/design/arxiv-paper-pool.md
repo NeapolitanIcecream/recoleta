@@ -1,6 +1,6 @@
 # arXiv Paper Pool Feature Design
 
-Status: Implemented MVP
+Status: Implemented; Huldra is the default backend
 
 Date: 2026-05-14
 
@@ -17,14 +17,17 @@ infrastructure. It keeps upstream access polite, makes backfills deterministic,
 and prevents one 429 event from being amplified across every day and every
 instance in a fleet run.
 
-The implemented MVP keeps direct arXiv ingest available for compatibility and
-adds an explicit pool mode. Current arXiv fleet configs should use pool mode
-with the [Huldra](https://github.com/NeapolitanIcecream/huldra) backend:
+Recoleta now defaults every enabled arXiv source to pool mode with the
+[Huldra](https://github.com/NeapolitanIcecream/huldra) backend. The old direct
+adapter and Recoleta-owned SQLite pool remain deprecated, explicit rollback
+paths:
 
-- `ARXIV_POOL.enabled=true` with either `backend: huldra` plus
-  `huldra_base_url`, or `backend: local_sqlite` plus an explicit
-  `ARXIV_POOL.db_path`.
-- `SOURCES.arxiv.mode=pool` to make ingest read cached windows only.
+- Enabling arXiv without a mode or pool block selects `mode: pool`, enables the
+  Huldra pool, and uses `http://127.0.0.1:8765`.
+- `backend: local_sqlite` must be explicit and requires `ARXIV_POOL.db_path`.
+- `mode: direct` must be explicit, requires the `legacy-arxiv` dependency
+  extra, and requires the pool to be disabled.
+- Huldra errors never cause an implicit direct or local-pool fallback.
 - `recoleta arxiv-pool sync` and `backfill` to populate the shared pool.
 - Fleet pre-sync when every arXiv-enabled child instance uses pool mode and
   points at the same pool backend identity.
@@ -79,16 +82,17 @@ time, the current two-query daily workload should finish in seconds, not hours.
 ## User-facing Behavior
 
 Config files may use either the uppercase environment-style keys below or the
-equivalent lowercase field names. Huldra is the current preferred pool backend
-for arXiv fleet configs; `local_sqlite` remains a rollback backend.
+equivalent lowercase field names. Huldra is the default backend:
 
 ```yaml
 ARXIV_POOL:
   enabled: true
-  backend: local_sqlite
-  db_path: /path/to/fleet/arxiv_pool.db
-  request_interval_seconds: 5
-  cooldown_seconds: 3600
+  backend: huldra
+  huldra_base_url: http://127.0.0.1:8765
+  huldra_request_timeout_seconds: 30
+  huldra_wait_timeout_seconds: null
+  workflow_pre_sync_enabled: true
+  workflow_pre_sync_max_windows: 31
 
 SOURCES:
   arxiv:
@@ -99,20 +103,18 @@ SOURCES:
     max_results_per_run: 60
 ```
 
-`backend: local_sqlite` is the original Recoleta-owned SQLite metadata pool.
 `backend: huldra` delegates arXiv metadata caching, queueing, and rate limiting
-to a Huldra broker while preserving Recoleta pool-mode ingest semantics:
+to a Huldra broker while preserving Recoleta pool-mode ingest semantics. The
+original Recoleta-owned SQLite metadata pool is available only as an explicit
+rollback:
 
 ```yaml
 ARXIV_POOL:
   enabled: true
-  backend: huldra
-  huldra_base_url: http://127.0.0.1:8765
-  huldra_request_timeout_seconds: 30
-  huldra_wait_timeout_seconds: null
-  maturity_lag_days: 1
-  readiness_gate: strict
-  allow_immature_windows: false
+  backend: local_sqlite
+  db_path: /path/to/fleet/arxiv_pool.db
+  request_interval_seconds: 5
+  cooldown_seconds: 3600
 ```
 
 In Huldra mode, Recoleta does not read a Huldra SQLite database and does not
@@ -186,10 +188,9 @@ Main components:
 - `recoleta.cli.arxiv_pool`: renders sync, backfill, freshness, and GC command
   output.
 
-The implementation can initially keep using the `arxiv` package for response
-parsing, but the pool should own retry and cooldown policy. If the package does
-not expose enough control over `Retry-After` and retry timing, use a thin
-`httpx` Atom fetcher for pool sync and parse the feed explicitly.
+Huldra owns default upstream requests and retry/cooldown policy. The deprecated
+direct adapter lazy-imports the `arxiv` SDK only after explicit selection; the
+default install and pool paths do not import that SDK.
 
 ## Data Model
 

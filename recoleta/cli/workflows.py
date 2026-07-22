@@ -9,6 +9,7 @@ from recoleta.cli.arxiv_pool_readiness import (
     arxiv_pool_workflow_readiness_should_block,
     build_arxiv_pool_workflow_readiness_plan,
     evaluate_arxiv_pool_workflow_readiness,
+    pre_sync_missing_mature_huldra_windows,
 )
 from recoleta.cli import workflow_models as _workflow_models
 from recoleta.cli.workflow_models import WorkflowExecutionContext
@@ -32,6 +33,7 @@ from recoleta.cli.workflow_runner import (
     granularity_workflow_payload,
     latest_complete_utc_day,
     parse_step_list as _parse_step_list,
+    scheduled_anchor_dates,
     today_utc,
     validate_step_overrides as _validate_step_overrides,
     deploy_workflow_payload,
@@ -149,6 +151,7 @@ class _GranularityWorkflowContext:
     execution_context: WorkflowExecutionContext
     on_translate_failure: str
     planner_decisions: list[Any]
+    arxiv_pool_pre_sync: dict[str, Any] | None = None
     arxiv_pool_readiness: dict[str, Any] | None = None
     blocked_payload: dict[str, Any] | None = None
 
@@ -492,17 +495,28 @@ def _granularity_workflow_context(
         settings=request.runtime.settings,
         plan=plan,
     )
+    arxiv_pool_pre_sync = _pre_sync_granularity_arxiv_pool(
+        runtime=request.runtime,
+        readiness=arxiv_pool_readiness,
+    )
+    if int((arxiv_pool_pre_sync or {}).get("requested_windows_total") or 0) > 0:
+        arxiv_pool_readiness = _evaluate_granularity_arxiv_pool_readiness(
+            settings=request.runtime.settings,
+            plan=plan,
+        )
     blocked_payload = _granularity_arxiv_pool_blocked_payload(
         command=request.command,
         run_id=request.runtime.run_id,
         plan=plan,
         readiness=arxiv_pool_readiness,
+        pre_sync=arxiv_pool_pre_sync,
     )
     return _GranularityWorkflowContext(
         plan=plan,
         execution_context=execution_context,
         on_translate_failure=str(policy.on_translate_failure or "fail"),
         planner_decisions=planner_decisions,
+        arxiv_pool_pre_sync=arxiv_pool_pre_sync,
         arxiv_pool_readiness=arxiv_pool_readiness,
         blocked_payload=blocked_payload,
     )
@@ -527,6 +541,7 @@ def _granularity_dry_run_payload(
         "skipped_steps": plan.skipped_steps,
         "planned_expensive_steps": planned_expensive_steps(planner_decisions),
         "plan": decision_payloads(planner_decisions),
+        "arxiv_pool_pre_sync": {"status": "skipped", "reason": "dry_run"},
         "arxiv_pool_readiness": _public_arxiv_pool_readiness(arxiv_pool_readiness),
     }
 
@@ -593,9 +608,10 @@ def _granularity_workflow_payload(
     plan: Any,
     outcome: _WorkflowLoopOutcome,
     planner_decisions: list[Any],
+    arxiv_pool_pre_sync: dict[str, Any] | None,
     arxiv_pool_readiness: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    return granularity_workflow_payload(
+    payload = granularity_workflow_payload(
         context=WorkflowPayloadContext(
             command=command,
             run_id=runtime.run_id,
@@ -611,6 +627,8 @@ def _granularity_workflow_payload(
             ),
         )
     )
+    payload["arxiv_pool_pre_sync"] = arxiv_pool_pre_sync
+    return payload
 
 
 def _public_arxiv_pool_readiness(
@@ -645,12 +663,50 @@ def _evaluate_granularity_arxiv_pool_readiness(
     }
 
 
+def _pre_sync_granularity_arxiv_pool(
+    *,
+    runtime: _ManagedWorkflowRuntime,
+    readiness: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if readiness is None:
+        return None
+    readiness_plan = readiness.get("_workflow_readiness_plan")
+    if readiness_plan is None:
+        return None
+    pool_settings = runtime.settings.arxiv_pool
+    try:
+        return pre_sync_missing_mature_huldra_windows(
+            plan=readiness_plan,
+            readiness=readiness,
+            enabled=bool(
+                getattr(pool_settings, "workflow_pre_sync_enabled", True)
+            ),
+            max_windows=int(
+                getattr(pool_settings, "workflow_pre_sync_max_windows", 31) or 31
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        runtime.log.warning(
+            "arXiv pool workflow pre-sync failed error_type={}",
+            type(exc).__name__,
+        )
+        return {
+            "status": "failed",
+            "reason": "huldra_pre_sync_error",
+            "error_type": type(exc).__name__,
+            "eligible_windows_total": 0,
+            "requested_windows_total": 0,
+            "deferred_windows_total": 0,
+        }
+
+
 def _granularity_arxiv_pool_blocked_payload(
     *,
     command: str,
     run_id: str,
     plan: Any,
     readiness: dict[str, Any] | None,
+    pre_sync: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if readiness is None:
         return None
@@ -670,6 +726,7 @@ def _granularity_arxiv_pool_blocked_payload(
         "target_period_end": cli._isoformat_or_none(plan.target_period_end),
         "requested_steps": plan.requested_steps,
         "skipped_steps": plan.skipped_steps,
+        "arxiv_pool_pre_sync": pre_sync,
         "arxiv_pool_readiness": payload_readiness,
     }
 
@@ -995,6 +1052,7 @@ def execute_granularity_workflow(**kwargs: Any) -> dict[str, Any]:
                 plan=context.plan,
                 outcome=outcome,
                 planner_decisions=context.planner_decisions,
+                arxiv_pool_pre_sync=context.arxiv_pool_pre_sync,
                 arxiv_pool_readiness=context.arxiv_pool_readiness,
             ),
             failure_messages=_GRANULARITY_FAILURE_MESSAGES,
@@ -1075,7 +1133,7 @@ def _register_daemon_schedules(*, scheduler: Any, settings: Any) -> None:
         workflow_name = str(getattr(schedule, "workflow", "") or "").strip().lower()
         trigger, trigger_kwargs = _schedule_trigger_args(schedule=schedule)
         scheduler.add_job(
-            _scheduled_workflow_runner(workflow_name),
+            _scheduled_workflow_runner(workflow_name, schedule),
             trigger,
             **trigger_kwargs,
             id=_schedule_job_id(
@@ -1110,13 +1168,28 @@ def _schedule_trigger_args(*, schedule: Any) -> tuple[str, dict[str, Any]]:
     )
 
 
-def _scheduled_workflow_runner(workflow_name: str) -> Any:
+def _scheduled_workflow_runner(workflow_name: str, schedule: Any | None = None) -> Any:
     def _run() -> None:
-        if workflow_name in {"now", "day", "week", "month"}:
+        if workflow_name == "now":
             execute_granularity_workflow(
                 workflow_name=workflow_name,
                 command=f"daemon {workflow_name}",
             )
+            return
+        if workflow_name in {"day", "week", "month"}:
+            catch_up_windows = int(
+                getattr(schedule, "catch_up_windows", 1) if schedule is not None else 1
+            )
+            for anchor in scheduled_anchor_dates(
+                workflow_name=workflow_name,
+                today=_today_utc(),
+                catch_up_windows=catch_up_windows,
+            ):
+                execute_granularity_workflow(
+                    workflow_name=workflow_name,
+                    command=f"daemon {workflow_name}",
+                    anchor_date=anchor.isoformat(),
+                )
             return
         if workflow_name == "deploy":
             execute_deploy_workflow(command="daemon deploy")

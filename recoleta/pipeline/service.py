@@ -20,6 +20,7 @@ from rich.progress import (
 )
 
 from recoleta.analyzer import Analyzer, LiteLLMAnalyzer
+from recoleta.arxiv_content_admission import ArxivContentAdmission
 from recoleta.config import Settings, resolve_stage_llm_model
 from recoleta.delivery import TelegramSender
 from recoleta.extract import (
@@ -56,6 +57,7 @@ from recoleta.pipeline.enrich_stage import (
     ensure_item_content,
     ensure_pdf_content,
     run_enrich_stage,
+    _arxiv_admission_callbacks,
 )
 from recoleta.pipeline.analyze_runtime import execute_analyze
 from recoleta.pipeline.triage_runtime import (
@@ -177,7 +179,7 @@ class _EnsureItemContentKwargs(TypedDict, total=False):
     item: Any
     log: Any
     diag: dict[str, Any] | None
-    arxiv_html_throttle: Callable[[], None] | None
+    arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None
 
 
 class _EnsureArxivContentKwargs(TypedDict, total=False):
@@ -187,7 +189,7 @@ class _EnsureArxivContentKwargs(TypedDict, total=False):
     source_item_id: str | None
     log: Any
     diag: dict[str, Any] | None
-    arxiv_html_throttle: Callable[[], None] | None
+    arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None
 
 
 class _EnsureArxivHtmlDocumentContentKwargs(TypedDict, total=False):
@@ -197,7 +199,7 @@ class _EnsureArxivHtmlDocumentContentKwargs(TypedDict, total=False):
     source_item_id: str | None
     log: Any
     diag: dict[str, Any] | None
-    arxiv_html_throttle: Callable[[], None] | None
+    arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None
 
 
 class _EnsurePdfContentKwargs(TypedDict, total=False):
@@ -208,6 +210,7 @@ class _EnsurePdfContentKwargs(TypedDict, total=False):
     source_item_id: str | None
     log: Any
     diag: dict[str, Any] | None
+    arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None
 
 
 class _TrendStageRequestKwargs(TypedDict, total=False):
@@ -1131,6 +1134,7 @@ class PipelineService:
         canonical_url: str,
         source_item_id: str | None,
         diag: dict[str, Any] | None = None,
+        arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None = None,
     ) -> tuple[str, bool]:
         db_read_started = time.perf_counter()
         existing_latex = self._get_latest_content_text(
@@ -1154,7 +1158,17 @@ class PipelineService:
         if not source_url:
             raise ValueError("missing arXiv source url")
         fetch_started = time.perf_counter()
-        source_bytes = fetch_url_bytes(client, source_url)
+        before_attempt, on_rate_limited = _arxiv_admission_callbacks(
+            admission=arxiv_html_throttle,
+            diag=diag,
+        )
+        source_bytes = fetch_url_bytes(
+            client,
+            source_url,
+            before_attempt=before_attempt,
+            on_rate_limited=on_rate_limited,
+            retry_on_429=False,
+        )
         if diag is not None:
             diag["fetch_ms"] = diag.get("fetch_ms", 0) + int(
                 (time.perf_counter() - fetch_started) * 1000

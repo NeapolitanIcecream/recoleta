@@ -295,7 +295,9 @@ def test_enrich_arxiv_html_document_records_pdf_fallback_metric(
 
     arxiv_id = "2345.6791v1"
 
-    def fail_fetch_url_html(_client: httpx.Client, url: str) -> str:
+    def fail_fetch_url_html(
+        _client: httpx.Client, url: str, **_kwargs: object
+    ) -> str:
         request = httpx.Request("GET", url)
         response = httpx.Response(404, request=request, text="not found")
         raise httpx.HTTPStatusError("not found", request=request, response=response)
@@ -342,6 +344,69 @@ def test_enrich_arxiv_html_document_records_pdf_fallback_metric(
         )
         assert pdf is not None
         assert pdf.text == "pdf recovered"
+
+
+def test_enrich_arxiv_html_document_429_defers_without_pdf_fallback(
+    configured_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "arxiv": {
+                    "enabled": True,
+                    "queries": ["cat:cs.AI"],
+                    "enrich_method": "html_document",
+                    "enrich_failure_mode": "fallback",
+                }
+            }
+        ),
+    )
+
+    import httpx
+    import recoleta.pipeline.enrich_stage as enrich_stage
+
+    arxiv_id = "2345.6792v1"
+
+    def fail_fetch_url_html(
+        _client: httpx.Client, url: str, **_kwargs: object
+    ) -> str:
+        request = httpx.Request("GET", url)
+        response = httpx.Response(429, request=request, text="rate limited")
+        raise httpx.HTTPStatusError(
+            "rate limited", request=request, response=response
+        )
+
+    monkeypatch.setattr(enrich_stage, "fetch_url_html", fail_fetch_url_html)
+
+    def fail_if_pdf_requested(*_args: object, **_kwargs: object) -> bytes:
+        raise AssertionError("429 must not trigger a PDF request")
+
+    monkeypatch.setattr(enrich_stage, "fetch_url_bytes", fail_if_pdf_requested)
+
+    _, repository, service = _build_service(configured_env)
+    draft = ItemDraft.from_values(
+        source="arxiv",
+        source_item_id=arxiv_id,
+        canonical_url=f"https://arxiv.org/abs/{arxiv_id}",
+        title="Rate Limited HTML",
+    )
+    service.ingest(run_id="run-html-rate-limited", drafts=[draft])
+    service.enrich(run_id="run-html-rate-limited", limit=10)
+
+    metrics = repository.list_metrics(run_id="run-html-rate-limited")
+    by_name = {metric.name: metric for metric in metrics}
+    assert by_name["pipeline.enrich.arxiv.content.rate_limited_total"].value == 1
+
+    with Session(repository.engine) as session:
+        item = session.exec(select(Item).where(Item.source_item_id == arxiv_id)).first()
+        assert item is not None
+        assert item.state == "retryable_failed"
+        assert item.id is not None
+        assert repository.get_latest_content(
+            item_id=int(item.id), content_type="pdf_text"
+        ) is None
 
 
 def test_enrich_arxiv_html_document_reuses_existing_markdown_without_cleanup(

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import signal
+from datetime import date
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 import recoleta.cli as cli
+import recoleta.cli.workflows as workflows
+from recoleta.cli.workflow_runner import scheduled_anchor_dates
 
 
 class _FakeSignalInterrupt(KeyboardInterrupt):
@@ -172,3 +175,35 @@ def test_daemon_start_preserves_sigterm_exit_code(monkeypatch) -> None:
     scheduler = _SigtermScheduler.latest
     assert scheduler is not None
     assert scheduler.shutdown_wait == [True]
+
+
+def test_scheduled_anchor_dates_use_only_closed_periods_and_bound_catch_up() -> None:
+    today = date(2026, 7, 22)
+
+    assert scheduled_anchor_dates(
+        workflow_name="day", today=today, catch_up_windows=3
+    ) == [date(2026, 7, 19), date(2026, 7, 20), date(2026, 7, 21)]
+    assert scheduled_anchor_dates(
+        workflow_name="week", today=today, catch_up_windows=2
+    ) == [date(2026, 7, 6), date(2026, 7, 13)]
+    assert scheduled_anchor_dates(
+        workflow_name="month", today=today, catch_up_windows=2
+    ) == [date(2026, 5, 1), date(2026, 6, 1)]
+
+
+def test_scheduled_runner_reconciles_bounded_windows_oldest_first(
+    monkeypatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(workflows, "_today_utc", lambda: date(2026, 7, 22))
+    monkeypatch.setattr(
+        workflows,
+        "execute_granularity_workflow",
+        lambda **kwargs: calls.append(dict(kwargs)),
+    )
+    schedule = SimpleNamespace(catch_up_windows=2)
+
+    workflows._scheduled_workflow_runner("week", schedule)()
+
+    assert [call["anchor_date"] for call in calls] == ["2026-07-06", "2026-07-13"]
+    assert all(call["command"] == "daemon week" for call in calls)

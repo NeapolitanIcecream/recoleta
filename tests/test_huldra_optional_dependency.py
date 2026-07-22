@@ -24,15 +24,19 @@ from recoleta.arxiv_pool import (
 HULDRA_DEPENDENCY_MISSING_REASON = "huldra_dependency_missing"
 
 
-def test_huldra_is_optional_project_dependency() -> None:
-    """Regression: default installs must not fetch the Git-hosted Huldra package."""
+def test_huldra_is_standard_dependency_and_direct_sdk_is_legacy_extra() -> None:
+    """The default install can use Huldra without carrying the direct adapter."""
     metadata = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
     dependencies = metadata["project"]["dependencies"]
-    assert all(not _dependency_names_huldra(dependency) for dependency in dependencies)
+    assert any(_dependency_names_huldra(dependency) for dependency in dependencies)
+    assert all(not dependency.startswith("arxiv") for dependency in dependencies)
 
     optional_huldra = metadata["project"]["optional-dependencies"]["huldra"]
-    assert any(_dependency_names_huldra(dependency) for dependency in optional_huldra)
+    assert optional_huldra == []
+    assert metadata["project"]["optional-dependencies"]["legacy-arxiv"] == [
+        "arxiv>=2.4.0"
+    ]
 
 
 def test_default_cli_import_and_help_do_not_import_huldra() -> None:
@@ -68,7 +72,7 @@ def test_default_cli_import_and_help_do_not_import_huldra() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_huldra_readiness_reports_missing_optional_dependency(
+def test_huldra_readiness_reports_broken_standard_dependency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _block_huldra_imports(monkeypatch)
@@ -83,9 +87,12 @@ def test_huldra_readiness_reports_missing_optional_dependency(
     assert readiness.blocked_reason == HULDRA_DEPENDENCY_MISSING_REASON
     assert readiness.diagnostic is not None
     assert readiness.diagnostic["reason"] == HULDRA_DEPENDENCY_MISSING_REASON
+    assert "standard Recoleta installation requires Huldra" in str(
+        readiness.diagnostic["error_message"]
+    )
 
 
-def test_huldra_sync_cli_reports_missing_optional_dependency_as_json(
+def test_huldra_sync_cli_reports_broken_standard_dependency_as_json(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

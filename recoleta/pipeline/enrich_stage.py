@@ -6,6 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Protocol, cast
 
 import httpx
@@ -18,6 +19,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 
+from recoleta.arxiv_content_admission import ArxivContentAdmission
 from recoleta.extract import (
     convert_html_document_to_markdown,
     extract_html_document_cleaned_with_references,
@@ -57,7 +59,7 @@ class ItemContentRequest:
     item: Any
     log: Any
     diag: dict[str, Any] | None = None
-    arxiv_html_throttle: Callable[[], None] | None = None
+    arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -68,7 +70,7 @@ class ArxivContentRequest:
     source_item_id: str | None
     log: Any
     diag: dict[str, Any] | None = None
-    arxiv_html_throttle: Callable[[], None] | None = None
+    arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -79,7 +81,7 @@ class ArxivHtmlDocumentRequest:
     source_item_id: str | None
     log: Any
     diag: dict[str, Any] | None = None
-    arxiv_html_throttle: Callable[[], None] | None = None
+    arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -91,6 +93,7 @@ class PdfContentRequest:
     source_item_id: str | None
     log: Any
     diag: dict[str, Any] | None = None
+    arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -211,6 +214,7 @@ class EnrichStageService(Protocol):
         canonical_url: str,
         source_item_id: str | None,
         diag: dict[str, Any] | None = None,
+        arxiv_html_throttle: Callable[[], None] | ArxivContentAdmission | None = None,
     ) -> tuple[str, bool]: ...
 
     def _annotate_content_diag(
@@ -348,6 +352,7 @@ def _fallback_to_arxiv_pdf(
             source_item_id=request.source_item_id,
             log=request.log,
             diag=request.diag,
+            arxiv_html_throttle=request.arxiv_html_throttle,
         )
     )
 
@@ -364,8 +369,16 @@ def _ensure_arxiv_latex_mode(
             canonical_url=request.canonical_url,
             source_item_id=request.source_item_id,
             diag=request.diag,
+            arxiv_html_throttle=request.arxiv_html_throttle,
         )
     except Exception as method_exc:
+        if (
+            service._classify_arxiv_html_document_fallback_reason(method_exc)
+            == "http_429"
+        ):
+            if request.diag is not None:
+                request.diag["arxiv_content_rate_limited"] = 1
+            raise
         _log_arxiv_pdf_fallback(
             service=service,
             request=request,
@@ -417,6 +430,10 @@ def _record_arxiv_html_document_fallback(
     if service.settings.sources.arxiv.enrich_failure_mode == "strict":
         raise exc
     reason_bucket = service._classify_arxiv_html_document_fallback_reason(exc)
+    if reason_bucket == "http_429":
+        if request.diag is not None:
+            request.diag["arxiv_content_rate_limited"] = 1
+        raise exc
     if request.diag is not None:
         request.diag["html_document_fallback_to_pdf"] = 1
         request.diag[f"html_document_fallback_reason.{reason_bucket}"] = 1
@@ -499,7 +516,18 @@ def ensure_pdf_content(
         raise ValueError("missing pdf url")
 
     fetch_started = time.perf_counter()
-    pdf_bytes = fetch_url_bytes(request.client, pdf_url)
+    before_attempt, on_rate_limited = _arxiv_admission_callbacks(
+        admission=request.arxiv_html_throttle if request.source == "arxiv" else None,
+        diag=request.diag,
+    )
+    fetch_kwargs: dict[str, Any] = {}
+    if request.source == "arxiv":
+        fetch_kwargs = {
+            "before_attempt": before_attempt,
+            "on_rate_limited": on_rate_limited,
+            "retry_on_429": False,
+        }
+    pdf_bytes = fetch_url_bytes(request.client, pdf_url, **fetch_kwargs)
     if request.diag is not None:
         request.diag["fetch_ms"] = request.diag.get("fetch_ms", 0) + int(
             (time.perf_counter() - fetch_started) * 1000
@@ -564,6 +592,8 @@ class _EnrichStats:
     html_document_fallback_reason_totals: dict[str, int] = None  # type: ignore[assignment]
     html_document_db_read_ms_sum: int = 0
     html_document_db_write_ms_sum: int = 0
+    arxiv_content_rate_limited_total: int = 0
+    arxiv_content_rate_wait_ms_sum: int = 0
     source_stats: dict[str, dict[str, Any]] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
@@ -721,6 +751,13 @@ class _EnrichStats:
             self.arxiv_items_by_method[arxiv_method] = (
                 self.arxiv_items_by_method.get(arxiv_method, 0) + 1
             )
+        if source == "arxiv":
+            self.arxiv_content_rate_limited_total += int(
+                diag.get("arxiv_content_rate_limited") or 0
+            )
+            self.arxiv_content_rate_wait_ms_sum += int(
+                diag.get("arxiv_content_rate_wait_ms") or 0
+            )
         if source == "arxiv" and arxiv_method == "html_document":
             self._consume_html_document_diag(diag)
 
@@ -788,6 +825,16 @@ class _EnrichStats:
                     "pipeline.enrich.parallel.html_maintext.max_workers",
                     self.parallel_html_maintext_max_workers,
                     "count",
+                ),
+                (
+                    "pipeline.enrich.arxiv.content.rate_limited_total",
+                    self.arxiv_content_rate_limited_total,
+                    "count",
+                ),
+                (
+                    "pipeline.enrich.arxiv.content.rate_wait_ms_sum",
+                    self.arxiv_content_rate_wait_ms_sum,
+                    "ms",
                 ),
                 (
                     "pipeline.enrich.duration_ms",
@@ -973,11 +1020,16 @@ class _EnrichStageRunner:
             and self.html_document_max_concurrency > 1
         )
         self.enable_html_maintext_parallel = self.html_maintext_max_concurrency > 1
-        self.arxiv_html_throttle = _build_arxiv_html_throttle(service)
+        self.arxiv_html_throttle: ArxivContentAdmission | None = None
 
     def run(self) -> None:
         with self.service.repository.sql_diagnostics() as sql_diag:
             items = self._load_items()
+            if any(
+                str(getattr(item, "source", "") or "").strip().lower() == "arxiv"
+                for item in items
+            ):
+                self.arxiv_html_throttle = _build_arxiv_html_throttle(self.service)
             stats = _EnrichStats(service=self.service)
             if self.enable_parallel or self.enable_html_maintext_parallel:
                 (
@@ -1416,10 +1468,18 @@ class _ArxivHtmlDocumentContext:
         return existing_document, stored_new
 
     def fetch_html(self, *, url: str) -> str:
-        if callable(self.request.arxiv_html_throttle):
-            self.request.arxiv_html_throttle()
+        before_attempt, on_rate_limited = _arxiv_admission_callbacks(
+            admission=self.request.arxiv_html_throttle,
+            diag=self.request.diag,
+        )
         fetch_started = time.perf_counter()
-        html = fetch_url_html(self.request.client, url)
+        html = fetch_url_html(
+            self.request.client,
+            url,
+            before_attempt=before_attempt,
+            on_rate_limited=on_rate_limited,
+            retry_on_429=False,
+        )
         if self.request.diag is not None:
             self.request.diag["fetch_ms"] = self.request.diag.get("fetch_ms", 0) + int(
                 (time.perf_counter() - fetch_started) * 1000
@@ -1570,28 +1630,52 @@ class _ArxivHtmlDocumentContext:
         return bucket < self.sample_rate
 
 
-class _ArxivHtmlRateLimiter:
-    def __init__(self, *, requests_per_second: float) -> None:
-        self._interval_s = 1.0 / max(0.0001, float(requests_per_second))
-        self._lock = threading.Lock()
-        self._next_at = time.monotonic()
-
-    def acquire(self) -> None:
-        with self._lock:
-            now = time.monotonic()
-            scheduled = self._next_at if self._next_at > now else now
-            self._next_at = scheduled + self._interval_s
-            wait_s = scheduled - now
-        if wait_s > 0:
-            time.sleep(wait_s)
-
-
 def _build_arxiv_html_throttle(
     service: EnrichStageService,
-) -> Callable[[], None] | None:
+) -> ArxivContentAdmission | None:
     arxiv_rps = float(
         service.settings.sources.arxiv.html_document_requests_per_second or 0.0
     )
     if arxiv_rps <= 0:
         return None
-    return _ArxivHtmlRateLimiter(requests_per_second=arxiv_rps).acquire
+    configured_path = getattr(
+        service.settings.sources.arxiv,
+        "content_admission_db_path",
+        "~/.cache/recoleta/arxiv-content-admission.sqlite3",
+    )
+    cooldown_seconds = int(
+        getattr(service.settings.sources.arxiv, "content_cooldown_seconds", 3600)
+        or 3600
+    )
+    return ArxivContentAdmission(
+        db_path=Path(configured_path),
+        requests_per_second=arxiv_rps,
+        cooldown_seconds=cooldown_seconds,
+    )
+
+
+def _arxiv_admission_callbacks(
+    *,
+    admission: Callable[[], None] | ArxivContentAdmission | None,
+    diag: dict[str, Any] | None,
+) -> tuple[Callable[[], None] | None, Callable[[httpx.Response], None] | None]:
+    if admission is None:
+        return None, None
+    if isinstance(admission, ArxivContentAdmission):
+
+        def before_attempt() -> None:
+            waited = admission.acquire()
+            if diag is not None and waited > 0:
+                diag["arxiv_content_rate_wait_ms"] = int(
+                    diag.get("arxiv_content_rate_wait_ms", 0)
+                ) + int(waited * 1000)
+
+        def on_rate_limited(response: httpx.Response) -> None:
+            admission.record_rate_limited(response)
+            if diag is not None:
+                diag["arxiv_content_rate_limited"] = 1
+
+        return before_attempt, on_rate_limited
+    if callable(admission):
+        return admission, None
+    return None, None

@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 from urllib.parse import urljoin
 
-import arxiv
 from bs4 import BeautifulSoup
 import feedparser
 import httpx
@@ -370,9 +369,23 @@ def pull_arxiv_drafts(
     *,
     pool_backend: Any | None = None,
 ) -> list[ItemDraft] | SourcePullResult:
-    if str(getattr(request, "mode", "direct") or "direct").strip().lower() == "pool":
+    mode = str(getattr(request, "mode", "pool") or "pool").strip().lower()
+    if mode == "pool":
         return _ArxivPoolPuller(request, pool_backend=pool_backend).pull()
-    return _ArxivPuller(request).pull()
+    if mode == "direct":
+        return _ArxivPuller(request).pull()
+    raise ValueError("arXiv source mode must be one of: pool, direct")
+
+
+def _load_legacy_arxiv_sdk() -> Any:
+    try:
+        return __import__("arxiv")
+    except ImportError as exc:
+        raise RuntimeError(
+            "The deprecated SOURCES.arxiv.mode=direct adapter requires the "
+            "legacy dependency extra; install recoleta[legacy-arxiv] (or run "
+            "`uv sync --extra legacy-arxiv`), then migrate to Huldra pool mode."
+        ) from exc
 
 
 class _ArxivPoolPuller:
@@ -717,7 +730,8 @@ class _ArxivPuller:
         self.request = request
         self.stats = SourcePullResult()
         self.drafts: list[ItemDraft] = []
-        self.client = arxiv.Client()
+        self.arxiv = _load_legacy_arxiv_sdk()
+        self.client = self.arxiv.Client()
         self.seen_entry_ids: set[str] = set()
         self.total_cap = (
             max(1, int(request.max_total_items))
@@ -747,14 +761,14 @@ class _ArxivPuller:
     def _pull_query(self, query: str) -> None:
         state = self._query_state(query)
         newest_published_at = state.watermark
-        search = arxiv.Search(
+        search = self.arxiv.Search(
             query=_arxiv_query_with_period(
                 query=query,
                 period_start=state.period_start,
                 period_end=state.period_end,
             ),
             max_results=self.request.max_results_per_run,
-            sort_by=arxiv.SortCriterion.SubmittedDate,
+            sort_by=self.arxiv.SortCriterion.SubmittedDate,
         )
         for result in self.client.results(search):
             draft = self._draft_for_result(query=query, result=result)

@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from recoleta.arxiv_pool import (
+    ArxivPoolBackendDescriptor,
     ArxivPoolPaper,
     ArxivPoolReadinessPolicy,
     ArxivPoolStore,
@@ -16,6 +17,10 @@ from recoleta.arxiv_pool import (
     build_arxiv_pool_windows_for_days,
     evaluate_arxiv_pool_readiness,
     pool_paper_to_item_draft,
+)
+from recoleta.cli.arxiv_pool_readiness import (
+    ArxivPoolWorkflowReadinessPlan,
+    pre_sync_missing_mature_huldra_windows,
 )
 from recoleta.sources import ArxivPullRequest, SourcePullResult, fetch_arxiv_drafts
 from tests.spec_support import (
@@ -37,6 +42,15 @@ def _window() -> ArxivPoolWindow:
         period_end=datetime(2026, 5, 21, tzinfo=UTC),
         max_results=60,
     )
+
+
+def _window_payload(window: ArxivPoolWindow) -> dict[str, Any]:
+    return {
+        "query_text": window.query_text,
+        "period_start": window.period_start.isoformat(),
+        "period_end": window.period_end.isoformat(),
+        "max_results": window.max_results,
+    }
 
 
 def _paper(
@@ -155,6 +169,148 @@ def test_huldra_ready_result_returns_pool_papers_and_cache_only_request() -> Non
     assert request.readiness == "analysis_ready"
     assert request.maturity_lag_days == 1
     assert request.timeout_seconds == 12
+
+
+def test_workflow_pre_sync_requests_only_missing_mature_huldra_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    synced_requests: list[Any] = []
+
+    class _SyncClient:
+        def __init__(self, *, base_url: str, timeout: float) -> None:
+            assert base_url == "http://127.0.0.1:8765"
+            assert timeout == 12
+
+        def __enter__(self) -> "_SyncClient":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def sync_windows(self, requests: list[Any], **kwargs: Any) -> Any:
+            assert kwargs == {"wait": True, "wait_timeout_seconds": 120.0}
+            synced_requests.extend(requests)
+            from tests.spec_support import FakeHuldraMaintenanceResult
+
+            return FakeHuldraMaintenanceResult(
+                requested_total=len(requests),
+                completed_windows_total=len(requests),
+            )
+
+    monkeypatch.setattr("huldra.client.HuldraClient", _SyncClient)
+    mature_missing = _window()
+    immature_missing = ArxivPoolWindow(
+        query_text="cat:cs.LG",
+        period_start=datetime(2026, 5, 21, tzinfo=UTC),
+        period_end=datetime(2026, 5, 22, tzinfo=UTC),
+        max_results=60,
+    )
+    plan = ArxivPoolWorkflowReadinessPlan(
+        status="planned",
+        reason=None,
+        pool_db_path=None,
+        windows=[mature_missing, immature_missing],
+        backend_descriptor=ArxivPoolBackendDescriptor(
+            kind="huldra", identity="http://127.0.0.1:8765"
+        ),
+        huldra_request_timeout_seconds=12,
+        huldra_wait_timeout_seconds=120,
+    )
+    readiness = {
+        "windows": [
+            {
+                **_window_payload(mature_missing),
+                "mature": True,
+                "analysis_ready": False,
+                "blocked_reason": "missing_window",
+            },
+            {
+                **_window_payload(immature_missing),
+                "mature": False,
+                "analysis_ready": False,
+                "blocked_reason": "immature_window",
+            },
+        ]
+    }
+
+    result = pre_sync_missing_mature_huldra_windows(
+        plan=plan,
+        readiness=readiness,
+        enabled=True,
+        max_windows=31,
+    )
+
+    assert result["status"] == "completed"
+    assert result["eligible_windows_total"] == 1
+    assert result["requested_windows_total"] == 1
+    assert result["deferred_windows_total"] == 0
+    assert len(synced_requests) == 1
+    assert synced_requests[0].search_query == mature_missing.query_text
+
+
+def test_workflow_pre_sync_enforces_window_budget_without_request_burst(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested: list[Any] = []
+
+    class _SyncClient:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def __enter__(self) -> "_SyncClient":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def sync_windows(self, requests: list[Any], **_kwargs: Any) -> Any:
+            requested.extend(requests)
+            from tests.spec_support import FakeHuldraMaintenanceResult
+
+            return FakeHuldraMaintenanceResult(requested_total=len(requests))
+
+    monkeypatch.setattr("huldra.client.HuldraClient", _SyncClient)
+    windows = [
+        ArxivPoolWindow(
+            query_text=f"cat:cs.AI AND all:budget-{index}",
+            period_start=datetime(2026, 5, 20, tzinfo=UTC),
+            period_end=datetime(2026, 5, 21, tzinfo=UTC),
+            max_results=60,
+        )
+        for index in range(3)
+    ]
+    plan = ArxivPoolWorkflowReadinessPlan(
+        status="planned",
+        reason=None,
+        pool_db_path=None,
+        windows=windows,
+        backend_descriptor=ArxivPoolBackendDescriptor(
+            kind="huldra", identity="http://127.0.0.1:8765"
+        ),
+    )
+    readiness = {
+        "windows": [
+            {
+                **_window_payload(window),
+                "mature": True,
+                "analysis_ready": False,
+                "blocked_reason": "missing_window",
+            }
+            for window in windows
+        ]
+    }
+
+    result = pre_sync_missing_mature_huldra_windows(
+        plan=plan,
+        readiness=readiness,
+        enabled=True,
+        max_windows=2,
+    )
+
+    assert len(requested) == 2
+    assert result["eligible_windows_total"] == 3
+    assert result["requested_windows_total"] == 2
+    assert result["deferred_windows_total"] == 1
 
 
 def test_huldra_immature_analysis_ready_result_emits_no_papers() -> None:

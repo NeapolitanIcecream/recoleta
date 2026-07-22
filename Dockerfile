@@ -37,6 +37,7 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
+        git \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock README.md ./

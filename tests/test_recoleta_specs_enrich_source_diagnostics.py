@@ -1,10 +1,57 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from recoleta.pipeline import PipelineService
 from recoleta.types import ItemDraft
 from tests.spec_support import FakeAnalyzer, FakeTelegramSender, _build_runtime
+
+
+def test_enrich_without_arxiv_items_does_not_create_content_admission_state(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "SOURCES",
+        json.dumps(
+            {
+                "rss": {
+                    "enabled": True,
+                    "feeds": ["https://example.com/feed.xml"],
+                },
+            }
+        ),
+    )
+    settings, repository = _build_runtime()
+    import recoleta.pipeline.enrich_stage as enrich_stage
+
+    monkeypatch.setattr(
+        enrich_stage,
+        "_build_arxiv_html_throttle",
+        lambda _service: pytest.fail(
+            "non-arXiv enrich must not initialize content admission"
+        ),
+    )
+    service = PipelineService(
+        settings=settings,
+        repository=repository,
+        analyzer=FakeAnalyzer(),
+        telegram_sender=FakeTelegramSender(),
+    )
+    service.ingest(
+        run_id="run-no-arxiv-admission",
+        drafts=[
+            ItemDraft.from_values(
+                source="rss",
+                source_item_id="rss-only",
+                canonical_url="https://example.com/rss-only",
+                title="RSS only",
+            )
+        ],
+    )
+
+    service.enrich(run_id="run-no-arxiv-admission", limit=10)
 
 
 def test_enrich_records_source_metrics_for_html_and_pdf_paths(

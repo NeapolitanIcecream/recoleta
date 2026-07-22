@@ -681,11 +681,12 @@ def test_pool_backed_arxiv_ingest_reads_cached_drafts_without_upstream(
 
     import recoleta.source_pullers as source_pullers
 
-    class ForbiddenClient:
-        def __init__(self) -> None:
-            raise AssertionError("pool mode must not instantiate arxiv.Client")
+    def forbidden_legacy_sdk() -> object:
+        raise AssertionError("pool mode must not import the legacy arxiv SDK")
 
-    monkeypatch.setattr(source_pullers.arxiv, "Client", ForbiddenClient)
+    monkeypatch.setattr(
+        source_pullers, "_load_legacy_arxiv_sdk", forbidden_legacy_sdk
+    )
 
     result = fetch_arxiv_drafts(
         request=ArxivPullRequest(
@@ -2185,6 +2186,96 @@ def test_fleet_workflow_runs_pool_pre_sync_before_child_ingest(
     assert payload["arxiv_pool_pre_sync"]["sync"]["requested_windows_total"] == 14
 
 
+@pytest.mark.parametrize(
+    ("enabled", "budget", "expected_requests"),
+    [(False, 31, 0), (True, 1, 1)],
+)
+def test_huldra_fleet_workflow_honors_pre_sync_controls_and_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    enabled: bool,
+    budget: int,
+    expected_requests: int,
+) -> None:
+    install_fake_huldra(monkeypatch)
+    from tests.spec_support import FakeHuldraMaintenanceResult
+
+    manifest_path = _write_huldra_fleet_manifest(
+        tmp_path,
+        base_urls=("http://127.0.0.1:8765", "http://127.0.0.1:8765"),
+        workflow_pre_sync_enabled=(enabled, enabled),
+        workflow_pre_sync_max_windows=(budget, budget),
+    )
+    synced_requests: list[Any] = []
+
+    class FakeHuldraClient:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def __enter__(self) -> "FakeHuldraClient":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def sync_windows(self, requests: list[Any], **_kwargs: Any) -> Any:
+            synced_requests.extend(requests)
+            return FakeHuldraMaintenanceResult(requested_total=len(requests))
+
+    import huldra.client
+    import recoleta.cli.fleet as fleet_module
+
+    monkeypatch.setattr(huldra.client, "HuldraClient", FakeHuldraClient)
+
+    def missing_mature_readiness(plan):  # type: ignore[no-untyped-def]
+        return {
+            "status": "blocked",
+            "blocked_windows_total": len(plan.windows),
+            "immature_windows_total": 0,
+            "windows": [
+                {
+                    "query_text": window.query_text,
+                    "period_start": window.period_start.isoformat(),
+                    "period_end": window.period_end.isoformat(),
+                    "max_results": window.max_results,
+                    "mature": True,
+                    "analysis_ready": False,
+                    "blocked_reason": "missing_window",
+                }
+                for window in plan.windows
+            ],
+        }
+
+    monkeypatch.setattr(
+        fleet_module,
+        "evaluate_arxiv_pool_workflow_readiness",
+        missing_mature_readiness,
+    )
+    monkeypatch.setattr(
+        fleet_module,
+        "_fleet_granularity_child_payload",
+        lambda **_kwargs: pytest.fail("strict readiness should block children"),
+    )
+
+    with pytest.raises(typer.Exit):
+        execute_fleet_granularity_workflow(
+            manifest_path=manifest_path,
+            workflow_name="week",
+            command="fleet run week",
+            anchor_date="2026-04-27",
+            json_output=True,
+        )
+
+    payload = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert len(synced_requests) == expected_requests
+    assert payload["arxiv_pool_pre_sync"]["requested_windows_total"] == expected_requests
+    if enabled:
+        assert payload["arxiv_pool_pre_sync"]["deferred_windows_total"] == 13
+    else:
+        assert payload["arxiv_pool_pre_sync"]["reason"] == "disabled"
+
+
 def test_fleet_workflow_dry_run_skips_pool_pre_sync_and_marks_children_dry_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2541,6 +2632,7 @@ def _write_pool_fleet_manifest(
                     "PUBLISH_TARGETS": ["markdown"],
                     "ARXIV_POOL": {
                         "enabled": True,
+                        "backend": "local_sqlite",
                         "db_path": str(pool_path),
                         "request_interval_seconds": _child_setting(
                             request_interval_seconds, index
@@ -2597,6 +2689,7 @@ def _write_pool_config(*, tmp_path: Path, pool_path: Path) -> Path:
                 "PUBLISH_TARGETS": ["markdown"],
                 "ARXIV_POOL": {
                     "enabled": True,
+                    "backend": "local_sqlite",
                     "db_path": str(pool_path),
                     "request_interval_seconds": 0,
                 },
@@ -2651,6 +2744,8 @@ def _write_huldra_fleet_manifest(
     queries: tuple[str, str] = ("cat:cs.AI", "cat:cs.LG"),
     huldra_request_timeout_seconds: tuple[float, float] = (30.0, 30.0),
     huldra_wait_timeout_seconds: tuple[float | None, float | None] = (None, None),
+    workflow_pre_sync_enabled: tuple[bool, bool] = (True, True),
+    workflow_pre_sync_max_windows: tuple[int, int] = (31, 31),
 ) -> Path:
     child_paths: list[Path] = []
     for index, name in enumerate(("embodied_ai", "software")):
@@ -2661,6 +2756,8 @@ def _write_huldra_fleet_manifest(
             "backend": "huldra",
             "huldra_base_url": base_urls[index],
             "huldra_request_timeout_seconds": huldra_request_timeout_seconds[index],
+            "workflow_pre_sync_enabled": workflow_pre_sync_enabled[index],
+            "workflow_pre_sync_max_windows": workflow_pre_sync_max_windows[index],
         }
         wait_timeout = huldra_wait_timeout_seconds[index]
         if wait_timeout is not None:

@@ -130,11 +130,10 @@ Public examples:
 
 ## 4. Pick the closest preset example
 
-The preset configs that include arXiv use
-[Huldra](https://github.com/NeapolitanIcecream/huldra)-backed pool mode.
-Install the `huldra` extra and make sure the configured
-`arxiv_pool.huldra_base_url` points at your Huldra service before running one of
-them.
+The preset configs that include arXiv use the standard
+[Huldra](https://github.com/NeapolitanIcecream/huldra)-backed pool mode. Huldra
+is installed with Recoleta; make sure `arxiv_pool.huldra_base_url` points at
+your running service before using a preset.
 
 ### Agents radar
 

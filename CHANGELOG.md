@@ -7,6 +7,26 @@ Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- Enabled arXiv sources now default to Huldra-backed pool mode. Huldra ships in
+  the standard installation; the built-in direct adapter and local SQLite pool
+  are deprecated, explicit rollback paths with no automatic fallback.
+- The deprecated direct arXiv adapter now lazy-loads the `arxiv` SDK from the
+  `legacy-arxiv` extra, so standard Huldra deployments no longer install or
+  import it.
+- Scheduled day, week, and month workflows now target only closed UTC periods
+  and reconcile a bounded number of missed windows oldest first.
+
+### Added
+
+- `recoleta fleet daemon start --manifest ...` with top-level fleet schedules
+  and one crash-safe host-local lease around each complete catch-up sequence.
+- Bounded automatic Huldra pre-sync for missing mature workflow windows.
+- Cross-process SQLite admission and cooldown for arxiv.org HTML, PDF, and
+  e-print content fetches. A content 429 is not retried immediately and does not
+  trigger an HTML-to-PDF fallback request.
+
 ## [0.5.0] - 2026-07-17
 
 ### Added
