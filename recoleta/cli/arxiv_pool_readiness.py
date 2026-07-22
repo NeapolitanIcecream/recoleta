@@ -267,6 +267,7 @@ def _window_needs_pre_sync(readiness: dict[str, Any] | None) -> bool:
         return False
     return str(readiness.get("blocked_reason") or "") in {
         "missing_window",
+        "queued_window",
         "failed_window",
         "timeout_window",
     }

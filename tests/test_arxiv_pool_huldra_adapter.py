@@ -171,7 +171,7 @@ def test_huldra_ready_result_returns_pool_papers_and_cache_only_request() -> Non
     assert request.timeout_seconds == 12
 
 
-def test_workflow_pre_sync_requests_only_missing_mature_huldra_windows(
+def test_workflow_pre_sync_requests_missing_and_queued_mature_huldra_windows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     synced_requests: list[Any] = []
@@ -205,11 +205,17 @@ def test_workflow_pre_sync_requests_only_missing_mature_huldra_windows(
         period_end=datetime(2026, 5, 22, tzinfo=UTC),
         max_results=60,
     )
+    mature_queued = ArxivPoolWindow(
+        query_text="cat:cs.CL",
+        period_start=datetime(2026, 5, 20, tzinfo=UTC),
+        period_end=datetime(2026, 5, 21, tzinfo=UTC),
+        max_results=60,
+    )
     plan = ArxivPoolWorkflowReadinessPlan(
         status="planned",
         reason=None,
         pool_db_path=None,
-        windows=[mature_missing, immature_missing],
+        windows=[mature_missing, immature_missing, mature_queued],
         backend_descriptor=ArxivPoolBackendDescriptor(
             kind="huldra", identity="http://127.0.0.1:8765"
         ),
@@ -230,6 +236,12 @@ def test_workflow_pre_sync_requests_only_missing_mature_huldra_windows(
                 "analysis_ready": False,
                 "blocked_reason": "immature_window",
             },
+            {
+                **_window_payload(mature_queued),
+                "mature": True,
+                "analysis_ready": False,
+                "blocked_reason": "queued_window",
+            },
         ]
     }
 
@@ -241,11 +253,13 @@ def test_workflow_pre_sync_requests_only_missing_mature_huldra_windows(
     )
 
     assert result["status"] == "completed"
-    assert result["eligible_windows_total"] == 1
-    assert result["requested_windows_total"] == 1
+    assert result["eligible_windows_total"] == 2
+    assert result["requested_windows_total"] == 2
     assert result["deferred_windows_total"] == 0
-    assert len(synced_requests) == 1
-    assert synced_requests[0].search_query == mature_missing.query_text
+    assert [request.search_query for request in synced_requests] == [
+        mature_missing.query_text,
+        mature_queued.query_text,
+    ]
 
 
 def test_workflow_pre_sync_enforces_window_budget_without_request_burst(
