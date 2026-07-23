@@ -33,6 +33,8 @@
         ],
         "favicon": "assets/favicon.svg",
         "idea_pages": [
+          "ideas/embodied-ai--day--2026-07-22--ideas.html",
+          "ideas/software-intelligence--day--2026-07-22--ideas.html",
           "ideas/embodied-ai--day--2026-07-21--ideas.html",
           "ideas/software-intelligence--day--2026-07-21--ideas.html",
           "ideas/embodied-ai--day--2026-07-20--ideas.html",
@@ -301,6 +303,17 @@
         ],
         "index": "index.html",
         "item_pages": [
+          "items/software-intelligence--2026-07-22--multi-source-and-cross-scenario-strategy-guided-code-optimization.html",
+          "items/embodied-ai--2026-07-22--closing-the-lab-to-store-gap-a-data-efficient-post-training-and-experience-driven-learning-vla-framework-for-retail-humanoids.html",
+          "items/embodied-ai--2026-07-22--refertrack-referring-then-tracking-for-embodied-visual-tracking.html",
+          "items/embodied-ai--2026-07-22--kinebench-benchmarking-embodied-world-models-via-idm-free-kinematic-grounding.html",
+          "items/software-intelligence--2026-07-22--beyond-fail-to-pass-iterative-hardening-of-co-generated-bug-reproduction-tests-and-fixes.html",
+          "items/embodied-ai--2026-07-22--the-world-model-remembers-the-actor-forgets-dream-rehearsal-for-continual-model-based-rl.html",
+          "items/embodied-ai--2026-07-22--koopman-dreamer-spectrally-constrained-latent-dynamics-for-stable-world-model-imagination.html",
+          "items/software-intelligence--2026-07-22--bridging-behavior-and-implementation-automated-java-glue-code-generation-for-behavior-driven-development.html",
+          "items/software-intelligence--2026-07-22--context-matters-improving-the-practical-reliability-of-llm-based-unit-test-generation.html",
+          "items/software-intelligence--2026-07-22--perfagent-profiler-guided-iterative-refinement-for-repository-level-code-optimization.html",
+          "items/embodied-ai--2026-07-22--lens-llm-guided-environment-simplification-for-planning-and-control-in-clutter.html",
           "items/software-intelligence--2026-07-21--jetbrains-context-repository-intelligence-for-coding-agents.html",
           "items/embodied-ai--2026-07-21--masked-visual-actions-for-unified-world-modeling.html",
           "items/software-intelligence--2026-07-21--coderescue-budget-calibrated-recovery-routing-for-coding-agents.html",
@@ -1983,6 +1996,9 @@
           "code-model-calibration": [
             "topics/code-model-calibration.html"
           ],
+          "code-optimization": [
+            "topics/code-optimization.html"
+          ],
           "code-quality": [
             "topics/code-quality.html"
           ],
@@ -3213,6 +3229,9 @@
           "sysml": [
             "topics/sysml.html"
           ],
+          "system-reliability": [
+            "topics/system-reliability.html"
+          ],
           "systems-code": [
             "topics/systems-code.html"
           ],
@@ -3257,7 +3276,8 @@
             "topics/test-evolution.html"
           ],
           "test-generation": [
-            "topics/test-generation.html"
+            "topics/test-generation.html",
+            "topics/test-generation/page/2/index.html"
           ],
           "test-migration": [
             "topics/test-migration.html"
@@ -3560,6 +3580,7 @@
           "topics/code-generation-benchmarks.html",
           "topics/code-llm-evaluation.html",
           "topics/code-model-calibration.html",
+          "topics/code-optimization.html",
           "topics/code-quality.html",
           "topics/code-repair.html",
           "topics/code-review.html",
@@ -3953,6 +3974,7 @@
           "topics/synthetic-data.html",
           "topics/synthetic-robot-data.html",
           "topics/sysml.html",
+          "topics/system-reliability.html",
           "topics/systems-code.html",
           "topics/systems-optimization.html",
           "topics/tactile-control.html",
@@ -4054,6 +4076,8 @@
           "topics/page/24/index.html"
         ],
         "trend_pages": [
+          "trends/embodied-ai--day--2026-07-22--trend--946.html",
+          "trends/software-intelligence--day--2026-07-22--trend--2064.html",
           "trends/embodied-ai--day--2026-07-21--trend--935.html",
           "trends/software-intelligence--day--2026-07-21--trend--2050.html",
           "trends/embodied-ai--day--2026-07-20--trend--928.html",
@@ -4338,6 +4362,8 @@
         ],
         "favicon": "assets/favicon.svg",
         "idea_pages": [
+          "ideas/embodied-ai--day--2026-07-22--ideas.html",
+          "ideas/software-intelligence--day--2026-07-22--ideas.html",
           "ideas/embodied-ai--day--2026-07-21--ideas.html",
           "ideas/software-intelligence--day--2026-07-21--ideas.html",
           "ideas/embodied-ai--day--2026-07-20--ideas.html",
@@ -4606,6 +4632,17 @@
         ],
         "index": "index.html",
         "item_pages": [
+          "items/software-intelligence--2026-07-22--multi-source-and-cross-scenario-strategy-guided-code-optimization.html",
+          "items/embodied-ai--2026-07-22--closing-the-lab-to-store-gap-a-data-efficient-post-training-and-experience-driven-learning-vla-framework-for-retail-humanoids.html",
+          "items/embodied-ai--2026-07-22--refertrack-referring-then-tracking-for-embodied-visual-tracking.html",
+          "items/embodied-ai--2026-07-22--kinebench-benchmarking-embodied-world-models-via-idm-free-kinematic-grounding.html",
+          "items/software-intelligence--2026-07-22--beyond-fail-to-pass-iterative-hardening-of-co-generated-bug-reproduction-tests-and-fixes.html",
+          "items/embodied-ai--2026-07-22--the-world-model-remembers-the-actor-forgets-dream-rehearsal-for-continual-model-based-rl.html",
+          "items/embodied-ai--2026-07-22--koopman-dreamer-spectrally-constrained-latent-dynamics-for-stable-world-model-imagination.html",
+          "items/software-intelligence--2026-07-22--bridging-behavior-and-implementation-automated-java-glue-code-generation-for-behavior-driven-development.html",
+          "items/software-intelligence--2026-07-22--context-matters-improving-the-practical-reliability-of-llm-based-unit-test-generation.html",
+          "items/software-intelligence--2026-07-22--perfagent-profiler-guided-iterative-refinement-for-repository-level-code-optimization.html",
+          "items/embodied-ai--2026-07-22--lens-llm-guided-environment-simplification-for-planning-and-control-in-clutter.html",
           "items/software-intelligence--2026-07-21--jetbrains-context-repository-intelligence-for-coding-agents.html",
           "items/embodied-ai--2026-07-21--masked-visual-actions-for-unified-world-modeling.html",
           "items/software-intelligence--2026-07-21--coderescue-budget-calibrated-recovery-routing-for-coding-agents.html",
@@ -6291,6 +6328,9 @@
           "cad-automation": [
             "topics/cad-automation.html"
           ],
+          "cang-ku-shang-xia-wen": [
+            "topics/cang-ku-shang-xia-wen.html"
+          ],
           "ce-lue-gua-ying": [
             "topics/ce-lue-gua-ying.html"
           ],
@@ -6342,6 +6382,9 @@
           ],
           "code-model-calibration": [
             "topics/code-model-calibration.html"
+          ],
+          "code-optimization": [
+            "topics/code-optimization.html"
           ],
           "code-quality": [
             "topics/code-quality.html"
@@ -6504,6 +6547,9 @@
           ],
           "dai-ma-ji-zhun": [
             "topics/dai-ma-ji-zhun.html"
+          ],
+          "dai-ma-you-hua": [
+            "topics/dai-ma-you-hua.html"
           ],
           "dai-ma-zhi-neng-ti": [
             "topics/dai-ma-zhi-neng-ti.html"
@@ -7323,7 +7369,8 @@
             "topics/repository-benchmarks.html"
           ],
           "repository-context": [
-            "topics/repository-context.html"
+            "topics/repository-context.html",
+            "topics/repository-context/page/2/index.html"
           ],
           "repository-engineering": [
             "topics/repository-engineering.html"
@@ -7745,6 +7792,9 @@
           "sysml": [
             "topics/sysml.html"
           ],
+          "system-reliability": [
+            "topics/system-reliability.html"
+          ],
           "systems-code": [
             "topics/systems-code.html"
           ],
@@ -8139,6 +8189,7 @@
           "topics/bug-validation.html",
           "topics/c-to-rust-migration.html",
           "topics/cad-automation.html",
+          "topics/cang-ku-shang-xia-wen.html",
           "topics/ce-lue-gua-ying.html",
           "topics/ce-shi-fu-gai-lu.html",
           "topics/ce-shi-sheng-cheng.html",
@@ -8156,6 +8207,7 @@
           "topics/code-generation-benchmarks.html",
           "topics/code-llm-evaluation.html",
           "topics/code-model-calibration.html",
+          "topics/code-optimization.html",
           "topics/code-quality.html",
           "topics/code-repair.html",
           "topics/code-review.html",
@@ -8205,6 +8257,7 @@
           "topics/dai-ma-cang-ku-shang-xia-wen.html",
           "topics/dai-ma-cang-ku-zhi-neng.html",
           "topics/dai-ma-ji-zhun.html",
+          "topics/dai-ma-you-hua.html",
           "topics/dai-ma-zhi-neng-ti.html",
           "topics/dart.html",
           "topics/data-annotation.html",
@@ -8607,6 +8660,7 @@
           "topics/synthetic-data.html",
           "topics/synthetic-robot-data.html",
           "topics/sysml.html",
+          "topics/system-reliability.html",
           "topics/systems-code.html",
           "topics/systems-optimization.html",
           "topics/tactile-control.html",
@@ -8727,6 +8781,8 @@
           "topics/page/28/index.html"
         ],
         "trend_pages": [
+          "trends/embodied-ai--day--2026-07-22--trend--946.html",
+          "trends/software-intelligence--day--2026-07-22--trend--2064.html",
           "trends/embodied-ai--day--2026-07-21--trend--935.html",
           "trends/software-intelligence--day--2026-07-21--trend--2050.html",
           "trends/embodied-ai--day--2026-07-20--trend--928.html",
@@ -8997,6 +9053,8 @@
     },
     "favicon": "assets/favicon.svg",
     "idea_pages": [
+      "ideas/embodied-ai--day--2026-07-22--ideas.html",
+      "ideas/software-intelligence--day--2026-07-22--ideas.html",
       "ideas/embodied-ai--day--2026-07-21--ideas.html",
       "ideas/software-intelligence--day--2026-07-21--ideas.html",
       "ideas/embodied-ai--day--2026-07-20--ideas.html",
@@ -9265,6 +9323,17 @@
     ],
     "index": "index.html",
     "item_pages": [
+      "items/software-intelligence--2026-07-22--multi-source-and-cross-scenario-strategy-guided-code-optimization.html",
+      "items/embodied-ai--2026-07-22--closing-the-lab-to-store-gap-a-data-efficient-post-training-and-experience-driven-learning-vla-framework-for-retail-humanoids.html",
+      "items/embodied-ai--2026-07-22--refertrack-referring-then-tracking-for-embodied-visual-tracking.html",
+      "items/embodied-ai--2026-07-22--kinebench-benchmarking-embodied-world-models-via-idm-free-kinematic-grounding.html",
+      "items/software-intelligence--2026-07-22--beyond-fail-to-pass-iterative-hardening-of-co-generated-bug-reproduction-tests-and-fixes.html",
+      "items/embodied-ai--2026-07-22--the-world-model-remembers-the-actor-forgets-dream-rehearsal-for-continual-model-based-rl.html",
+      "items/embodied-ai--2026-07-22--koopman-dreamer-spectrally-constrained-latent-dynamics-for-stable-world-model-imagination.html",
+      "items/software-intelligence--2026-07-22--bridging-behavior-and-implementation-automated-java-glue-code-generation-for-behavior-driven-development.html",
+      "items/software-intelligence--2026-07-22--context-matters-improving-the-practical-reliability-of-llm-based-unit-test-generation.html",
+      "items/software-intelligence--2026-07-22--perfagent-profiler-guided-iterative-refinement-for-repository-level-code-optimization.html",
+      "items/embodied-ai--2026-07-22--lens-llm-guided-environment-simplification-for-planning-and-control-in-clutter.html",
       "items/software-intelligence--2026-07-21--jetbrains-context-repository-intelligence-for-coding-agents.html",
       "items/embodied-ai--2026-07-21--masked-visual-actions-for-unified-world-modeling.html",
       "items/software-intelligence--2026-07-21--coderescue-budget-calibrated-recovery-routing-for-coding-agents.html",
@@ -10955,6 +11024,9 @@
       "code-model-calibration": [
         "topics/code-model-calibration.html"
       ],
+      "code-optimization": [
+        "topics/code-optimization.html"
+      ],
       "code-quality": [
         "topics/code-quality.html"
       ],
@@ -12185,6 +12257,9 @@
       "sysml": [
         "topics/sysml.html"
       ],
+      "system-reliability": [
+        "topics/system-reliability.html"
+      ],
       "systems-code": [
         "topics/systems-code.html"
       ],
@@ -12229,7 +12304,8 @@
         "topics/test-evolution.html"
       ],
       "test-generation": [
-        "topics/test-generation.html"
+        "topics/test-generation.html",
+        "topics/test-generation/page/2/index.html"
       ],
       "test-migration": [
         "topics/test-migration.html"
@@ -12532,6 +12608,7 @@
       "topics/code-generation-benchmarks.html",
       "topics/code-llm-evaluation.html",
       "topics/code-model-calibration.html",
+      "topics/code-optimization.html",
       "topics/code-quality.html",
       "topics/code-repair.html",
       "topics/code-review.html",
@@ -12925,6 +13002,7 @@
       "topics/synthetic-data.html",
       "topics/synthetic-robot-data.html",
       "topics/sysml.html",
+      "topics/system-reliability.html",
       "topics/systems-code.html",
       "topics/systems-optimization.html",
       "topics/tactile-control.html",
@@ -13026,6 +13104,8 @@
       "topics/page/24/index.html"
     ],
     "trend_pages": [
+      "trends/embodied-ai--day--2026-07-22--trend--946.html",
+      "trends/software-intelligence--day--2026-07-22--trend--2064.html",
       "trends/embodied-ai--day--2026-07-21--trend--935.html",
       "trends/software-intelligence--day--2026-07-21--trend--2050.html",
       "trends/embodied-ai--day--2026-07-20--trend--928.html",
@@ -13293,11 +13373,11 @@
       "trends/page/21/index.html"
     ]
   },
-  "ideas_total": 241,
+  "ideas_total": 243,
   "item_export_scope": "linked",
-  "items_available_total": 7823,
-  "items_total": 1346,
-  "items_unreferenced_total": 6477,
+  "items_available_total": 7875,
+  "items_total": 1357,
+  "items_unreferenced_total": 6518,
   "language_codes": {
     "en": "en",
     "zh-cn": "zh-CN"
@@ -13312,6 +13392,6 @@
     "topic_column_page_size": 12,
     "topic_page_size": 12
   },
-  "topics_total": 571,
-  "trends_total": 241
+  "topics_total": 573,
+  "trends_total": 243
 }
