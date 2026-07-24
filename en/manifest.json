@@ -16,6 +16,7 @@
     ],
     "favicon": "assets/favicon.svg",
     "idea_pages": [
+      "ideas/software-intelligence--day--2026-07-23--ideas.html",
       "ideas/embodied-ai--day--2026-07-22--ideas.html",
       "ideas/software-intelligence--day--2026-07-22--ideas.html",
       "ideas/embodied-ai--day--2026-07-21--ideas.html",
@@ -286,6 +287,11 @@
     ],
     "index": "index.html",
     "item_pages": [
+      "items/software-intelligence--2026-07-23--euclid-mcp-a-model-context-protocol-server-for-deterministic-logical-reasoning-via-prolog.html",
+      "items/software-intelligence--2026-07-23--pai-econ-claude-a-gated-human-in-the-loop-multi-agent-architecture-for-ai-assisted-economic-theory-development.html",
+      "items/software-intelligence--2026-07-23--icae-bench-evaluating-coding-agents-as-interactive-project-builders.html",
+      "items/software-intelligence--2026-07-23--delivery-not-storage-cue-anchored-working-memory-as-a-harness-property-for-coding-agents.html",
+      "items/software-intelligence--2026-07-23--tencent-workbuddy-bench-a-multi-domain-coding-agent-benchmark-with-contamination-resistant-task-construction.html",
       "items/software-intelligence--2026-07-22--multi-source-and-cross-scenario-strategy-guided-code-optimization.html",
       "items/embodied-ai--2026-07-22--closing-the-lab-to-store-gap-a-data-efficient-post-training-and-experience-driven-learning-vla-framework-for-retail-humanoids.html",
       "items/embodied-ai--2026-07-22--refertrack-referring-then-tracking-for-embodied-visual-tracking.html",
@@ -2663,6 +2669,9 @@
       "navigation": [
         "topics/navigation.html"
       ],
+      "neuro-symbolic-reasoning": [
+        "topics/neuro-symbolic-reasoning.html"
+      ],
       "oauth": [
         "topics/oauth.html"
       ],
@@ -2814,6 +2823,9 @@
       ],
       "reliability": [
         "topics/reliability.html"
+      ],
+      "reliability-harnesses": [
+        "topics/reliability-harnesses.html"
       ],
       "repo-generation": [
         "topics/repo-generation.html"
@@ -3783,6 +3795,7 @@
       "topics/multimodal-sensing.html",
       "topics/native-ui.html",
       "topics/navigation.html",
+      "topics/neuro-symbolic-reasoning.html",
       "topics/oauth.html",
       "topics/object-centric-learning.html",
       "topics/observability.html",
@@ -3833,6 +3846,7 @@
       "topics/reinforcement-learning.html",
       "topics/release-engineering.html",
       "topics/reliability.html",
+      "topics/reliability-harnesses.html",
       "topics/repo-generation.html",
       "topics/repo-level-codegen.html",
       "topics/repo-level-generation.html",
@@ -4059,6 +4073,7 @@
       "topics/page/24/index.html"
     ],
     "trend_pages": [
+      "trends/software-intelligence--day--2026-07-23--trend--2079.html",
       "trends/embodied-ai--day--2026-07-22--trend--946.html",
       "trends/software-intelligence--day--2026-07-22--trend--2064.html",
       "trends/embodied-ai--day--2026-07-21--trend--935.html",
@@ -4328,17 +4343,17 @@
       "trends/page/21/index.html"
     ]
   },
-  "ideas_total": 243,
+  "ideas_total": 244,
   "item_export_scope": "linked",
-  "items_available_total": 7875,
-  "items_total": 1357,
-  "items_unreferenced_total": 6518,
+  "items_available_total": 7902,
+  "items_total": 1362,
+  "items_unreferenced_total": 6540,
   "pagination": {
     "card_page_size": 12,
     "dense_page_size": 24,
     "topic_column_page_size": 12,
     "topic_page_size": 12
   },
-  "topics_total": 573,
-  "trends_total": 243
+  "topics_total": 575,
+  "trends_total": 244
 }
