@@ -7,6 +7,11 @@ Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- Trend emails now keep the title-rule gap on the content-bearing title cell,
+  avoiding a standalone full-width spacer surface that Outlook could repaint.
+
 ## [0.6.1] - 2026-07-24
 
 ### Fixed

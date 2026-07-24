@@ -150,6 +150,9 @@ section hierarchy, markdown-to-site rendering, or reader-facing generation rules
   logical heading order, mark layout tables as presentational, use explicit
   Outlook-safe line heights and spacing, and keep the primary touch target at
   least 44px high.
+- Put vertical spacing on content-bearing table cells. Do not place a standalone
+  full-width empty table below a decorative rule, where Outlook can repaint the
+  spacer as a visible band.
 - Use an Outlook-safe VML fallback when a button is necessary, without making a
   large rounded branded button part of the visual identity.
 - Treat the Outlook/Word button branch as a separate renderer. Let the VML shape

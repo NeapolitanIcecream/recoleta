@@ -36,7 +36,7 @@ from recoleta.site_email_links import (
 )
 
 
-EMAIL_RENDERER_VERSION = "trend-email-v6"
+EMAIL_RENDERER_VERSION = "trend-email-v7"
 RESEND_BATCH_MAX_RECIPIENTS = 100
 _EMAIL_COLOR_CANVAS = "#f5f6f8"
 _EMAIL_COLOR_PAPER = "#ffffff"
@@ -990,10 +990,9 @@ def _render_html_email(*, bundle: _TrendEmailBundle) -> str:
         f"<table class='email-shell' role='presentation' width='600' cellspacing='0' cellpadding='0' bgcolor='{_EMAIL_COLOR_PAPER}' style='width:100%;max-width:600px;background:{_EMAIL_COLOR_PAPER};border:1px solid {_EMAIL_COLOR_LINE_STRONG};border-collapse:collapse'>"
         f"<tr><td class='email-content' bgcolor='{_EMAIL_COLOR_PAPER}' style='padding:42px 48px;background:{_EMAIL_COLOR_PAPER}'>"
         "<div role='article' aria-roledescription='email'>"
-        f"<table class='email-title-block' data-section='title' role='presentation' width='100%' cellspacing='0' cellpadding='0' bgcolor='{_EMAIL_COLOR_PAPER}' style='width:100%;background:{_EMAIL_COLOR_PAPER};border-collapse:collapse'>"
-        f"<tr><td class='email-title-cell' bgcolor='{_EMAIL_COLOR_PAPER}' style='padding:0 0 24px;background:{_EMAIL_COLOR_PAPER};border-bottom:1px solid {_EMAIL_COLOR_LINE_STRONG}'>"
         f"<table class='email-title-rule' role='presentation' width='48' cellspacing='0' cellpadding='0' bgcolor='{_EMAIL_COLOR_PAPER}' style='width:48px;background:{_EMAIL_COLOR_PAPER};border-collapse:collapse'><tr><td width='48' height='4' bgcolor='{_EMAIL_COLOR_ACCENT}' style='width:48px;height:4px;background:{_EMAIL_COLOR_ACCENT};font-size:0;line-height:0'>&nbsp;</td></tr></table>"
-        f"<table role='presentation' width='100%' cellspacing='0' cellpadding='0' bgcolor='{_EMAIL_COLOR_PAPER}' style='width:100%;background:{_EMAIL_COLOR_PAPER};border-collapse:collapse'><tr><td class='email-title-rule-spacer' width='100%' height='18' bgcolor='{_EMAIL_COLOR_PAPER}' style='width:100%;height:18px;background:{_EMAIL_COLOR_PAPER};font-size:0;line-height:0'>&nbsp;</td></tr></table>"
+        f"<table class='email-title-block' data-section='title' role='presentation' width='100%' cellspacing='0' cellpadding='0' bgcolor='{_EMAIL_COLOR_PAPER}' style='width:100%;background:{_EMAIL_COLOR_PAPER};border-collapse:collapse'>"
+        f"<tr><td class='email-title-cell' bgcolor='{_EMAIL_COLOR_PAPER}' style='padding:18px 0 24px;background:{_EMAIL_COLOR_PAPER};border-bottom:1px solid {_EMAIL_COLOR_LINE_STRONG}'>"
         f"<div class='email-period' style='margin:0 0 10px;font-family:{_EMAIL_FONT_SANS};font-size:14px;line-height:21px;mso-line-height-rule:at-least;font-weight:700;color:{_EMAIL_COLOR_ACCENT}'>{html.escape(period_line)}</div>"
         f"<h1 class='email-title' style='margin:0;font-family:{_EMAIL_FONT_SERIF};font-size:34px;line-height:43px;mso-line-height-rule:at-least;font-weight:700;color:{_EMAIL_COLOR_INK}'>{html.escape(bundle.title)}</h1>"
         f"</td></tr><tr><td class='email-title-spacer' height='26' bgcolor='{_EMAIL_COLOR_PAPER}' style='height:26px;background:{_EMAIL_COLOR_PAPER};font-size:0;line-height:26px'>&nbsp;</td></tr></table>"
