@@ -473,7 +473,7 @@ def test_build_trend_email_preview_writes_preview_artifacts_and_site_first_links
     assert "Read the full brief" in html_body
     assert "Agent systems" in text_body
     manifest = json.loads(entry.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["renderer_version"] == "trend-email-v6"
+    assert manifest["renderer_version"] == "trend-email-v7"
     assert manifest["content_hash"] == entry.content_hash
     assert manifest["primary_page_url"] == entry.primary_page_url
 
@@ -548,7 +548,7 @@ def test_build_trend_email_preview_uses_site_palette_roles(
     assert style_value(cta, "color") == site_palette["--on-accent"]
 
 
-def test_build_trend_email_preview_paints_title_rule_spacing_for_outlook(
+def test_build_trend_email_preview_keeps_title_spacing_on_content_cell(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -565,21 +565,31 @@ def test_build_trend_email_preview_paints_title_rule_spacing_for_outlook(
     )
     soup = BeautifulSoup(entry.html_path.read_text(encoding="utf-8"), "html.parser")
     shell = soup.select_one("table.email-shell")
-    spacer = soup.select_one("td.email-title-rule-spacer")
+    title_block = soup.select_one("table.email-title-block")
+    title_cell = soup.select_one("td.email-title-cell")
 
     assert isinstance(shell, Tag)
-    assert isinstance(spacer, Tag)
+    assert isinstance(title_block, Tag)
+    assert isinstance(title_cell, Tag)
     paper_color = shell.get("bgcolor")
     assert paper_color
-    assert spacer.get("width") == "100%"
-    assert spacer.get("bgcolor") == paper_color
+    assert title_cell.get("bgcolor") == paper_color
+    assert title_cell.select_one(".email-period") is not None
+    assert title_cell.select_one("h1.email-title") is not None
     declarations = {
         name.strip(): value.strip()
-        for item in str(spacer.get("style") or "").split(";")
+        for item in str(title_cell.get("style") or "").split(";")
         if ":" in item
         for name, value in [item.split(":", 1)]
     }
     assert declarations["background"] == paper_color
+    assert declarations["padding"] == "18px 0 24px"
+    empty_full_width_tables = [
+        table
+        for table in title_block.find_all("table")
+        if table.get("width") == "100%" and not table.get_text(" ", strip=True)
+    ]
+    assert empty_full_width_tables == []
 
 
 def test_build_trend_email_preview_omits_instance_from_subject(
