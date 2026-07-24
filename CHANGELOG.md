@@ -7,6 +7,14 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-24
+
+### Fixed
+
+- Updated the standard Huldra dependency to 0.4.1 so Fleet maintenance can
+  reclaim queue items after their durable HTTP 429 cooldown or transient
+  backoff expires.
+
 ## [0.6.0] - 2026-07-22
 
 ### Changed

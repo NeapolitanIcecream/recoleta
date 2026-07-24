@@ -1091,8 +1091,8 @@ wheels = [
 
 [[package]]
 name = "huldra-arxiv"
-version = "0.4.0"
-source = { git = "https://github.com/NeapolitanIcecream/huldra.git?rev=409a48165ca348f243311d7b5d00323f92fdb658#409a48165ca348f243311d7b5d00323f92fdb658" }
+version = "0.4.1"
+source = { git = "https://github.com/NeapolitanIcecream/huldra.git?rev=8109b997f4c6be5c80a638f632977bf929cef976#8109b997f4c6be5c80a638f632977bf929cef976" }
 dependencies = [
     { name = "fastapi" },
     { name = "feedparser" },
@@ -2638,7 +2638,7 @@ wheels = [
 
 [[package]]
 name = "recoleta"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
@@ -2706,7 +2706,7 @@ requires-dist = [
     { name = "filelock", specifier = ">=3.24.3" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "huggingface-hub", specifier = ">=0.36.2" },
-    { name = "huldra-arxiv", git = "https://github.com/NeapolitanIcecream/huldra.git?rev=409a48165ca348f243311d7b5d00323f92fdb658" },
+    { name = "huldra-arxiv", git = "https://github.com/NeapolitanIcecream/huldra.git?rev=8109b997f4c6be5c80a638f632977bf929cef976" },
     { name = "lancedb", specifier = ">=0.29.2" },
     { name = "latex2mathml", specifier = ">=3.81.0" },
     { name = "litellm", specifier = ">=1.76.1" },
