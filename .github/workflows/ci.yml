@@ -89,6 +89,11 @@ jobs:
       - name: Smoke doctor entrypoint
         run: docker run --rm recoleta:runtime-ci doctor --help
 
+      - name: Smoke bundled demo
+        run: >-
+          docker run --rm recoleta:runtime-ci demo
+          --output-dir /tmp/recoleta-demo --json
+
   wheel-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -111,12 +116,30 @@ jobs:
       - name: Build wheel
         run: uv build
 
+      - name: Check wheel contents
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheel = next(Path("dist").glob("*.whl"))
+          names = ZipFile(wheel).namelist()
+          assert not any(Path(name).name == ".DS_Store" for name in names)
+          assert any(
+              name.endswith(
+                  "demo_data/Trends/production-fleet--day--2026-07-23--trend.md"
+              )
+              for name in names
+          )
+          PY
+
       - name: Install wheel with unlocked dependencies
         run: |
           uv venv .wheel-smoke --python 3.14
           uv pip install --python .wheel-smoke/bin/python dist/*.whl
 
-      - name: Smoke installed CLI and version
+      - name: Smoke installed CLI, demo, and version
         run: |
           .wheel-smoke/bin/recoleta --help
+          .wheel-smoke/bin/recoleta demo --output-dir .wheel-demo --json
           .wheel-smoke/bin/python -c 'import importlib.metadata as m, tomllib; expected = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]; assert m.version("recoleta") == expected'

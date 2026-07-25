@@ -1,95 +1,87 @@
-# GitHub Launch Handoff
+# GitHub launch handoff
 
-Use this document when configuring the public GitHub repository surface for the
-current launch pass.
+Last updated: 2026-07-25
 
-## About section
+External changes: not applied
 
-Suggested description:
+Use this file when the promotion release has passed the gates in
+[`release-process.md`](./release-process.md). Versioned launch kits in this
+directory are historical release records, not current positioning guidance.
 
-`Local-first AI research radar for arXiv, Hacker News, OpenReview, Hugging Face Daily Papers, and RSS.`
+## Repository surface
 
-Suggested website:
+Description:
 
-`https://neapolitanicecream.github.io/recoleta/`
+> Continuously operated research radars for traceable trends, ideas, and living
+> research sites.
 
-## Suggested topics
+Website:
 
-Start with:
+> https://neapolitanicecream.github.io/recoleta/
 
+Topics:
+
+- `research-tools`
+- `research`
 - `arxiv`
 - `rss`
 - `hacker-news`
 - `openreview`
-- `obsidian`
-- `llm`
-- `ai`
-- `research-tools`
+- `trend-analysis`
 - `knowledge-management`
-- `digital-garden`
-- `developer-tools`
-- `local-first`
+- `python`
+- `llm`
 
-Trim or swap based on the exact audience you want to emphasize.
+Do not add `local-first` as a positioning topic. Do not make a starter preset
+the repository's primary example.
 
 ## Social preview
 
-Source asset:
+Do not upload the old social preview or either unapproved banner candidate.
+The current candidates and review state are recorded in
+[`../promotion/visuals/README.md`](../promotion/visuals/README.md). After the
+maintainer selects a direction, prepare an exact-text social card and current
+fleet screenshots, obtain a second review, and only then upload the approved
+asset in the repository's **Settings → General → Social preview** control.
 
-- [`docs/assets/recoleta-social-preview.svg`](../assets/recoleta-social-preview.svg)
-- [`docs/assets/recoleta-social-preview.png`](../assets/recoleta-social-preview.png)
+## Community surface
 
-Recommended upload target:
+Keep GitHub Issues as the initial support and activation surface. Enable
+Discussions only when repeated public questions or showcases justify another
+inbox; do not create an empty community surface solely for launch.
 
-- upload `docs/assets/recoleta-social-preview.png` in the GitHub repository
-  `Social preview` setting
+Private vulnerability reporting should be enabled through the repository
+settings before broad distribution. The exact account steps are in
+[`../promotion/maintainer-actions.md`](../promotion/maintainer-actions.md).
 
-The preview intentionally centers:
+## Promotion release
 
-- the one-line positioning
-- output surfaces
-- brief/site examples rather than a plain logo
+Current sources:
 
-## Discussions
+- changelog: [`../../CHANGELOG.md`](../../CHANGELOG.md)
+- release and artifact procedure:
+  [`release-process.md`](./release-process.md)
+- production proof:
+  [`../guides/production-fleet-case-study.md`](../guides/production-fleet-case-study.md)
+- release and channel copy:
+  [`../promotion/channel-kit.md`](../promotion/channel-kit.md)
+- attempt and activation ledger:
+  [`../promotion/launch-log.md`](../promotion/launch-log.md)
 
-Enable `Discussions` once the repo surface is ready to receive:
+The draft promotion target is `v0.7.0`. Do not tag it until Huldra `0.4.2` is
+published, Recoleta uses the index-hosted Huldra constraint, and the repeated
+clean-install gates pass.
 
-- preset requests
-- onboarding questions
-- workflow showcase posts
+## Execution checklist
 
-If you want categories later, start with:
-
-- `General`
-- `Ideas`
-- `Preset requests`
-- `Show and tell`
-
-## Release handoff
-
-For the current release pass:
-
-- changelog source: [`CHANGELOG.md`](../../CHANGELOG.md)
-- release draft: [`docs/releases/v0.6.0-draft.md`](./v0.6.0-draft.md)
-- launch copy: [`docs/releases/v0.6.0-launch-kit.md`](./v0.6.0-launch-kit.md)
-- demo/script outlines: [`docs/releases/v0.6.0-content-pack.md`](./v0.6.0-content-pack.md)
-- first-run proof assets: [`docs/guides/first-output-tour.md`](../guides/first-output-tour.md)
-
-Suggested tag:
-
-- `v0.6.0`
-
-Suggested release title:
-
-- `v0.6.0: Huldra-first arXiv automation`
-
-## Suggested checklist
-
-1. Confirm `README.md` links and badges are current.
-2. Confirm `CHANGELOG.md` and `docs/releases/v0.6.0-draft.md` match.
-3. Reuse `docs/releases/v0.6.0-launch-kit.md` for the release body or launch post.
-4. Upload the social preview PNG.
-5. Update the repo About section and website.
-6. Add the chosen GitHub topics.
-7. Enable Discussions.
-8. Publish the `v0.6.0` GitHub release.
+1. Complete the Huldra and Recoleta Trusted Publisher setup.
+2. Publish and independently verify Huldra `0.4.2`.
+3. Replace Recoleta's direct Git dependency and repeat all release gates.
+4. Publish the Recoleta GitHub Release, PyPI distributions, and GHCR image.
+5. Make the verified GHCR image public, acknowledging that the visibility
+   change cannot be reversed.
+6. Deploy the refreshed production fleet and verify its public sitemap, feeds,
+   canonical URLs, language alternates, robots policy, and representative brief.
+7. Apply the approved About text, topics, and social preview.
+8. Start the channel sequence and record every attempt, including zero-result
+   outcomes.

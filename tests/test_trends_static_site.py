@@ -13,6 +13,7 @@ from recoleta.presentation import presentation_sidecar_path
 from recoleta.site import (
     RECOLETA_QUICKSTART_URL,
     RECOLETA_REPO_URL,
+    SiteExportOptions,
     _build_idea_body_from_presentation,
     _build_trend_body_from_presentation,
     _display_topic_label,
@@ -1381,7 +1382,7 @@ def test_export_trend_static_site_metrics_recorder_uses_low_cardinality_step_nam
         input_dir=notes_root,
         output_dir=site_dir,
         default_language_code="en",
-        metrics_recorder=_record_metric,
+        options=SiteExportOptions(metrics_recorder=_record_metric),
     )
 
     expected_step_names = {
@@ -1392,6 +1393,7 @@ def test_export_trend_static_site_metrics_recorder_uses_low_cardinality_step_nam
         "multilang.aggregate_manifest",
         "multilang.email_links",
         "multilang.write_root_files",
+        "multilang.discovery",
     }
 
     assert manifest_path.exists()

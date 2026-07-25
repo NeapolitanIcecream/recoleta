@@ -120,6 +120,28 @@ def test_settings_loads_backup_output_dir_from_env(
     assert settings.backup_output_dir == backup_root.resolve()
 
 
+def test_settings_loads_normalized_public_site_url_from_env(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(
+        "PUBLIC_SITE_URL",
+        " https://example.github.io/recoleta/ ",
+    )
+
+    settings = Settings()  # pyright: ignore[reportCallIssue]
+
+    assert settings.public_site_url == "https://example.github.io/recoleta"
+
+
+def test_settings_rejects_non_absolute_public_site_url(
+    configured_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PUBLIC_SITE_URL", "/recoleta")
+
+    with pytest.raises(ValueError, match="absolute http"):
+        Settings()  # pyright: ignore[reportCallIssue]
+
+
 def test_settings_loads_enrich_html_maintext_parallelism_from_env(
     configured_env, monkeypatch: pytest.MonkeyPatch
 ) -> None:

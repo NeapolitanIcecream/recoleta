@@ -25,6 +25,15 @@ Secrets:
 - `PUBLISH_TARGETS` (default `["markdown"]`): publish targets, allowed values: `markdown|obsidian|telegram`.
 - `MARKDOWN_OUTPUT_DIR` (default: platform-specific user data dir + `/outputs`): local Markdown output directory.
 
+Public site discovery (optional):
+
+- `PUBLIC_SITE_URL`: canonical absolute `http(s)` base URL for the generated
+  public site. When set, site builds emit absolute canonical and social
+  metadata, language alternates, Atom feeds, `sitemap.xml`, and `robots.txt`.
+  In YAML/JSON config files, use `public_site_url`.
+- Existing email-enabled configs fall back to `EMAIL.public_site_url` when the
+  top-level value is unset.
+
 ## Conditionally required settings
 
 - `OBSIDIAN_VAULT_PATH`: required when `PUBLISH_TARGETS` includes `obsidian`.

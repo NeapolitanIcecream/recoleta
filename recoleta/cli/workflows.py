@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, NoReturn
 
 import recoleta.cli as cli
@@ -276,11 +277,30 @@ def _build_dry_run_runtime(
     *,
     config_path: Any,
 ) -> tuple[Any, Any, Any, Any]:
-    settings, repository, service = cli._build_runtime(config_path=config_path)
+    settings = cli._build_settings(config_path=config_path)
+    repository_cls = cli._runtime_symbols()["Repository"]
+    configured_db_path = Path(settings.recoleta_db_path)
+    repository_kwargs = {
+        "title_dedup_threshold": settings.title_dedup_threshold,
+        "title_dedup_max_candidates": settings.title_dedup_max_candidates,
+    }
+    if configured_db_path.is_file():
+        repository = repository_cls(
+            db_path=configured_db_path,
+            read_only=True,
+            **repository_kwargs,
+        )
+        repository.ensure_schema_current()
+    else:
+        repository = repository_cls(
+            db_path=Path(":memory:"),
+            **repository_kwargs,
+        )
+        repository.init_schema()
     console = cli._runtime_symbols()["Console"](
         stderr=bool(getattr(settings, "log_json", False))
     )
-    return settings, repository, service, console
+    return settings, repository, None, console
 
 
 def _workflow_loop_request(

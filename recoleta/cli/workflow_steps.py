@@ -13,6 +13,7 @@ import recoleta.cli as cli
 from recoleta.cli.site_support import (
     default_language_code_from_settings,
     normalize_item_export_scope,
+    public_site_url_from_settings,
     site_input_dir_from_settings,
     site_output_dir_from_settings,
 )
@@ -185,25 +186,42 @@ def run_site_build_step(
     if normalized_item_export_scope != "linked":
         export_kwargs["item_export_scope"] = normalized_item_export_scope
     normalized_run_id = str(run_id or "").strip()
-    if repository is not None and normalized_run_id:
-        try:
-            parameters = inspect.signature(export_trend_static_site).parameters
-        except (TypeError, ValueError):
-            parameters = {}
-        if "metrics_recorder" in parameters:
-            def _record_site_metric(
-                step_name: str,
-                duration_ms: int,
-                _metadata: dict[str, Any],
-            ) -> None:
-                repository.record_metric(
-                    run_id=normalized_run_id,
-                    name=f"pipeline.site_build.{step_name}.duration_ms",
-                    value=float(duration_ms),
-                    unit="ms",
-                )
+    try:
+        parameters = inspect.signature(export_trend_static_site).parameters
+    except (TypeError, ValueError):
+        parameters = {}
 
-            export_kwargs["metrics_recorder"] = _record_site_metric
+    public_site_url = public_site_url_from_settings(settings)
+    metrics_recorder: Any | None = None
+    if repository is not None and normalized_run_id:
+        def _record_site_metric(
+            step_name: str,
+            duration_ms: int,
+            _metadata: dict[str, Any],
+        ) -> None:
+            repository.record_metric(
+                run_id=normalized_run_id,
+                name=f"pipeline.site_build.{step_name}.duration_ms",
+                value=float(duration_ms),
+                unit="ms",
+            )
+
+        metrics_recorder = _record_site_metric
+
+    if "options" in parameters:
+        site_export_options = cli._import_symbol(
+            "recoleta.site",
+            attr_name="SiteExportOptions",
+        )
+        export_kwargs["options"] = site_export_options(
+            public_site_url=public_site_url,
+            metrics_recorder=metrics_recorder,
+        )
+    else:
+        if public_site_url and "public_site_url" in parameters:
+            export_kwargs["public_site_url"] = public_site_url
+        if metrics_recorder is not None and "metrics_recorder" in parameters:
+            export_kwargs["metrics_recorder"] = metrics_recorder
     manifest_path = export_trend_static_site(**export_kwargs)
     return {
         "manifest_path": str(manifest_path),
@@ -231,6 +249,8 @@ def run_site_deploy_step(*, request: SiteDeployStepRequest) -> dict[str, Any]:
         "force": request.force,
         "default_language_code": default_language_code_from_settings(request.settings),
     }
+    if public_site_url := public_site_url_from_settings(request.settings):
+        deploy_kwargs["public_site_url"] = public_site_url
     if normalized_item_export_scope != "linked":
         deploy_kwargs["item_export_scope"] = normalized_item_export_scope
     result = deploy_site(**deploy_kwargs)

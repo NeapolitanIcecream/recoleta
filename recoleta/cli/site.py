@@ -217,6 +217,8 @@ def _run_site_exporter(*, exporter_attr: str, paths: Any, limit: int | None) -> 
         export_kwargs["default_language_code"] = paths.default_language_code
     if paths.item_export_scope != "linked":
         export_kwargs["item_export_scope"] = paths.item_export_scope
+    if paths.public_site_url is not None:
+        export_kwargs["public_site_url"] = paths.public_site_url
     return exporter(**export_kwargs)
 
 

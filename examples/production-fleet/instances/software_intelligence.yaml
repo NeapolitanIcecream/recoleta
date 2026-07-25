@@ -1,0 +1,27 @@
+recoleta_db_path: "./.state/software_intelligence/recoleta.db"
+markdown_output_dir: "./.state/software_intelligence/outputs"
+llm_model: "openai/gpt-5.4"
+publish_targets: [markdown]
+
+topics:
+  - coding agents
+  - developer tools
+  - program analysis
+  - software testing
+
+sources:
+  arxiv:
+    enabled: true
+    mode: pool
+    queries:
+      - "cat:cs.SE OR cat:cs.PL"
+    max_results_per_run: 60
+  hn:
+    enabled: true
+    rss_urls:
+      - "https://news.ycombinator.com/rss"
+
+arxiv_pool:
+  enabled: true
+  backend: huldra
+  huldra_base_url: "http://127.0.0.1:8765"

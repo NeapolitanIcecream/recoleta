@@ -1,0 +1,55 @@
+name: Usage receipt
+description: Share a Recoleta artifact generated from your own input.
+title: "[usage] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for sharing real-world use. This is a public issue. Do not include API keys, private sources, recipient data, private organization identity, or confidential output. A bundled `recoleta demo` run is useful feedback but is not a usage receipt.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Receipt scope
+      options:
+        - label: I generated a new artifact from non-bundled input.
+          required: true
+        - label: I have removed private material and credentials from this report.
+          required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: What did Recoleta produce?
+      description: Describe the research scope, source types, command or workflow, and useful output.
+      placeholder: A day trend brief and site from public arXiv and RSS sources about...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Recoleta version
+      placeholder: 0.7.0
+    validations:
+      required: true
+  - type: input
+    id: artifact
+    attributes:
+      label: Public artifact or repository
+      description: Optional. Link only material you are authorized to publish.
+      placeholder: https://...
+    validations:
+      required: false
+  - type: textarea
+    id: friction
+    attributes:
+      label: Setup friction or missing behavior
+      description: What was hardest, slowest, or unclear?
+    validations:
+      required: false
+  - type: checkboxes
+    id: citation
+    attributes:
+      label: Citation permission
+      description: This does not transfer ownership of your content.
+      options:
+        - label: The Recoleta project may cite this public issue as evidence of external use.
+          required: false

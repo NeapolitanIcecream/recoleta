@@ -20,6 +20,7 @@ from recoleta.cli.db import (
     run_db_clear_command,
     run_db_reset_command,
 )
+from recoleta.cli.demo import run_demo_command
 from recoleta.cli.ideas import run_ideas_command
 from recoleta.cli.ingest import run_ingest_command
 from recoleta.cli.materialize import run_materialize_outputs_command
@@ -127,6 +128,36 @@ def run_fleet_email_send_command(**kwargs: Any) -> Any:
 
 
 app = typer.Typer(help="Recoleta workflow-first CLI.", no_args_is_help=True)
+
+
+@app.command("demo")
+def demo(
+    output_dir: Path = typer.Option(
+        Path("recoleta-demo"),
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Dedicated directory for the bundled offline evaluation snapshot.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Replace an existing directory only when it was created by this command.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit machine-readable evaluation metadata.",
+    ),
+) -> None:
+    """Build a no-key site from a curated production fleet snapshot."""
+    run_demo_command(
+        output_dir=output_dir,
+        force=force,
+        json_output=json_output,
+    )
+
 
 arxiv_pool_app = typer.Typer(
     help="Shared arXiv metadata pool commands.", no_args_is_help=True

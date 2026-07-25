@@ -219,6 +219,7 @@ site-content/
 site-dist/
 output/
 .playwright-cli/
+examples/production-fleet/.state/
 
 # Git worktrees (project-local)
 .worktrees/

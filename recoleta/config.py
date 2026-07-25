@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 from typing import Any
+from urllib.parse import urlparse
 import warnings
 
 from platformdirs import user_data_dir
@@ -791,6 +792,7 @@ class _ConfigFileSettingsSource(PydanticBaseSettingsSource):
         "OBSIDIAN_BASE_FOLDER": "obsidian_base_folder",
         "PUBLISH_TARGETS": "publish_targets",
         "MARKDOWN_OUTPUT_DIR": "markdown_output_dir",
+        "PUBLIC_SITE_URL": "public_site_url",
         "LOG_LEVEL": "log_level",
         "LOG_JSON": "log_json",
         "WRITE_DEBUG_ARTIFACTS": "write_debug_artifacts",
@@ -1406,6 +1408,10 @@ class Settings(BaseSettings):
         default_factory=_default_markdown_output_dir,
         validation_alias="MARKDOWN_OUTPUT_DIR",
     )
+    public_site_url: str | None = Field(
+        default=None,
+        validation_alias="PUBLIC_SITE_URL",
+    )
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     log_json: bool = Field(default=False, validation_alias="LOG_JSON")
     write_debug_artifacts: bool = Field(
@@ -1693,6 +1699,21 @@ class Settings(BaseSettings):
             raise ValueError("LLM_OUTPUT_LANGUAGE must be a single-line value")
         if len(normalized) > 64:
             raise ValueError("LLM_OUTPUT_LANGUAGE must be <= 64 characters")
+        return normalized
+
+    @field_validator("public_site_url", mode="before")
+    @classmethod
+    def _normalize_public_site_url(cls, value: Any) -> str | None:
+        normalized = str(value or "").strip().rstrip("/")
+        if not normalized:
+            return None
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("PUBLIC_SITE_URL must be an absolute http(s) URL")
+        if parsed.query or parsed.fragment:
+            raise ValueError(
+                "PUBLIC_SITE_URL must not contain a query or fragment"
+            )
         return normalized
 
     @field_validator("llm_api_key", mode="before")

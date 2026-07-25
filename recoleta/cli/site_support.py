@@ -12,6 +12,7 @@ class SiteCommandPaths:
     output_dir: Path
     default_language_code: str | None
     item_export_scope: str
+    public_site_url: str | None
     settings: Any | None
 
 
@@ -55,6 +56,18 @@ def default_language_code_from_settings(settings: Any) -> str | None:
     )
 
 
+def public_site_url_from_settings(settings: Any) -> str | None:
+    explicit = str(getattr(settings, "public_site_url", "") or "").strip()
+    if explicit:
+        return explicit
+    email = getattr(settings, "email", None)
+    return (
+        str(getattr(email, "public_site_url", "") or "").strip()
+        if email is not None
+        else None
+    ) or None
+
+
 def normalize_item_export_scope(item_export_scope: str) -> str:
     return str(item_export_scope or "").strip().lower() or "linked"
 
@@ -80,6 +93,11 @@ def resolve_site_command_paths(*, request: SitePathRequest) -> SiteCommandPaths:
         ),
         default_language_code=resolved_default_language_code,
         item_export_scope=normalize_item_export_scope(request.item_export_scope),
+        public_site_url=(
+            public_site_url_from_settings(request.settings)
+            if request.settings is not None
+            else None
+        ),
         settings=request.settings,
     )
 
@@ -170,6 +188,23 @@ def fleet_default_language(
         if candidate:
             return candidate
     return None
+
+
+def fleet_public_site_url(
+    *,
+    manifest: Any,
+    child_public_site_url: Callable[[Path], str | None],
+) -> str | None:
+    configured = {
+        candidate
+        for instance in manifest.instances
+        if (candidate := child_public_site_url(instance.config_path)) is not None
+    }
+    if len(configured) > 1:
+        raise ValueError(
+            "Fleet child configs must use one shared PUBLIC_SITE_URL"
+        )
+    return next(iter(configured), None)
 
 
 def fleet_site_output_dir(

@@ -14,7 +14,11 @@ from urllib.parse import urlparse
 
 from loguru import logger
 
-from recoleta.site import TrendSiteInputSpec, export_trend_static_site
+from recoleta.site import (
+    SiteExportOptions,
+    TrendSiteInputSpec,
+    export_trend_static_site,
+)
 
 _DEFAULT_DEPLOY_BRANCH = "gh-pages"
 _DEFAULT_DEPLOY_MESSAGE = "Deploy Recoleta static site"
@@ -66,6 +70,7 @@ class GitHubPagesDeployRequest:
     force: bool = True
     default_language_code: str | None = None
     item_export_scope: str = "linked"
+    public_site_url: str | None = None
 
 
 def _coerce_github_pages_deploy_request(
@@ -88,6 +93,7 @@ def _coerce_github_pages_deploy_request(
         force=bool(values.get("force", True)),
         default_language_code=values.get("default_language_code"),
         item_export_scope=str(values.get("item_export_scope") or "linked"),
+        public_site_url=values.get("public_site_url"),
     )
 
 
@@ -99,6 +105,7 @@ class _DeployPreparationRequest:
     default_language_code: str | None
     item_export_scope: str
     cname: str | None
+    public_site_url: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -667,6 +674,13 @@ def deploy_trend_static_site_to_github_pages(
             default_language_code=resolved_request.default_language_code,
             item_export_scope=resolved_request.item_export_scope,
             cname=resolved_request.cname,
+            public_site_url=(
+                str(resolved_request.public_site_url or "").strip()
+                or _infer_public_site_url(
+                    remote_info=context.remote_info,
+                    cname=resolved_request.cname,
+                )
+            ),
         ),
         commit_message=resolved_request.commit_message,
         force=resolved_request.force,
@@ -702,6 +716,7 @@ def _deploy_preparation_request(
     default_language_code: str | None,
     item_export_scope: str,
     cname: str | None,
+    public_site_url: str | None,
 ) -> _DeployPreparationRequest:
     return _DeployPreparationRequest(
         input_dir=input_dir,
@@ -710,7 +725,27 @@ def _deploy_preparation_request(
         default_language_code=default_language_code,
         item_export_scope=item_export_scope,
         cname=cname,
+        public_site_url=public_site_url,
     )
+
+
+def _infer_public_site_url(
+    *,
+    remote_info: GitRemoteInfo,
+    cname: str | None,
+) -> str | None:
+    normalized_cname = str(cname or "").strip().strip("/")
+    if normalized_cname:
+        return f"https://{normalized_cname}"
+    host = str(getattr(remote_info, "host", "") or "").strip().lower()
+    owner = str(getattr(remote_info, "owner", "") or "").strip()
+    repo = str(getattr(remote_info, "repo", "") or "").strip()
+    if host != "github.com" or not owner or not repo:
+        return None
+    account_site_repo = f"{owner}.github.io"
+    if repo.lower() == account_site_repo.lower():
+        return f"https://{account_site_repo}"
+    return f"https://{owner}.github.io/{repo}"
 
 
 def _prepare_deploy_site(
@@ -733,6 +768,7 @@ def _prepare_deploy_site(
                 default_language_code=request.default_language_code,
                 item_export_scope=request.item_export_scope,
                 cname=request.cname,
+                public_site_url=request.public_site_url,
             )
         )
         commit_sha, skipped = _publish_site_snapshot(
@@ -805,6 +841,7 @@ def _site_export_kwargs(
     limit: int | None,
     default_language_code: str | None,
     item_export_scope: str,
+    public_site_url: str | None,
 ) -> dict[str, Any]:
     normalized_item_export_scope = (
         str(item_export_scope or "").strip().lower() or "linked"
@@ -817,6 +854,10 @@ def _site_export_kwargs(
     }
     if normalized_item_export_scope != "linked":
         export_kwargs["item_export_scope"] = normalized_item_export_scope
+    if public_site_url is not None:
+        export_kwargs["options"] = SiteExportOptions(
+            public_site_url=public_site_url,
+        )
     return export_kwargs
 
 
@@ -831,6 +872,7 @@ def _prepare_site_dir(
             limit=request.limit,
             default_language_code=request.default_language_code,
             item_export_scope=request.item_export_scope,
+            public_site_url=request.public_site_url,
         )
     )
     manifest = _sanitize_public_manifests(site_dir=request.site_dir)

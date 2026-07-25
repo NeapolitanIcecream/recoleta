@@ -767,12 +767,13 @@ def test_run_day_dry_run_emits_plan_without_managed_run_or_service_calls(
     fake_repo = _DayCompletePlannerRepo()
     fake_service = _FakeService()
     monkeypatch.setattr(
-        recoleta.cli,
-        "_build_runtime",
-        lambda *, config_path=None, db_path=None: (  # noqa: ARG005
+        workflow_cli,
+        "_build_dry_run_runtime",
+        lambda *, config_path=None: (  # noqa: ARG005
             fake_settings,
             fake_repo,
             fake_service,
+            _FakeConsole(),
         ),
     )
 
@@ -822,12 +823,13 @@ def test_run_day_dry_run_does_not_submit_huldra_readiness_requests(
 
     monkeypatch.setattr(huldra.client, "HuldraClient", FakeHuldraClient)
     monkeypatch.setattr(
-        recoleta.cli,
-        "_build_runtime",
-        lambda *, config_path=None, db_path=None: (  # noqa: ARG005
+        workflow_cli,
+        "_build_dry_run_runtime",
+        lambda *, config_path=None: (  # noqa: ARG005
             fake_settings,
             fake_repo,
             fake_service,
+            _FakeConsole(),
         ),
     )
 
@@ -843,6 +845,51 @@ def test_run_day_dry_run_does_not_submit_huldra_readiness_requests(
         "status": "skipped",
         "reason": "dry_run",
     }
+
+
+def test_run_day_dry_run_does_not_create_missing_database(
+    configured_env,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    database_path = tmp_path / "recoleta.db"
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "2026-03-16", "--dry-run", "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["mode"] == "dry_run"
+    assert not database_path.exists()
+    assert not list(tmp_path.glob("recoleta.db-*"))
+
+
+def test_run_day_dry_run_keeps_existing_database_byte_identical(
+    configured_env,
+) -> None:
+    runner = CliRunner()
+    tmp_path: Path = configured_env
+    database_path = tmp_path / "recoleta.db"
+    repository = recoleta.cli._runtime_symbols()["Repository"](
+        db_path=database_path
+    )
+    repository.init_schema()
+    repository.engine.dispose()
+    original_bytes = database_path.read_bytes()
+    original_siblings = sorted(path.name for path in tmp_path.glob("recoleta.db-*"))
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        ["run", "day", "--date", "2026-03-16", "--dry-run", "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["mode"] == "dry_run"
+    assert database_path.read_bytes() == original_bytes
+    assert sorted(path.name for path in tmp_path.glob("recoleta.db-*")) == (
+        original_siblings
+    )
 
 
 def test_run_day_marks_terminal_state_partial_when_translation_fails_but_site_build_succeeds(

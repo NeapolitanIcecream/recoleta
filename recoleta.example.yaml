@@ -28,6 +28,10 @@ publish_targets:
 # Local Markdown output directory (default: platform-specific user data dir + /outputs)
 # markdown_output_dir: "~/.local/share/recoleta/outputs"
 
+# Canonical public base URL. When configured, site builds add canonical and
+# social metadata, Atom feeds, sitemap.xml, and robots.txt.
+# public_site_url: "https://example.github.io/recoleta"
+
 # Obsidian integration (required only when publish_targets includes "obsidian")
 # obsidian_vault_path: "/absolute/path/to/your/ObsidianVault"
 # obsidian_base_folder: "Recoleta"  # Default: "Recoleta"
