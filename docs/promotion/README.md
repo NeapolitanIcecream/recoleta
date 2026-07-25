@@ -21,6 +21,8 @@ Read in this order:
 8. [`checkpoints/2026-07-25-release-readiness.md`](./checkpoints/2026-07-25-release-readiness.md)
    — implementation, validation, corrections, and exact next gate for this
    sprint checkpoint.
+9. [`checkpoints/2026-07-25-maintainer-gate.md`](./checkpoints/2026-07-25-maintainer-gate.md)
+   — requirement-by-requirement completion audit and exact resume signals.
 
 ## Update contract
 

@@ -8,7 +8,7 @@ Last updated: 2026-07-25
 - Recoleta implementation commit: `2e79f8b7`
 - Huldra release-preparation commit: `0e8f8f4`
 - Remote publication: neither branch has been pushed
-- Phase: local release candidate ready; maintainer and external gates pending
+- Phase: waiting for maintainer; automatic execution paused at external gates
 - External publication: not started
 - Visual publication: two local banner directions await maintainer review
 - Credentials requested: none
@@ -92,6 +92,13 @@ Clean Recoleta index publication is sequenced behind Huldra `0.4.2` publication.
 That external step requires the maintainer to configure PyPI and approve or
 merge the prepared repository changes. Visual publication independently waits
 for selection or rejection of the two local directions.
+
+The third consecutive gate audit on 2026-07-25 confirmed that PyPI still serves
+`huldra-arxiv 0.4.1`, returns 404 for `recoleta`, and has neither local
+promotion branch on the GitHub remotes. There is no remaining in-scope action
+that can advance publication without the maintainer's visual decision and
+account-side configuration. See
+[`checkpoints/2026-07-25-maintainer-gate.md`](./checkpoints/2026-07-25-maintainer-gate.md).
 
 ## Approach registry
 
