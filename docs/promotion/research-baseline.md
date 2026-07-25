@@ -148,7 +148,7 @@ Observed later on 2026-07-25:
 
 Verified on 2026-07-25 after the implementation and discovery refactor:
 
-- Recoleta passed Ruff, Pyright, and all 1,044 tests.
+- Recoleta passed Ruff, Pyright, and all 1,047 tests.
 - Cremona reported no new or worsened structural debt after the site discovery
   work was split by metadata, language, feed, sitemap, robots, and export
   orchestration axes.

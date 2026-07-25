@@ -39,7 +39,7 @@ team identity are outside the public evidence set.
 | --- | --- |
 | Ruff | passed |
 | Pyright | 0 errors, 0 warnings |
-| Pytest | 1,044 passed |
+| Pytest | 1,047 passed |
 | Cremona | 0 new, 0 worsened structural-debt findings |
 | Full isolated fleet build | 5,284 HTML pages; 8,999 total files |
 | Discovery output | 986 sitemap URLs; 4,298 no-index pages; English and Chinese Atom feeds |
@@ -58,6 +58,17 @@ team identity are outside the public evidence set.
 | Pyright | passed |
 | Pytest | 274 passed |
 | Wheel and source distribution | built; Twine checks passed |
+
+## Local Git archive
+
+- Recoleta: branch `codex/promotion-readiness`, implementation commit
+  `2e79f8b7`.
+- Huldra: branch `codex/promotion-readiness`, release-preparation commit
+  `0e8f8f4`.
+- Neither branch has been pushed.
+- The two generated banner candidates remain untracked local files. The five
+  live-fleet screenshots remain under ignored Playwright output. This keeps
+  every visual outside remote Git history until the maintainer reviews it.
 
 ## Corrections discovered by the gates
 

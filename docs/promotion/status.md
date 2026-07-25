@@ -5,6 +5,9 @@ Last updated: 2026-07-25
 ## Current state
 
 - Branch: `codex/promotion-readiness`
+- Recoleta implementation commit: `2e79f8b7`
+- Huldra release-preparation commit: `0e8f8f4`
+- Remote publication: neither branch has been pushed
 - Phase: local release candidate ready; maintainer and external gates pending
 - External publication: not started
 - Visual publication: two local banner directions await maintainer review
@@ -33,7 +36,7 @@ Last updated: 2026-07-25
 - Added exact maintainer account instructions, a release process, channel-ready
   copy, an append-only launch ledger, and a voluntary public usage-receipt
   issue form.
-- Passed the post-refactor Recoleta release gates: Ruff, Pyright, 1,044 tests,
+- Passed the post-refactor Recoleta release gates: Ruff, Pyright, 1,047 tests,
   and Cremona with no new or worsened structural debt.
 - Rebuilt the `0.6.1` wheel and source distribution, passed Twine checks,
   verified the bundled fleet snapshot and absence of `.DS_Store`, installed the
@@ -43,6 +46,9 @@ Last updated: 2026-07-25
 - Captured and inspected five current live-fleet views—English desktop,
   Simplified Chinese desktop, representative Trend, source-linked finding, and
   mobile home—under the ignored local Playwright output for visual review.
+- Archived all approved-for-review code, tests, workflows, copy, and evidence in
+  local Git commits. The two generated banner candidates remain deliberately
+  untracked, so pushing the branch cannot publish them before visual approval.
 - Corrected the dry-run persistence leak found by the redacted fleet example:
   missing databases now use in-memory planning state, existing databases are
   opened read-only, and the real three-child dry-run creates no `.state`.
