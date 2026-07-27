@@ -35,7 +35,7 @@ is open; no Recoleta package publication attempted.
 | --- | --- |
 | Ruff | passed |
 | Pyright | 0 errors, 0 warnings |
-| Pytest | 1,049 passed after the PR review fix |
+| Pytest | 1,051 passed after three PR review corrections |
 | Wheel and source distribution | built |
 | Twine | both distributions passed |
 | Wheel contents | bundled fleet brief present; `.DS_Store` absent |
@@ -60,11 +60,45 @@ the inherited `EMAIL.public_site_url` staging path. Both failed with the
 reported unexpected-keyword error before the fix. The build command now creates
 `SiteExportOptions`, while staging omits the rendering-only value.
 
-A same-mode search covered the shared CLI exporter plus workflow, fleet, deploy,
-demo, and materialization call sites. Workflow, fleet, and deploy already use
-the options object; the shared CLI exporter was the only faulty surface. No new
-log or metric was added because the existing command success and exception
-boundary already identifies this wiring failure.
+A same-mode search ruled out the same removed-keyword failure in workflow,
+fleet, deploy, demo, and materialization call sites. It did not prove that every
+separate rebuild path propagated the configured URL; the later repair finding
+below closes that distinct omission. No new log or metric was added because the
+existing command success and exception boundary already identifies this wiring
+failure.
+
+## Further PR review corrections
+
+Current-head review identified two additional output-contract defects:
+
+1. `repair outputs --site` did not propagate the configured public URL through
+   `MaterializeOutputsRequest`, so a repaired site silently lost canonical
+   links, feeds, sitemap, and robots metadata.
+2. `recoleta demo` loaded its manifest before atomically moving the generated
+   site. The returned JSON and persisted `manifest.json` therefore named a
+   deleted temporary output directory and an installation-specific source
+   directory.
+
+An end-to-end repair regression test asserts that a configured public URL
+reaches the final discovery manifest and produces `sitemap.xml` and
+`robots.txt`. A demo regression test asserts that returned and persisted
+manifests agree and that their output and source-artifact paths exist inside the
+final snapshot. Both tests failed for the reported reasons before the fixes.
+
+The repair command now uses the shared settings resolver, carries the URL
+through the typed materialization request, and constructs `SiteExportOptions`
+at the exporter boundary. The demo rewrites the manifest to its final output
+and copied `artifacts` directory before the atomic move. A same-mode search
+found no other product command that moves a generated site while returning its
+pre-move manifest. The existing JSON payload and manifest are the direct
+observable contract, so no additional log or metric was warranted.
+
+After both changes, Ruff, Pyright, the 22 tests across the two affected files,
+and all 1,051 tests pass. The exact corrected source rebuilt into a wheel and
+source distribution that pass Twine. Installing that wheel into a fresh Python
+3.14 environment resolved `huldra-arxiv 0.4.2`, reported Recoleta `0.7.0`, and
+generated a no-key demo whose persisted manifest paths all resolve inside the
+final snapshot.
 
 ## Remaining gates
 

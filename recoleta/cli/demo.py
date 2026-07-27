@@ -63,6 +63,25 @@ def _write_demo_context(output_dir: Path) -> None:
     )
 
 
+def _relocate_demo_manifest(
+    *,
+    manifest: dict[str, Any],
+    output_dir: Path,
+) -> dict[str, Any]:
+    relocated_manifest = dict(manifest)
+    artifacts_dir = output_dir / "artifacts"
+    relocated_manifest["output_dir"] = str(output_dir)
+    relocated_manifest["input_dir"] = str(artifacts_dir)
+    relocated_manifest["input_dirs"] = [
+        {
+            **input_entry,
+            "path": str(artifacts_dir),
+        }
+        for input_entry in manifest.get("input_dirs", [])
+    ]
+    return relocated_manifest
+
+
 def build_demo_snapshot(*, output_dir: Path, force: bool = False) -> dict[str, Any]:
     resolved_output_dir = _validated_demo_output_dir(output_dir, force=force)
     resolved_output_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -81,6 +100,15 @@ def build_demo_snapshot(*, output_dir: Path, force: bool = False) -> dict[str, A
                 output_dir=temporary_output,
             )
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = _relocate_demo_manifest(
+                manifest=manifest,
+                output_dir=resolved_output_dir,
+            )
+            manifest_path.write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)
+                + "\n",
+                encoding="utf-8",
+            )
             _write_demo_context(temporary_output)
             if resolved_output_dir.exists():
                 shutil.rmtree(resolved_output_dir)

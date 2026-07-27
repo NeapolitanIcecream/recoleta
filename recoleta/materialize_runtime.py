@@ -22,6 +22,7 @@ from recoleta.publish import (
 from recoleta.publish.item_note_writer import ItemNoteSpec
 from recoleta.publish.idea_notes import resolve_ideas_note_path
 from recoleta.publish.trend_notes import resolve_trend_note_path
+from recoleta.site import SiteExportOptions
 from recoleta.translation import (
     localized_language_root,
     materialize_localized_languages,
@@ -59,6 +60,7 @@ class MaterializeOutputsRequest:
     output_language: str | None = None
     site_input_dir: Path | None = None
     site_output_dir: Path | None = None
+    public_site_url: str | None = None
     localization: LocalizationConfig | None = None
     item_export_scope: str = "linked"
 
@@ -153,6 +155,9 @@ def coerce_outputs_request(
         output_language=legacy_kwargs.get("output_language"),
         site_input_dir=legacy_kwargs.get("site_input_dir"),
         site_output_dir=legacy_kwargs.get("site_output_dir"),
+        public_site_url=(
+            str(legacy_kwargs.get("public_site_url") or "").strip() or None
+        ),
         localization=legacy_kwargs.get("localization"),
         item_export_scope=str(
             legacy_kwargs.get("item_export_scope", "linked") or "linked"
@@ -1058,6 +1063,10 @@ def materialize_outputs(*, request: MaterializeOutputsRequest) -> Any:
         }
         if normalized_item_export_scope != "linked":
             site_export_kwargs["item_export_scope"] = normalized_item_export_scope
+        if request.public_site_url is not None:
+            site_export_kwargs["options"] = SiteExportOptions(
+                public_site_url=request.public_site_url
+            )
         site_manifest_path = materialize_module.export_trend_static_site(
             **site_export_kwargs
         )

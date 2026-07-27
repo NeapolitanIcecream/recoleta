@@ -5,15 +5,15 @@ Last updated: 2026-07-27
 ## Current state
 
 - Branch: `codex/promotion-readiness`
-- Recoleta release candidate implementation: `07ce0946` (`0.7.0`); later
-  branch commits update only the promotion state archive
+- Recoleta release candidate: `0.7.0`; `07ce0946` is the initial candidate
+  commit and later branch commits incorporate cloud-review corrections
 - Huldra release merge: `1b9a671`
 - Remote publication: Huldra PR 7 is merged and
   <https://github.com/NeapolitanIcecream/huldra/releases/tag/v0.4.2> is
   published; its release workflow succeeded and PyPI serves version `0.4.2` of
   `huldra-arxiv`. Recoleta
   [PR 78](https://github.com/NeapolitanIcecream/recoleta/pull/78) is open.
-- Phase: Recoleta `0.7.0` PR CI and cloud review
+- Phase: Recoleta `0.7.0` PR remediation; fresh-head CI and cloud review pending
 - External publication: Huldra infrastructure release complete; Recoleta
   package and container not published
 - Visual publication: no asset is public; the structure is approved and a
@@ -93,6 +93,14 @@ Last updated: 2026-07-27
   omits the rendering-only option. Two regression tests failed before the fix
   and pass after it; Ruff, Pyright, the 28-test site CLI file, and all 1,049
   tests pass.
+- Addressed two further PR 78 findings. `repair outputs --site` now preserves
+  the configured public URL and generates canonical discovery artifacts; the
+  bundled demo now rewrites both returned and persisted manifest paths to the
+  final snapshot instead of a deleted temporary tree. Both regression tests
+  failed for the reported reasons before the fixes and pass afterward. Ruff,
+  Pyright, both affected test files, and all 1,051 tests pass. A rebuilt wheel
+  and source distribution pass Twine, and a fresh Python 3.14 wheel install
+  produces a demo whose manifest paths all resolve inside the final snapshot.
 - Promoted the approved visual structure into a local second-review set:
   repository banner, exact-text social card, and real-fleet proof board. The set
   uses current site roles, not a colour inferred from the first comparison.
@@ -134,11 +142,12 @@ Still requires explicit review or action:
 
 ## Current bottleneck
 
-The Huldra dependency blocker is closed. The exact Recoleta `0.7.0` candidate
-passes local release gates with index-hosted Huldra `0.4.2`. Its next package
-gate is [PR 78](https://github.com/NeapolitanIcecream/recoleta/pull/78) CI and
-review; Recoleta remains absent from PyPI until the candidate is merged,
-tagged, and released.
+The Huldra dependency blocker is closed. The Recoleta `0.7.0` candidate passes
+local release gates with index-hosted Huldra `0.4.2`, including the latest
+review corrections. Its next package gate is fresh-head
+[PR 78](https://github.com/NeapolitanIcecream/recoleta/pull/78) CI and review;
+Recoleta remains absent from PyPI until the candidate is merged, tagged, and
+released.
 
 Visual publication remains independently gated. The structure is approved. The
 current banner, social card, and real-fleet proof board need one final review

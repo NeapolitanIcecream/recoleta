@@ -39,6 +39,34 @@ def test_demo_builds_offline_snapshot_without_runtime_configuration(
     )
 
 
+def test_demo_manifest_paths_refer_to_final_snapshot(tmp_path: Path) -> None:
+    output_dir = tmp_path / "evaluation"
+    result = CliRunner().invoke(
+        app,
+        ["demo", "--output-dir", str(output_dir), "--json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    manifest = payload["manifest"]
+    persisted_manifest = json.loads(
+        (output_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    artifacts_dir = output_dir.resolve() / "artifacts"
+
+    assert persisted_manifest == manifest
+    assert Path(manifest["output_dir"]) == output_dir.resolve()
+    assert Path(manifest["output_dir"]).is_dir()
+    assert Path(manifest["input_dir"]) == artifacts_dir
+    assert Path(manifest["input_dir"]).is_dir()
+    assert manifest["input_dirs"]
+    assert all(
+        Path(input_entry["path"]) == artifacts_dir
+        and Path(input_entry["path"]).is_dir()
+        for input_entry in manifest["input_dirs"]
+    )
+
+
 def test_demo_force_only_replaces_a_prior_demo(tmp_path: Path) -> None:
     output_dir = tmp_path / "existing"
     output_dir.mkdir()
