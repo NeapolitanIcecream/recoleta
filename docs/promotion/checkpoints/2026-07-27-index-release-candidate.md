@@ -3,7 +3,8 @@
 Date: 2026-07-27
 
 State: Huldra published; Recoleta `0.7.0` validated and committed as
-`07ce0946`; no Recoleta publication attempted.
+`07ce0946`; [Recoleta PR 78](https://github.com/NeapolitanIcecream/recoleta/pull/78)
+is open; no Recoleta package publication attempted.
 
 ## Huldra publication proof
 
@@ -50,12 +51,11 @@ source-adapter tests and full suite protect runtime API compatibility.
 
 ## Remaining gates
 
-1. Push the candidate.
-2. Complete PR CI, cloud review, and thread resolution.
-3. Merge, tag, and publish the Recoleta GitHub Release.
-4. Verify PyPI and GHCR artifacts, then deploy and inspect the refreshed fleet.
-5. Obtain final review before publishing any replacement visual.
-6. Complete the account-only GHCR visibility and private vulnerability
+1. Complete PR CI, cloud review, and thread resolution.
+2. Merge, tag, and publish the Recoleta GitHub Release.
+3. Verify PyPI and GHCR artifacts, then deploy and inspect the refreshed fleet.
+4. Obtain final review before publishing any replacement visual.
+5. Complete the account-only GHCR visibility and private vulnerability
    reporting actions before channel submissions.
 
 No channel submission or external activation occurred at this checkpoint.

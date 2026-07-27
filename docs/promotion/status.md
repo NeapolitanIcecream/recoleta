@@ -5,15 +5,17 @@ Last updated: 2026-07-27
 ## Current state
 
 - Branch: `codex/promotion-readiness`
-- Recoleta release candidate: `07ce0946` (`0.7.0`)
+- Recoleta release candidate implementation: `07ce0946` (`0.7.0`); later
+  branch commits update only the promotion state archive
 - Huldra release merge: `1b9a671`
 - Remote publication: Huldra PR 7 is merged and
   <https://github.com/NeapolitanIcecream/huldra/releases/tag/v0.4.2> is
   published; its release workflow succeeded and PyPI serves version `0.4.2` of
-  `huldra-arxiv`. The Recoleta branch remains local.
-- Phase: Recoleta `0.7.0` release candidate validated
-- External publication: Huldra infrastructure release complete; Recoleta not
-  started
+  `huldra-arxiv`. Recoleta
+  [PR 78](https://github.com/NeapolitanIcecream/recoleta/pull/78) is open.
+- Phase: Recoleta `0.7.0` PR CI and cloud review
+- External publication: Huldra infrastructure release complete; Recoleta
+  package and container not published
 - Visual publication: no asset is public; the structure is approved and a
   themed three-asset replacement set awaits final review
 - Credentials requested: none
@@ -95,7 +97,7 @@ Last updated: 2026-07-27
 
 ## Active work
 
-1. Push the `0.7.0` candidate, then complete PR CI and cloud review.
+1. Complete PR CI, cloud review, and thread resolution.
 2. Obtain maintainer approval or revisions for the themed banner, social card,
    and real-fleet proof board.
 3. Merge, tag, and publish the Recoleta GitHub Release through the configured
@@ -129,8 +131,9 @@ Still requires explicit review or action:
 
 The Huldra dependency blocker is closed. The exact Recoleta `0.7.0` candidate
 passes local release gates with index-hosted Huldra `0.4.2`. Its next package
-gate is remote PR CI and review; Recoleta remains absent from PyPI until the
-candidate is merged, tagged, and released.
+gate is [PR 78](https://github.com/NeapolitanIcecream/recoleta/pull/78) CI and
+review; Recoleta remains absent from PyPI until the candidate is merged,
+tagged, and released.
 
 Visual publication remains independently gated. The structure is approved. The
 current banner, social card, and real-fleet proof board need one final review
