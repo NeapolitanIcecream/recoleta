@@ -209,3 +209,15 @@ Visual-system evidence:
 These systems support a simpler, tokenized, accessible visual grammar. They do
 not provide evidence for a particular Recoleta background colour or a specific
 illustration style.
+
+Local intervention after review:
+
+- the maintainer approved the simplified three-stream structure;
+- the second review set reused the current live-site role values and passed
+  Chromium rendering, SVG parsing, small-thumbnail, grayscale, and WCAG AA text
+  contrast checks;
+- Huldra PR 7 passed its first CI run, then cloud review identified that the
+  publish gate checked distribution metadata but not `huldra.__version__`;
+- Huldra head `86c6a15` now compares both versions before upload and includes a
+  stable metadata/runtime invariant test; Ruff, Pyright, the focused test, and
+  all 275 tests pass.

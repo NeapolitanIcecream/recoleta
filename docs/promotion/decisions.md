@@ -196,3 +196,30 @@ Consequence:
   than another generated art direction.
 - Exact copy and real fleet screenshots are separate layers that remain behind
   the visual review gate.
+
+## 2026-07-27 — Approve the structure and theme it from the live fleet
+
+Decision:
+
+- Approve the three-peer-streams-to-one-publication structure.
+- Apply the role values already used by the current fleet site for the second
+  review set.
+- Keep the repository banner free of marketing text, use exact deterministic
+  text on the social card, and show real product output on a separate proof
+  board.
+
+Reason:
+
+- The maintainer approved Candidate C's visual direction.
+- Reusing current site roles makes the assets consistent with the product while
+  preserving the earlier decision that no background colour is a requirement.
+- Separate assets let the structural diagram, launch claim, and product evidence
+  each perform one job.
+
+Consequence:
+
+- The structure is no longer under review.
+- Theme values and the three complete assets require one final visual review
+  before public replacement.
+- Future palette changes can replace role values without redesigning the
+  composition.

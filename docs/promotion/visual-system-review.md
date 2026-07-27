@@ -1,6 +1,6 @@
 # Promotion visual system review
 
-Status: proposed constraints; no public asset approved
+Status: structure approved; themed replacement set awaiting review
 
 Reviewed: 2026-07-27
 
@@ -133,3 +133,32 @@ The test is:
 
 The draft is not referenced by the README, site, package metadata, or social
 metadata.
+
+## Approved direction and second review
+
+The maintainer approved the structure direction on 2026-07-27. The second
+review set applies the existing fleet-site roles rather than treating either
+earlier candidate as a palette request:
+
+| Role | Current value |
+| --- | --- |
+| Reading canvas | `#ffffff` |
+| Independent surface | `#f5f6f8` |
+| Primary ink | `#172033` |
+| Body text | `#354052` |
+| Muted text | `#5f6875` |
+| Quiet rule | `#e2e5ea` |
+| Strong rule | `#c8ced6` |
+| Operational signal | `#145da0` |
+| Signal emphasis | `#0e477d` |
+
+The set contains:
+
+- a 2400 by 1200 repository banner without embedded marketing text;
+- a 1200 by 630 social card with the exact claim “Research radars that publish
+  traceable trends and ideas”;
+- a 1440 by 960 proof board built from the live fleet home, one real Trend, and
+  its linked source trail.
+
+All three remain local. Public replacement still requires review of the
+complete set.

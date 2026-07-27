@@ -1,6 +1,6 @@
 # Visual review candidates
 
-Status: maintainer review required
+Status: structure approved; themed set requires final review
 
 Generated: 2026-07-25; structure study added 2026-07-27
 
@@ -92,6 +92,61 @@ After the structure test is resolved, the next review round should:
    facts over or beside the approved artwork;
 4. select from the fresh live-fleet captures recorded below;
 5. present the complete replacement set before changing any public reference.
+
+## Review round 2 — themed replacement set
+
+Structure approval: 2026-07-27
+
+Files:
+
+- `review-round-2/recoleta-banner.svg` and `.png`;
+- `review-round-2/recoleta-social-card.svg` and `.png`;
+- `review-round-2/fleet-proof-board.svg` and `.png`.
+
+Theme source:
+
+- the role values in the current production fleet site;
+- white canvas, neutral independent surfaces, dark ink, quiet rules, and one
+  recurring blue signal;
+- no orange extension colour, gradient, filter, shadow, texture, or generated
+  imagery.
+
+Exact social-card text:
+
+> Recoleta
+>
+> Research radars that publish traceable trends and ideas.
+>
+> A running three-stream fleet. A no-key offline demo.
+>
+> github.com/NeapolitanIcecream/recoleta
+
+Validation:
+
+- Chromium-rendered at 2400 × 1200, 1200 × 630, and 1440 × 960;
+- all SVG sources pass XML parsing;
+- banner readable at 240 × 120;
+- social card readable at 300 × 158;
+- banner and social card retain structure in grayscale;
+- every text-role pair used in the assets exceeds 4.5:1 contrast;
+- proof board contains only the previously captured live fleet, real Trend, and
+  linked source-trail screenshots;
+- no public surface references the set.
+
+SHA-256:
+
+| File | SHA-256 |
+| --- | --- |
+| `fleet-proof-board.png` | `52ba83d87d650e3ff7eec9f9d87ce5bc4ecc46c3f61b758dff53c1986f4e3efa` |
+| `fleet-proof-board.svg` | `386d7f7bacd489d6e04499a911e8b7c2fb1ce8b5fae69fe24beea67aec918aa3` |
+| `recoleta-banner.png` | `35e584eda65573353b5319ecde55e142e9d5e32cc0c4bdaa00242ad41c75b05e` |
+| `recoleta-banner.svg` | `1564afa42689a6e240d232a164b5e26c862f97a759059e4f1ee521fbbae9a8e2` |
+| `recoleta-social-card.png` | `0eeb02c9f72e6c1793a033b6f691d54b6abb0a75c85ef2c5937ece312f242194` |
+| `recoleta-social-card.svg` | `fef4e4201ca8140f3748d300556d3449de73d7202aa7159b0b3dbad8832f2d99` |
+
+Final review should approve the complete set or identify the specific file and
+change. Approval authorizes promotion into versioned public assets; it does not
+authorize a channel post.
 
 ## Live fleet capture set
 

@@ -134,15 +134,21 @@ The maintainer preferred Candidate B to Candidate A but raised a concern about
 its artistic complexity. “Dark blue” was only the identifier for Candidate B,
 not a requested palette.
 
-The current local test,
-`visuals/banner-candidate-c-structure.png`, preserves Candidate B's three-lane
-topology while removing its collage texture. Its light background is
-deliberately non-final. Review the structure rather than choosing a colour.
-Nothing currently references any candidate.
+The maintainer approved the simplified structure on 2026-07-27.
 
-After a structure is approved, the agent will prepare theme values, the
-exact-text social card, and current fleet screenshots for one more review before
-changing public surfaces.
+Final visual review now covers:
+
+- `visuals/review-round-2/recoleta-banner.png`;
+- `visuals/review-round-2/recoleta-social-card.png`;
+- `visuals/review-round-2/fleet-proof-board.png`.
+
+These assets use the current live-fleet site tokens. The blue value comes from
+the running site, not from an inferred background preference. Nothing currently
+references the files.
+
+After this set is approved, the agent may promote the selected files into
+versioned product assets and update the README and social metadata. Any requested
+revision stays local until reviewed again.
 
 ## Optional later: Bluesky project account
 

@@ -6,15 +6,15 @@ Last updated: 2026-07-27
 
 - Branch: `codex/promotion-readiness`
 - Recoleta implementation commit: `2e79f8b7`
-- Huldra release-preparation head: `986fcc5`
+- Huldra release-preparation head: `86c6a15`
 - Remote publication: Huldra review branch pushed as
   <https://github.com/NeapolitanIcecream/huldra/pull/7>; Recoleta branch remains
   local
 - Phase: execution resumed after maintainer account confirmation and visual
   feedback
 - External publication: not started
-- Visual publication: no asset is public; a neutral structure study now tests
-  the selected candidate's topology without treating its colour as a preference
+- Visual publication: no asset is public; the structure is approved and a
+  themed three-asset replacement set awaits final review
 - Credentials requested: none
 - Maintainer account actions: both PyPI/GitHub publisher configurations
   confirmed complete on 2026-07-27
@@ -69,13 +69,21 @@ Last updated: 2026-07-27
   Pyright, 274 tests, clean wheel and source distribution, Twine, a fresh Python
   3.13 wheel install, and installed CLI smoke checks. PR 7 is open for CI and
   cloud review.
+- Addressed PR 7's valid release review finding by comparing Huldra runtime and
+  distribution versions before publication and adding an invariant test. Ruff,
+  Pyright, and all 275 tests pass; fresh CI and cloud review are pending.
+- Promoted the approved visual structure into a local second-review set:
+  repository banner, exact-text social card, and real-fleet proof board. The set
+  uses current site roles, not a colour inferred from the first comparison.
+- Verified all three assets with Chromium and SVG parsing. The banner remains
+  legible at 240 by 120, the social card at 300 by 158, both survive grayscale,
+  and all text-role pairs meet at least 4.5:1 contrast.
 
 ## Active work
 
-1. Obtain maintainer feedback on the structure study; only then explore palette,
-   create the exact-text social card, and select fresh fleet screenshots for a
-   second visual review.
-2. Complete CI and cloud review on Huldra PR 7, merge it, then publish
+1. Obtain maintainer approval or revisions for the themed banner, social card,
+   and real-fleet proof board.
+2. Complete fresh CI and cloud review on Huldra PR 7, merge it, then publish
    `huldra-arxiv 0.4.2` through the now-configured Trusted Publisher.
 3. Replace Recoleta's Git dependency with the published Huldra range, update the
    lock, and repeat the clean-index and release gates.
@@ -108,14 +116,14 @@ Still requires explicit review or action:
 ## Current bottleneck
 
 Clean Recoleta index publication remains sequenced behind Huldra `0.4.2`, but
-the account-side blocker is resolved. Huldra PR 7 now carries the prepared
-release changes; its CI and cloud review are pending. The 2026-07-27 public
-recheck still serves `huldra-arxiv 0.4.1` and returns 404 for `recoleta`.
+the account-side blocker is resolved. Huldra PR 7 carries the prepared release
+changes and a review-driven version-consistency fix; fresh CI and cloud review
+are pending. The 2026-07-27 public recheck still serves `huldra-arxiv 0.4.1`
+and returns 404 for `recoleta`.
 
-Visual publication remains independently gated. Candidate B is preferred over
-Candidate A, but neither its dark background nor its complex collage treatment
-is approved as a requirement. The current neutral structure study isolates the
-topology for the next review.
+Visual publication remains independently gated. The structure is approved. The
+current banner, social card, and real-fleet proof board need one final review
+before they replace public assets.
 
 ## Approach registry
 
@@ -125,5 +133,5 @@ topology for the next review.
 | Production proof | public fleet case, redacted topology, full isolated build | external-user evidence | active |
 | Search and syndication | metadata, Atom, sitemap, robots, full fleet validation | production deployment | ready |
 | Package distribution | Huldra release candidate, configured publishers, both release workflows | review, merge, tags, workflow results | active |
-| Visual identity | two generated directions, sourced design-system review, neutral SVG structure test | structure review, then theme and final asset review | awaiting review |
+| Visual identity | approved structure, sourced constraints, themed banner, social card, real-fleet proof board | final asset review and public replacement | awaiting review |
 | Channel distribution | channel kit, account instructions, launch ledger | release URL, approved visuals, account actions | ready behind gates |
