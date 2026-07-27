@@ -159,7 +159,8 @@ Verified on 2026-07-25 after the implementation and discovery refactor:
   non-indexable pages.
 - The Recoleta `0.6.1` wheel and source distribution passed Twine checks. A
   fresh Python 3.14 environment installed the built wheel and produced the
-  bundled no-key fleet demo without network or model calls.
+  bundled no-key fleet demo without source fetches or model and embedding
+  calls.
 - The rebuilt default container passed CLI, doctor-help, bundled-demo, and
   bundled-Huldra smoke checks.
 - The redacted three-child fleet dry-run now plans from read-only or in-memory

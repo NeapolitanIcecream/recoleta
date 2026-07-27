@@ -144,11 +144,11 @@ def run_demo_command(
         typer.echo(json.dumps(payload, ensure_ascii=False, sort_keys=True))
         return payload
 
-    typer.echo("Built an offline Recoleta evaluation snapshot.")
+    typer.echo("Built a bundled Recoleta evaluation snapshot.")
     typer.echo(f"Open: {payload['index_path']}")
     typer.echo(
-        "No network or model calls were made; this does not count as a "
-        "qualified activation."
+        "Recoleta fetched no sources and made no model or embedding calls. "
+        "This does not count as a qualified activation."
     )
     typer.echo(f"Current public fleet: {payload['live_fleet_url']}")
     return payload

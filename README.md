@@ -13,7 +13,7 @@ Hugging Face Daily Papers, and RSS. It turns the accumulated evidence into
 traceable trend and idea briefs, then publishes the same corpus as Markdown,
 PDF, email, or a living research site.
 
-**Start here:** [Live production fleet](https://neapolitanicecream.github.io/recoleta/) · [Offline output demo](#offline-output-demo-no-api-key) · [Production fleet case study](./docs/guides/production-fleet-case-study.md) · [First output tour](./docs/guides/first-output-tour.md) · [Fleet runbook](./docs/guides/fleet-development-runbook.md)
+**Start here:** [Live production fleet](https://neapolitanicecream.github.io/recoleta/) · [Bundled output demo](#bundled-output-demo-no-api-key) · [Production fleet case study](./docs/guides/production-fleet-case-study.md) · [First output tour](./docs/guides/first-output-tour.md) · [Fleet runbook](./docs/guides/fleet-development-runbook.md)
 
 - Operate one radar or a fleet of isolated research streams from one manifest.
 - Retain exact evidence links and suppress low-evidence synthesis windows
@@ -30,7 +30,7 @@ adoption claims.
 ## 📚 Contents
 
 - [Overview](#recoleta-overview)
-- [Offline output demo](#offline-output-demo-no-api-key)
+- [Bundled output demo](#bundled-output-demo-no-api-key)
 - [Production fleet](#recoleta-production-fleet)
 - [Features](#recoleta-features)
 - [Installation](#recoleta-installation)
@@ -60,8 +60,8 @@ in-tree migration commands are no longer part of the supported product surface.
 Multi-instance deployments now use one child config per instance plus a
 `fleet.yaml` manifest.
 
-<a id="offline-output-demo-no-api-key"></a>
-## Offline output demo (no API key)
+<a id="bundled-output-demo-no-api-key"></a>
+## Bundled output demo (no API key)
 
 Inspect a real, curated production-fleet output before configuring sources,
 models, or Huldra:
@@ -71,10 +71,12 @@ uvx recoleta==0.7.0 demo --output-dir recoleta-demo
 python -m http.server 8000 --directory recoleta-demo
 ```
 
-Open <http://127.0.0.1:8000/>. The command performs no network, model, or
-embedding calls. It verifies installation and site rendering from one bundled
-2026-07-23 fleet brief; it does not count as an external activation or
-reproduce the synthesis itself.
+Open <http://127.0.0.1:8000/>. On first use, `uvx` may download Recoleta and
+its dependencies from PyPI. After installation, the demo reads only bundled
+data: Recoleta performs no source fetches and makes no model or embedding calls.
+It verifies installation and site rendering from one curated 2026-07-23 fleet
+brief; it does not count as an external activation or reproduce the synthesis
+itself.
 
 <a id="recoleta-production-fleet"></a>
 ## Production fleet

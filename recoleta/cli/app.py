@@ -150,7 +150,7 @@ def demo(
         file_okay=False,
         dir_okay=True,
         resolve_path=True,
-        help="Dedicated directory for the bundled offline evaluation snapshot.",
+        help="Dedicated directory for the bundled evaluation snapshot.",
     ),
     force: bool = typer.Option(
         False,

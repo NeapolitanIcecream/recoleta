@@ -115,8 +115,9 @@ Consequence:
 
 Decision:
 
-- Bundle one curated production-fleet brief and let `recoleta demo` render it
-  without configuration, network calls, or model calls.
+- Bundle one curated production-fleet brief and, once Recoleta is installed, let
+  `recoleta demo` render it without runtime configuration, source fetches, or
+  model calls.
 - Report the command explicitly as an evaluation event, not an activation.
 
 Reason:

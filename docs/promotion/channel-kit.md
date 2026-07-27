@@ -58,10 +58,11 @@ Reusable release summary:
 > maintained production deployment directly inspectable before a user
 > configures sources or a model.
 >
-> Run `uvx recoleta demo`, then open the generated site. The command builds one
-> curated 2026-07-23 production-fleet brief without source fetches, model calls,
-> or an API key. It verifies installation and rendering; it does not reproduce
-> synthesis or count as an external activation.
+> Run `uvx recoleta demo`, then open the generated site. `uvx` may first install
+> the package from PyPI; the demo itself builds one curated 2026-07-23
+> production-fleet brief without source fetches, model calls, or an API key. It
+> verifies installation and rendering; it does not reproduce synthesis or count
+> as an external activation.
 >
 > The maintained bilingual fleet now serves as the reference deployment. Its
 > current snapshot contains 244 trend briefs, 244 idea briefs, and 1,362 linked
@@ -105,7 +106,8 @@ The maintainer can use this fact card while writing their own comments:
   current without losing the source trail.
 - What is personally operated: the linked bilingual deployment tracing
   Software Intelligence and Embodied AI.
-- Fastest trial: `uvx recoleta demo`; no account, key, source fetch, or model
+- Fastest trial: `uvx recoleta demo`; the initial package install may use PyPI,
+  while the demo needs no account or key and performs no source fetch or model
   call.
 - What a full deployment adds: source ingestion, durable state, evidence-gated
   synthesis, localization, publication, and scheduled fleet operation.
