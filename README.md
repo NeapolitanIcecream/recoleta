@@ -68,7 +68,7 @@ models, or Huldra:
 
 ```bash
 uvx recoleta==0.7.0 demo --output-dir recoleta-demo
-python -m http.server 8000 --directory recoleta-demo
+uv run --no-project --python 3.14 python -m http.server 8000 --directory recoleta-demo
 ```
 
 Open <http://127.0.0.1:8000/>. On first use, `uvx` may download Recoleta and

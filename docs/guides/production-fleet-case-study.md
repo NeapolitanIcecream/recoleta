@@ -61,7 +61,7 @@ source account, Huldra process, API key, or model call:
 
 ```bash
 uv run recoleta demo --output-dir recoleta-demo
-python -m http.server 8000 --directory recoleta-demo
+uv run --no-project --python 3.14 python -m http.server 8000 --directory recoleta-demo
 ```
 
 Open <http://127.0.0.1:8000/>. This checks package data, Markdown rendering,
