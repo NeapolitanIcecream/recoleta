@@ -93,6 +93,10 @@ The release event also publishes:
 - `ghcr.io/neapolitanicecream/recoleta:0.7`
 - `ghcr.io/neapolitanicecream/recoleta:latest`
 
+The container workflow checks out the release tag and rejects it unless it
+matches the package version before registry login or image publication.
+Prereleases receive versioned tags but never move the stable `latest` tag.
+
 The first container package is private. Follow
 [`docs/promotion/maintainer-actions.md`](../promotion/maintainer-actions.md)
 to make it public only after the digest and source link are verified.

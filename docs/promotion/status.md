@@ -109,7 +109,7 @@ Last updated: 2026-07-27
   distributions pass Twine.
 - Addressed PR 78's Atom conformance finding. Every generated language feed now
   supplies a feed-level `Recoleta` author inherited by its entries, including
-  the copied default-language root feed. The XML regression failed with no
+  the default-language root feed. The XML regression failed with no
   author before the fix and passes afterward; Ruff, Pyright, both discovery
   tests, and all 1,051 tests pass.
 - Addressed two more PR 78 findings. Manual PyPI recovery now checks out the
@@ -125,6 +125,10 @@ Last updated: 2026-07-27
   root Atom alias now declares its own `/feed.xml` self URL. Three regression
   cases failed before the fixes and pass afterward; all 29 export/discovery
   tests pass.
+- Addressed the current-head container publication findings. The workflow now
+  rejects a release tag that differs from the package version before registry
+  login, and only stable releases can move `latest`. Two workflow regressions
+  failed before the fixes and pass afterward.
 - Promoted the approved visual structure into a local second-review set:
   repository banner, exact-text social card, and real-fleet proof board. The set
   uses current site roles, not a colour inferred from the first comparison.

@@ -35,7 +35,7 @@ is open; no Recoleta package publication attempted.
 | --- | --- |
 | Ruff | passed |
 | Pyright | 0 errors, 0 warnings |
-| Pytest | 1,054 passed after nine PR review corrections |
+| Pytest | 1,056 passed after eleven PR review corrections |
 | Wheel and source distribution | built |
 | Twine | both distributions passed |
 | Wheel contents | bundled fleet brief present; `.DS_Store` absent |
@@ -69,7 +69,7 @@ failure.
 
 ## Further PR review corrections
 
-Current-head reviews identified eight additional release or output-contract
+Current-head reviews identified ten additional release or output-contract
 defects:
 
 1. `repair outputs --site` did not propagate the configured public URL through
@@ -98,6 +98,18 @@ defects:
 8. The multilingual root Atom feed was copied byte-for-byte from the default
    language feed, so its `self` link identified the child URL instead of the
    advertised root `/feed.xml` URL.
+9. The container workflow listened to the `published` release activity but
+   assigned `latest` unconditionally. A GitHub prerelease could therefore
+   replace the stable image channel.
+10. Container SemVer tags came from the GitHub release tag without comparing it
+    to the package version, so a mistagged release could publish an image whose
+    visible Recoleta version disagreed with its image tag.
+
+[GitHub's release-event documentation](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#release)
+confirms that `published` captures stable releases and prereleases.
+[Docker metadata-action](https://github.com/docker/metadata-action#tags-input)
+supports an `enable` expression on raw tags, which provides the stable-channel
+gate without splitting the workflow.
 
 An end-to-end repair regression test asserts that a configured public URL
 reaches the final discovery manifest and produces `sitemap.xml` and
@@ -121,15 +133,18 @@ build-before-serve commands now receive a public URL from `--public-site-url`
 or `PUBLIC_SITE_URL` without loading full runtime settings. The exporter
 normalizes and validates that URL before either single-language or multilingual
 output replacement. The root Atom alias is generated with its own `self` URL
-instead of copying the child feed unchanged. The existing command failure,
-workflow result, JSON, XML, and manifest artifacts are the direct observable
-contracts, so no additional log or metric was warranted.
+instead of copying the child feed unchanged. Container publication now checks
+out the release tag, compares it with `uv version --short` before registry
+login, and enables `latest` only for non-prerelease events. The existing command
+failure, workflow result, generated tag set, JSON, XML, and manifest artifacts
+are the direct observable contracts, so no additional log or metric was
+warranted.
 
-After these changes, Ruff, Pyright, all 29 export/discovery tests, all 11
-deployment tests, and all 1,054 tests pass. A real explicit-path CLI build using
-only `PUBLIC_SITE_URL` emitted the configured discovery metadata, sitemap, and
-robots file. The exact corrected source rebuilt into a wheel and source
-distribution that pass Twine.
+After these changes, Ruff, Pyright, all three release-workflow tests, all 29
+export/discovery tests, all 11 deployment tests, and all 1,056 tests pass. A
+real explicit-path CLI build using only `PUBLIC_SITE_URL` emitted the configured
+discovery metadata, sitemap, and robots file. The exact corrected source rebuilt
+into a wheel and source distribution that pass Twine.
 The fresh Python 3.14 wheel install performed after the repair and demo
 corrections resolved `huldra-arxiv 0.4.2`, reported Recoleta `0.7.0`, and
 generated a no-key demo whose persisted manifest paths all resolve inside the

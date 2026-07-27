@@ -37,6 +37,8 @@ Versioning.
 - Managed site builds validate the canonical public URL before replacing prior
   output, and multilingual root Atom feeds identify their own public URL in the
   `self` link.
+- Container publication rejects release tags that do not match the package
+  version and reserves the `latest` image tag for stable releases.
 - Trend emails now keep the title-rule gap on the content-bearing title cell,
   avoiding a standalone full-width spacer surface that Outlook could repaint.
 
