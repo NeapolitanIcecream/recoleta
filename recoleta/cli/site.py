@@ -217,8 +217,17 @@ def _run_site_exporter(*, exporter_attr: str, paths: Any, limit: int | None) -> 
         export_kwargs["default_language_code"] = paths.default_language_code
     if paths.item_export_scope != "linked":
         export_kwargs["item_export_scope"] = paths.item_export_scope
-    if paths.public_site_url is not None:
-        export_kwargs["public_site_url"] = paths.public_site_url
+    if (
+        paths.public_site_url is not None
+        and exporter_attr == "export_trend_static_site"
+    ):
+        site_export_options = cli._import_symbol(
+            "recoleta.site",
+            attr_name="SiteExportOptions",
+        )
+        export_kwargs["options"] = site_export_options(
+            public_site_url=paths.public_site_url,
+        )
     return exporter(**export_kwargs)
 
 

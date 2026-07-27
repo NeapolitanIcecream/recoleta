@@ -83,11 +83,16 @@ Last updated: 2026-07-27
   `huldra-arxiv>=0.4.2,<0.5`, resolved the lock to the PyPI wheel and source
   distribution hashes, set the candidate version to `0.7.0`, and dated the
   changelog.
-- Revalidated the exact `0.7.0` candidate: Ruff, Pyright, all 1,047 tests,
+- Revalidated the exact `0.7.0` candidate: Ruff, Pyright, all 1,049 tests,
   wheel and source distribution, Twine, package contents, index-only fresh
   installation, no-key demo, three-child dry-run, and runtime container all
   passed. Fresh and container checks both reported Recoleta `0.7.0` with
   Huldra runtime and distribution version `0.4.2`.
+- Addressed PR 78's valid site-command review finding. Configured public URLs
+  now reach the build exporter through `SiteExportOptions`, while source staging
+  omits the rendering-only option. Two regression tests failed before the fix
+  and pass after it; Ruff, Pyright, the 28-test site CLI file, and all 1,049
+  tests pass.
 - Promoted the approved visual structure into a local second-review set:
   repository banner, exact-text social card, and real-fleet proof board. The set
   uses current site roles, not a colour inferred from the first comparison.

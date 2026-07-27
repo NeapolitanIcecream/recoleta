@@ -35,7 +35,7 @@ is open; no Recoleta package publication attempted.
 | --- | --- |
 | Ruff | passed |
 | Pyright | 0 errors, 0 warnings |
-| Pytest | 1,047 passed |
+| Pytest | 1,049 passed after the PR review fix |
 | Wheel and source distribution | built |
 | Twine | both distributions passed |
 | Wheel contents | bundled fleet brief present; `.DS_Store` absent |
@@ -48,6 +48,23 @@ No new test was added for the source change. The changed contract is package
 metadata and index resolution, so wheel inspection and an unlocked install in a
 fresh environment are more direct oracles than a unit test. The existing
 source-adapter tests and full suite protect runtime API compatibility.
+
+## PR review correction
+
+Cloud review found that configured-path `site build` and `site stage` still
+passed `public_site_url` as a direct keyword after the build exporter moved that
+value into `SiteExportOptions`. Both commands failed before producing output.
+
+Two CLI regression tests reproduce the direct `PUBLIC_SITE_URL` build path and
+the inherited `EMAIL.public_site_url` staging path. Both failed with the
+reported unexpected-keyword error before the fix. The build command now creates
+`SiteExportOptions`, while staging omits the rendering-only value.
+
+A same-mode search covered the shared CLI exporter plus workflow, fleet, deploy,
+demo, and materialization call sites. Workflow, fleet, and deploy already use
+the options object; the shared CLI exporter was the only faulty surface. No new
+log or metric was added because the existing command success and exception
+boundary already identifies this wiring failure.
 
 ## Remaining gates
 
