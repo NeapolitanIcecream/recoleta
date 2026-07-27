@@ -239,13 +239,14 @@ Local intervention after review:
   fresh Python 3.14 index install, the bundled no-network demo, the redacted
   three-child dry-run, and container smoke checks. Both fresh and container
   environments reported Huldra runtime and distribution version `0.4.2`.
-- Recoleta PR 78 cloud review subsequently found three public-output wiring
+- Recoleta PR 78 cloud review subsequently found four public-output wiring
   defects: configured-path site commands used a removed keyword, repair-site
   builds dropped the configured public URL, and the bundled demo retained
-  pre-move manifest paths. Red-then-green CLI regressions now cover all three;
-  Ruff, Pyright, and all 1,051 tests pass after the corrections. A fresh Python
-  3.14 install of the rebuilt wheel also generated a demo with final,
-  self-contained manifest paths.
+  pre-move manifest paths; GitHub Pages sanitization also removed safe discovery
+  metadata. Red-then-green regressions now cover all four; Ruff, Pyright, and
+  all 1,051 tests pass after the corrections. A fresh Python 3.14 install of
+  the rebuilt wheel also generated a demo with final, self-contained manifest
+  paths.
 
 These checks establish release compatibility and distribution integrity. They
 do not count as an external activation.

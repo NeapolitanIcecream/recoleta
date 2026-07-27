@@ -101,6 +101,12 @@ Last updated: 2026-07-27
   Pyright, both affected test files, and all 1,051 tests pass. A rebuilt wheel
   and source distribution pass Twine, and a fresh Python 3.14 wheel install
   produces a demo whose manifest paths all resolve inside the final snapshot.
+- Addressed PR 78's deployment-manifest finding. GitHub Pages manifest
+  sanitization now preserves the exporter-owned `discovery` field while still
+  removing private source and output paths. The deployed-branch regression
+  failed with a missing field before the fix and passes afterward; Ruff,
+  Pyright, all 11 deployment tests, and all 1,051 tests pass. Rebuilt
+  distributions pass Twine.
 - Promoted the approved visual structure into a local second-review set:
   repository banner, exact-text social card, and real-fleet proof board. The set
   uses current site roles, not a colour inferred from the first comparison.

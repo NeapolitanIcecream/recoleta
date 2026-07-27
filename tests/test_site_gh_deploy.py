@@ -73,6 +73,7 @@ def test_gh_deploy_creates_branch_snapshot_without_touching_main_worktree(
         branch="gh-pages",
         commit_message="Deploy Recoleta site",
         cname="research.example.com",
+        public_site_url="https://research.example.com/",
         pages_config_mode="never",
         force=True,
     )
@@ -104,6 +105,13 @@ def test_gh_deploy_creates_branch_snapshot_without_touching_main_worktree(
         "topic_page_size": 12,
         "topic_column_page_size": 12,
     }
+    assert deployed_manifest["discovery"]["public_site_url"] == (
+        "https://research.example.com"
+    )
+    assert deployed_manifest["discovery"]["sitemap"] == "sitemap.xml"
+    assert deployed_manifest["discovery"]["robots"] == "robots.txt"
+    assert (published / "sitemap.xml").is_file()
+    assert (published / "robots.txt").is_file()
 
     assert (local_repo / "README.md").exists()
     assert not (local_repo / "index.html").exists()
