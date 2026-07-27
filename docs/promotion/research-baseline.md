@@ -221,3 +221,8 @@ Local intervention after review:
 - Huldra head `86c6a15` now compares both versions before upload and includes a
   stable metadata/runtime invariant test; Ruff, Pyright, the focused test, and
   all 275 tests pass.
+- Huldra PR 7 then passed CI and current-head Codex review, was squash-merged as
+  `1b9a671`, and produced the annotated `v0.4.2` tag and GitHub Release:
+  <https://github.com/NeapolitanIcecream/huldra/releases/tag/v0.4.2>.
+- Trusted Publishing workflow 30235829971 started from that exact tag and merge
+  commit. Its completion and PyPI artifact remain to be verified.

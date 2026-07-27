@@ -6,10 +6,10 @@ Last updated: 2026-07-27
 
 - Branch: `codex/promotion-readiness`
 - Recoleta implementation commit: `2e79f8b7`
-- Huldra release-preparation head: `86c6a15`
-- Remote publication: Huldra review branch pushed as
-  <https://github.com/NeapolitanIcecream/huldra/pull/7>; Recoleta branch remains
-  local
+- Huldra release merge: `1b9a671`
+- Remote publication: Huldra PR 7 is merged and
+  <https://github.com/NeapolitanIcecream/huldra/releases/tag/v0.4.2> is
+  published; its PyPI workflow is running. The Recoleta branch remains local.
 - Phase: execution resumed after maintainer account confirmation and visual
   feedback
 - External publication: not started
@@ -71,7 +71,10 @@ Last updated: 2026-07-27
   cloud review.
 - Addressed PR 7's valid release review finding by comparing Huldra runtime and
   distribution versions before publication and adding an invariant test. Ruff,
-  Pyright, and all 275 tests pass; fresh CI and cloud review are pending.
+  Pyright, and all 275 tests pass. Fresh CI succeeded, cloud Codex approved the
+  current head, and all review threads were resolved.
+- Squash-merged Huldra PR 7, created annotated tag `v0.4.2`, and published the
+  matching GitHub Release. Trusted Publishing workflow 30235829971 is running.
 - Promoted the approved visual structure into a local second-review set:
   repository banner, exact-text social card, and real-fleet proof board. The set
   uses current site roles, not a colour inferred from the first comparison.
@@ -83,9 +86,8 @@ Last updated: 2026-07-27
 
 1. Obtain maintainer approval or revisions for the themed banner, social card,
    and real-fleet proof board.
-2. Complete fresh CI and cloud review on Huldra PR 7, merge it, then publish
-   `huldra-arxiv 0.4.2` through the now-configured Trusted Publisher.
-3. Replace Recoleta's Git dependency with the published Huldra range, update the
+2. Verify Huldra workflow 30235829971 and `huldra-arxiv 0.4.2` on PyPI.
+3. Replace Recoleta's Git dependency with the verified Huldra range, update the
    lock, and repeat the clean-index and release gates.
 4. Use Recoleta's configured pending publisher, enable private vulnerability
    reporting, approve the final candidate, and publish the release.
@@ -116,10 +118,10 @@ Still requires explicit review or action:
 ## Current bottleneck
 
 Clean Recoleta index publication remains sequenced behind Huldra `0.4.2`, but
-the account-side blocker is resolved. Huldra PR 7 carries the prepared release
-changes and a review-driven version-consistency fix; fresh CI and cloud review
-are pending. The 2026-07-27 public recheck still serves `huldra-arxiv 0.4.1`
-and returns 404 for `recoleta`.
+the account-side blocker is resolved. Huldra PR 7 is merged, its `v0.4.2`
+Release exists, and the Trusted Publishing workflow is running. Recoleta still
+returns HTTP 404 on PyPI until the Huldra artifact is verified and its Git
+dependency is replaced.
 
 Visual publication remains independently gated. The structure is approved. The
 current banner, social card, and real-fleet proof board need one final review
@@ -132,6 +134,6 @@ before they replace public assets.
 | No-key evaluation | bundled real brief, CLI tests, wheel inspection | clean index install | active |
 | Production proof | public fleet case, redacted topology, full isolated build | external-user evidence | active |
 | Search and syndication | metadata, Atom, sitemap, robots, full fleet validation | production deployment | ready |
-| Package distribution | Huldra release candidate, configured publishers, both release workflows | review, merge, tags, workflow results | active |
+| Package distribution | Huldra PR merged, v0.4.2 Release published, configured publishers, both release workflows | Huldra workflow result, Recoleta dependency and release | active |
 | Visual identity | approved structure, sourced constraints, themed banner, social card, real-fleet proof board | final asset review and public replacement | awaiting review |
 | Channel distribution | channel kit, account instructions, launch ledger | release URL, approved visuals, account actions | ready behind gates |
