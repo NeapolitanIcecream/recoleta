@@ -50,9 +50,21 @@ The explicit `linux/amd64` image passed CLI startup and reported Recoleta
 runtime target also passed those checks. This isolates the defect to publication
 configuration rather than application or Dockerfile compatibility.
 
-The release is therefore public but its container gate remains open until the
-workflow publishes both platforms, safely replays `v0.7.0`, and anonymous
-manifest plus native runtime checks pass.
+PR 79 corrected the publication workflow and was squash-merged as
+`89116739bfed3c57b17a7b4f44f1c1925197eeab`. Guarded replay run
+[30259934268](https://github.com/NeapolitanIcecream/recoleta/actions/runs/30259934268)
+then succeeded with `version=0.7.0` and `update_floating_tags=true`.
+
+Anonymous registry requests now show that `0.7.0`, `0.7`, and `latest` all
+resolve to:
+
+`sha256:829e5dcf6239e0f84ae06353e7c676060f7fab508301a119902e6c1f013772ba`
+
+The index contains real `linux/amd64` and `linux/arm64` images plus matching
+attestations. A default pull on an arm64 Docker host selected the native arm64
+image; Recoleta and Huldra CLI smokes passed, and installed metadata reported
+Recoleta `0.7.0` with Huldra runtime and distribution version `0.4.2`. The
+container correction gate is closed.
 
 ## Fleet deployment
 
@@ -108,9 +120,27 @@ Private vulnerability reporting was enabled for both Recoleta and Huldra
 through the GitHub repository API. Independent reads of both settings returned
 `enabled=true`.
 
+## Repository social preview
+
+The maintainer selected
+`docs/assets/recoleta-social-preview.png` in GitHub's authenticated repository
+settings. The post-upload settings view displayed the approved composition and
+copy. GitHub GraphQL then returned the public repository-image URL, and a fresh
+download was byte-identical to the versioned PNG.
+
+- source dimensions: 1200 by 630 pixels;
+- source SHA-256:
+  `b246908fca0a9eea4f773b194a66c32fb447fc5a64c53ae6e97b4a61ce883ab1`;
+- headline: `Research radars that publish traceable trends and ideas.`;
+- supporting copy names the Software Intelligence and Embodied AI public
+  research and invites readers to try Recoleta without an API key.
+
+The public download and versioned source have the same SHA-256 listed above.
+The social-preview gate is closed.
+
 ## Next gate
 
-Repair and replay the public container as an amd64/arm64 image. Then publish the
-maintainer-approved banner, social card, and fleet proof board in a separate
-versioned change, update repository metadata, and prepare the
-maintainer-reviewed Show HN submission package.
+Use the non-postable Show HN fact sheet and checklist in
+[`../show-hn-handoff.md`](../show-hn-handoff.md). The maintainer must write and
+submit all Hacker News text by hand under the current platform rules. No channel
+submission has been made.

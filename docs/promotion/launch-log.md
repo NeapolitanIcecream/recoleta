@@ -20,7 +20,7 @@ and the bundled demo are not `T1`.
 
 | ID | Date | Channel | Destination | Material | Operator | Status | Attributable T0 | T1 | T2 | R | Decision |
 | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
-| — | — | — | — | — | — | not started | 0 | 0 | 0 | 0 | Wait for release gates |
+| HN-001 | pending | Show HN | <https://news.ycombinator.com/submit> | Repository URL plus maintainer-authored title and context | maintainer | prepared; not submitted | 0 | 0 | 0 | 0 | Await human authorship and account eligibility |
 
 ## Receipt ledger
 

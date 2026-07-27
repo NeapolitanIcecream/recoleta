@@ -154,12 +154,29 @@ Final visual review covered:
 These assets use the current live-fleet site tokens. The blue value comes from
 the running site, not from an inferred background preference. The maintainer
 approved the revised set, including its simplified social-card and proof-board
-copy, on 2026-07-27. The current versioned branch references the stable copies;
-they are not public until that branch merges.
+copy, on 2026-07-27. PR 79 published the stable copies, and the approved
+1200 by 630 PNG is now the repository social preview.
 
-The agent may now promote the selected files into versioned product assets and
-update the README and social metadata. Any later visual revision returns to
-maintainer review before publication.
+Any later visual revision returns to maintainer review before publication.
+
+## Show HN human-authorship gate
+
+Hacker News currently requires every title, submission text, and comment to be
+written without AI generation or editing. This is a platform rule, so the agent
+cannot perform the writing task that would otherwise be delegated.
+
+The minimum maintainer action is:
+
+1. Use a personal Hacker News account that is eligible to submit Show HN.
+2. Read [`show-hn-handoff.md`](./show-hn-handoff.md).
+3. Write the title and context by hand from personal experience and verified
+   facts.
+4. Submit the repository URL and remain available for the discussion.
+5. Send the public thread URL to the operator for the launch log and outcome
+   checks.
+
+Do not paste text from the handoff into Hacker News. The agent can check facts
+and public links but cannot edit the maintainer's Hacker News wording.
 
 ## Optional later: Bluesky project account
 

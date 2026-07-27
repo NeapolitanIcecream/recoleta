@@ -117,8 +117,9 @@ Core:
 Conditional:
 
 - Show HN after the project is directly tryable. The maintainer submits and
-  writes their own discussion comments; generated or AI-edited HN comments are
-  not permitted.
+  writes the title, submission text, and discussion comments without AI
+  generation or editing. The agent supplies only a non-postable fact sheet,
+  public links, and checks.
 - A Bluesky project bot after account authorization. It must identify itself as
   automated and interact only when explicitly tagged.
 - Community showcases only when their current rules allow transparent

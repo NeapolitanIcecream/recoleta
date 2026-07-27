@@ -2,8 +2,8 @@
 
 Last updated: 2026-07-27
 
-Publication status: draft; release and fleet are live, but wait for the
-multi-architecture container replay and social-preview gate
+Publication status: release, fleet, multi-architecture container, and social
+preview are live; Show HN awaits maintainer-authored submission text
 
 ## Source-of-truth links
 
@@ -31,15 +31,16 @@ sustained maintainer dogfooding.
    promotion release version, and pass clean-install gates.
 3. Publish the Recoleta GitHub Release, PyPI distribution, public GHCR image,
    and refreshed fleet site.
-4. Wait for the release smoke checks, then submit Show HN.
+4. After the release smoke checks, the maintainer writes and submits Show HN.
 5. Submit the release to PyCoder's Weekly and Changelog News on separate days.
 6. If approved, start a four-post, 28-day Bluesky pilot.
 7. Record each attempt and attributable outcome in
    [`launch-log.md`](./launch-log.md).
 
-Steps 1–3 are complete except for repairing the public container's missing
-arm64 variant. Do not begin step 4 until the replayed image passes anonymous
-amd64 and arm64 checks and the approved social preview is uploaded.
+Steps 1–3 and their distribution checks are complete. The replayed image passes
+anonymous amd64 and arm64 checks, and the approved social preview is live.
+Step 4 is ready for the maintainer's required human authorship and account
+eligibility check.
 
 Staggering submissions makes failures diagnosable and attribution less
 ambiguous. It also avoids asking several communities to inspect a release while
@@ -85,40 +86,18 @@ checks are recorded in
 
 ## Show HN
 
-Submit the repository URL, not a landing page. Recommended title:
+Submit the repository URL, not the fleet landing page:
 
-> Show HN: Recoleta – research radars that publish traceable trends and ideas
+> https://github.com/NeapolitanIcecream/recoleta
 
-Alternatives:
+Do not use title candidates, submission copy, or comments prepared or edited by
+an agent. Hacker News prohibits generated and AI-edited text, and its current
+Show HN tips explicitly apply that boundary to submission text. The maintainer
+must write the title, context, and every comment by hand.
 
-- `Show HN: Recoleta, a Python research radar with a live bilingual deployment`
-- `Show HN: Recoleta – continuously turn technical sources into a research site`
-
-Do not use a first comment prepared by an agent. Hacker News requires something
-people can try, asks the maker to be present, and prohibits generated or
-AI-edited comments:
-<https://news.ycombinator.com/showhn.html> and
-<https://news.ycombinator.com/newsguidelines.html>.
-
-The maintainer can use this fact card while writing their own comments:
-
-- Why it exists: the maintainer and team needed several research scopes to stay
-  current without losing the source trail.
-- What is personally operated: the linked bilingual deployment tracing
-  Software Intelligence and Embodied AI.
-- Fastest trial: `uvx recoleta demo`; the initial package install may use PyPI,
-  while the demo needs no account or key and performs no source fetch or model
-  call.
-- What a full deployment adds: source ingestion, durable state, evidence-gated
-  synthesis, localization, publication, and scheduled fleet operation.
-- What is unusual: low-evidence windows can be suppressed rather than padded;
-  retained briefs link back to the material read.
-- Candid limit: an attached read trace is not sentence-level entailment, and
-  production dogfooding is not independent adoption.
-- Useful feedback to ask for in the maintainer's own words: whether the output
-  is inspectable enough to trust as a reading queue, and where the full setup
-  becomes too expensive or complex.
-- Never request votes or comments, and do not repost if the submission is quiet.
+Use [`show-hn-handoff.md`](./show-hn-handoff.md) for the current eligibility
+check, verified facts, questions to answer, public links, and preflight. Its
+prose is not copy for Hacker News.
 
 ## Changelog News
 

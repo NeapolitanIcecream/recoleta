@@ -15,16 +15,19 @@ Last updated: 2026-07-27
   [PR 78](https://github.com/NeapolitanIcecream/recoleta/pull/78) is merged,
   the [0.7.0 release](https://github.com/NeapolitanIcecream/recoleta/releases/tag/v0.7.0)
   is published, PyPI serves `recoleta 0.7.0`, and the public GHCR tags
-  `0.7.0`, `0.7`, and `latest` resolve to the same OCI image. That image
-  currently contains `linux/amd64` only.
-- Phase: repair and replay the `0.7.0` container as a verified amd64/arm64 image,
-  then publish the approved visual set
-- External publication: package, source distribution, and release complete; the
-  public container is available for amd64 while the arm64 repair is pending; no
-  channel submission attempted
+  `0.7.0`, `0.7`, and `latest` resolve anonymously to the same verified OCI
+  index,
+  `sha256:829e5dcf6239e0f84ae06353e7c676060f7fab508301a119902e6c1f013772ba`,
+  containing both `linux/amd64` and `linux/arm64` images plus attestations.
+- Phase: the release, fleet, review, visual-asset, multi-platform container, and
+  social-preview gates are complete; the non-postable Show HN handoff is ready
+  for maintainer-authored submission text
+- External publication: package, source distribution, release, fleet, and the
+  verified amd64/arm64 container are public; no channel submission attempted
 - Visual publication: the maintainer approved the final three-asset set on
-  2026-07-27; stable copies are on the current branch and remain unpublished
-  until that versioned change is reviewed and merged
+  2026-07-27; the versioned assets were squash-merged through PR 79 as
+  `89116739`, and the approved 1200 by 630 PNG is now the repository social
+  preview
 - Credentials requested: none
 - Maintainer account actions: both PyPI/GitHub publisher configurations
   confirmed complete on 2026-07-27
@@ -179,15 +182,53 @@ Last updated: 2026-07-27
   `local-first`, `digital-garden`, `obsidian`, generic `ai`, and
   `developer-tools` topics. The public About text, website, and ten focused
   topics now match the approved handoff.
+- Passed every fresh-head PR 79 check, received the Codex no-findings
+  thumbs-up, resolved all five review threads, and squash-merged the approved
+  workflow, visual assets, README, and promotion archive as
+  `89116739bfed3c57b17a7b4f44f1c1925197eeab`.
+- Dispatched container workflow run
+  [30259934268](https://github.com/NeapolitanIcecream/recoleta/actions/runs/30259934268)
+  from that exact merge commit with `version=0.7.0` and
+  `update_floating_tags=true`; all publication and invariant steps succeeded.
+- Verified the replay without registry credentials. Tags `0.7.0`, `0.7`, and
+  `latest` all resolve to OCI index
+  `sha256:829e5dcf6239e0f84ae06353e7c676060f7fab508301a119902e6c1f013772ba`,
+  with real `linux/amd64` and `linux/arm64` manifests plus two attestation
+  manifests.
+- Pulled `0.7.0` without a platform override on an arm64 Docker host. The
+  selected image is native arm64; Recoleta and Huldra help smokes pass, and
+  installed metadata reports Recoleta `0.7.0` with Huldra runtime and
+  distribution version `0.4.2`.
+- Reached the repository social-preview upload control with the approved PNG.
+  The authenticated Chrome session rejected local-file transfer because the
+  ChatGPT Chrome Extension lacks “Allow access to file URLs”; the in-app
+  browser is not signed in, so one local extension permission remains.
+- Uploaded the approved PNG through the authenticated Microsoft Edge session.
+  The GitHub settings view renders the expected headline, supporting copy, and
+  structural diagram. The versioned source is 1200 by 630 pixels with SHA-256
+  `b246908fca0a9eea4f773b194a66c32fb447fc5a64c53ae6e97b4a61ce883ab1`.
+  GitHub GraphQL returned the public repository-image URL, whose downloaded
+  bytes have the same hash.
+- Rechecked the current Hacker News and Show HN guidance. The project satisfies
+  the tryable-project gate, but Hacker News now requires submission text and
+  comments to be written without AI generation or editing and temporarily
+  restricts Show HN for accounts unfamiliar with the community.
+- Replaced the generated title candidates with a non-postable maintainer
+  handoff containing verified facts, public links, writing questions, account
+  eligibility checks, and a submission preflight.
+- Addressed PR 80's stale-handoff finding. The active GitHub launch handoff now
+  records the verified amd64/arm64 replay, completed social-preview upload, and
+  human-only Show HN gate. A same-mode search found no other stale release
+  handoff.
 
 ## Active work
 
-1. Add amd64/arm64 container publication and a safe existing-tag replay path,
-   merge it, replay `v0.7.0`, and verify both public platforms.
-2. Publish the approved visual set through a separate versioned change and
-   upload the approved social preview.
-3. Prepare the maintainer-reviewed Show HN package, then stage later channel
-   submissions according to the launch order.
+1. The maintainer confirms Hacker News account eligibility and writes the
+   Show HN title and context by hand.
+2. The maintainer submits and handles Hacker News discussion; the agent records
+   the public thread and attributable outcomes.
+3. Stage later channel submissions on separate days according to the launch
+   order.
 
 ## Approval gates
 
@@ -198,22 +239,25 @@ The maintainer has already approved:
 - maintaining Huldra as part of the dependency and release chain without making
   it a separate promotion campaign;
 - preparing Show HN material, with the maintainer reviewing, submitting, and
-  participating in the discussion;
+  participating in the discussion, subject to Hacker News's human-authorship
+  rule;
 - requesting narrowly scoped account access when an external action requires it;
 - the final revised banner, social card, and production-fleet proof board.
 
 Still requires explicit review or action:
 
+- maintainer-authored Hacker News title, context, submission, and discussion;
 - disclosure of private fleet cost, failure, recipient, or team-identity data;
 - any external post or directory submission;
 - routine autonomous posting under a project social account.
 
 ## Current bottleneck
 
-The package and fleet deployment gates are complete, but the first public
-container is amd64-only. The next outcome-facing gate is republishing the same
-release tag as a verified amd64/arm64 image without weakening tag/version or
-stable-`latest` safeguards.
+The package, fleet deployment, PR review, versioned visual, multi-platform
+container, and social-preview gates are complete. Hacker News now requires the
+maintainer to write all submission text and comments without AI assistance and
+may restrict accounts that are not yet familiar with the community. No
+technical or credential blocker remains; account eligibility is unverified.
 
 ## Approach registry
 
@@ -222,6 +266,6 @@ stable-`latest` safeguards.
 | No-key evaluation | bundled real brief, CLI tests, public wheel and source distribution, successful public-index `uvx` smoke | external-user evidence | ready |
 | Production proof | public fleet case, redacted topology, refreshed public deployment | external-user evidence | active |
 | Search and syndication | deployed metadata, Atom, 986-URL sitemap, robots, HTTPS and Chromium validation | syndication discovery | ready |
-| Package distribution | Huldra 0.4.2 and Recoleta 0.7.0 on PyPI; public versioned and stable GHCR tags; clean public-index command smoke | arm64 GHCR variant | repair active |
-| Visual identity | approved banner, social card, and real-fleet proof board | versioned public replacement | approved |
-| Channel distribution | channel kit, account instructions, launch ledger, live release URL | merged visuals and maintainer-reviewed Show HN package | ready behind gates |
+| Package distribution | Huldra 0.4.2 and Recoleta 0.7.0 on PyPI; public versioned and stable GHCR tags; clean public-index command smoke; verified amd64/arm64 OCI index and native arm64 runtime | external-user evidence | complete |
+| Visual identity | approved banner, social card, and real-fleet proof board; versioned assets merged; repository preview verified | later revisions require maintainer review | complete |
+| Channel distribution | channel kit, human-only Show HN handoff, launch ledger, live release URL | maintainer-authored HN submission and external-user evidence | human gate |
