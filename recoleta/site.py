@@ -79,7 +79,10 @@ from recoleta.site_email_links import (
     remove_child_email_links_artifacts,
     write_email_links_artifact,
 )
-from recoleta.site_discovery import update_site_manifest_with_discovery
+from recoleta.site_discovery import (
+    normalize_public_site_url,
+    update_site_manifest_with_discovery,
+)
 from recoleta.site_pages import (
     SingleLanguageSiteExportDeps,
     SingleLanguageSiteExportRequest,
@@ -5332,13 +5335,19 @@ def export_trend_static_site(
     item_export_scope: str = "linked",
     options: SiteExportOptions | None = None,
 ) -> Path:
+    resolved_options = options or SiteExportOptions()
     request = _TrendStaticSiteExportRequest(
         input_dir=input_dir,
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
         item_export_scope=_normalize_item_export_scope(item_export_scope),
-        options=options or SiteExportOptions(),
+        options=SiteExportOptions(
+            public_site_url=normalize_public_site_url(
+                resolved_options.public_site_url
+            ),
+            metrics_recorder=resolved_options.metrics_recorder,
+        ),
     )
     language_inputs = _discover_site_language_inputs(
         _coerce_site_input_specs(input_dir)

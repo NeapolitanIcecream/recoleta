@@ -30,7 +30,9 @@ Public site discovery (optional):
 - `PUBLIC_SITE_URL`: canonical absolute `http(s)` base URL for the generated
   public site. When set, site builds emit absolute canonical and social
   metadata, language alternates, Atom feeds, `sitemap.xml`, and `robots.txt`.
-  In YAML/JSON config files, use `public_site_url`.
+  In YAML/JSON config files, use `public_site_url`. Site builds validate this
+  value before replacing managed output, so an invalid URL leaves the prior
+  export intact.
 - Existing email-enabled configs fall back to `EMAIL.public_site_url` when the
   top-level value is unset.
 

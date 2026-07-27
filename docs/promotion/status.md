@@ -120,6 +120,11 @@ Last updated: 2026-07-27
   Ruff, Pyright, 29 affected-file tests, and all 1,052 tests pass. A real
   explicit-path build produced discovery files, and rebuilt distributions pass
   Twine.
+- Addressed two current-head PR 78 findings. Public URL validation now happens
+  before either managed exporter can replace prior output, and the multilingual
+  root Atom alias now declares its own `/feed.xml` self URL. Three regression
+  cases failed before the fixes and pass afterward; all 29 export/discovery
+  tests pass.
 - Promoted the approved visual structure into a local second-review set:
   repository banner, exact-text social card, and real-fleet proof board. The set
   uses current site roles, not a colour inferred from the first comparison.

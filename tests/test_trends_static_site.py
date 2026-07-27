@@ -1337,6 +1337,60 @@ def test_multilingual_export_validates_language_names_before_resetting_output(
     assert sentinel.read_text(encoding="utf-8") == "keep"
 
 
+@pytest.mark.parametrize("multilingual", [False, True])
+def test_export_validates_public_url_before_resetting_output(
+    tmp_path: Path,
+    *,
+    multilingual: bool,
+) -> None:
+    notes_root = tmp_path / "notes"
+    write_markdown_trend_note(
+        output_dir=notes_root,
+        trend_doc_id=301,
+        title="Known language",
+        granularity="day",
+        period_start=datetime(2026, 3, 1, tzinfo=UTC),
+        period_end=datetime(2026, 3, 2, tzinfo=UTC),
+        run_id="run-site-invalid-public-url-en",
+        overview_md="## Overview\n\nResearch note.\n",
+        topics=["agents"],
+        clusters=[],
+        language_code="en",
+    )
+    if multilingual:
+        write_markdown_trend_note(
+            output_dir=notes_root / "Localized" / "zh-cn",
+            trend_doc_id=301,
+            title="已知语言",
+            granularity="day",
+            period_start=datetime(2026, 3, 1, tzinfo=UTC),
+            period_end=datetime(2026, 3, 2, tzinfo=UTC),
+            run_id="run-site-invalid-public-url-zh",
+            overview_md="## Overview\n\n研究笔记。\n",
+            topics=["agents"],
+            clusters=[],
+            language_code="zh-CN",
+        )
+
+    site_dir = tmp_path / "site"
+    site_dir.mkdir()
+    sentinel = site_dir / "existing-output.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match=r"PUBLIC_SITE_URL must be an absolute http\(s\) URL",
+    ):
+        export_trend_static_site(
+            input_dir=notes_root,
+            output_dir=site_dir,
+            default_language_code="en" if multilingual else None,
+            options=SiteExportOptions(public_site_url="not-an-absolute-url"),
+        )
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
 def test_export_trend_static_site_metrics_recorder_uses_low_cardinality_step_names(
     tmp_path: Path,
 ) -> None:

@@ -163,6 +163,16 @@ def test_multilingual_discovery_artifacts_expose_only_curated_pages(
     assert entries[0].findtext("atom:title", namespaces=atom_namespace) == (
         "Research page"
     )
+    for relative_path in ("en/feed.xml", "feed.xml"):
+        published_feed = ElementTree.parse(tmp_path / relative_path).getroot()
+        self_link = published_feed.find(
+            "atom:link[@rel='self']",
+            atom_namespace,
+        )
+        assert self_link is not None
+        assert self_link.get("href") == (
+            f"https://example.github.io/recoleta/{relative_path}"
+        )
 
     sitemap_text = (tmp_path / "sitemap.xml").read_text(encoding="utf-8")
     assert "/en/trends/production-trend.html" in sitemap_text

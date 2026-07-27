@@ -508,17 +508,18 @@ def _write_atom_feed(
     output_dir: Path,
     public_site_url: str,
     generated_at: str,
+    publish_at_root: bool = False,
 ) -> Path:
     home_path = language_site.root / "index.html"
     soup = BeautifulSoup(home_path.read_text(encoding="utf-8"), "html.parser")
-    feed_relative_path = str(
-        PurePosixPath(language_site.slug) / "feed.xml"
-        if language_site.slug
-        else PurePosixPath("feed.xml")
+    resolved_feed_relative_path = str(
+        PurePosixPath("feed.xml")
+        if publish_at_root
+        else PurePosixPath(language_site.slug) / "feed.xml"
     )
     feed_url = _site_url(
         public_site_url=public_site_url,
-        relative_path=feed_relative_path,
+        relative_path=resolved_feed_relative_path,
     )
     home_relative_path = str(
         PurePosixPath(language_site.slug) / "index.html"
@@ -595,7 +596,11 @@ def _write_atom_feed(
         if len(seen) >= 20:
             break
 
-    feed_path = language_site.root / "feed.xml"
+    feed_path = (
+        output_dir / "feed.xml"
+        if publish_at_root
+        else language_site.root / "feed.xml"
+    )
     ElementTree.ElementTree(feed).write(
         feed_path,
         encoding="utf-8",
@@ -734,20 +739,39 @@ def _write_language_feeds(
         str(path.relative_to(context.output_dir)).replace("\\", "/")
         for path in feed_paths
     ]
-    root_feed = _copy_default_feed_to_root(context)
+    root_feed = _write_default_feed_to_root(
+        context,
+        generated_at=generated_at,
+    )
     if root_feed is not None:
         relative_paths.append(root_feed)
     return sorted(relative_paths)
 
 
-def _copy_default_feed_to_root(context: _DiscoveryContext) -> str | None:
+def _write_default_feed_to_root(
+    context: _DiscoveryContext,
+    *,
+    generated_at: str,
+) -> str | None:
     if len(context.language_sites) <= 1 or not context.default_language_slug:
         return None
-    default_feed = (
-        context.output_dir / context.default_language_slug / "feed.xml"
+    default_language_site = next(
+        (
+            language_site
+            for language_site in context.language_sites
+            if language_site.slug == context.default_language_slug
+        ),
+        None,
     )
-    root_feed = context.output_dir / "feed.xml"
-    root_feed.write_bytes(default_feed.read_bytes())
+    if default_language_site is None or context.public_site_url is None:
+        return None
+    _write_atom_feed(
+        language_site=default_language_site,
+        output_dir=context.output_dir,
+        public_site_url=context.public_site_url,
+        generated_at=generated_at,
+        publish_at_root=True,
+    )
     return "feed.xml"
 
 

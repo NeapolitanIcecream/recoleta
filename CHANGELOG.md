@@ -34,6 +34,9 @@ Versioning.
 - Single-instance and fleet dry-runs now inspect existing state through a
   read-only database connection and use an in-memory empty schema when the
   configured database is absent, preserving the no-persistent-write contract.
+- Managed site builds validate the canonical public URL before replacing prior
+  output, and multilingual root Atom feeds identify their own public URL in the
+  `self` link.
 - Trend emails now keep the title-rule gap on the content-bearing title cell,
   avoiding a standalone full-width spacer surface that Outlook could repaint.
 
