@@ -167,6 +167,12 @@ Stable publication paths:
 - `docs/assets/recoleta-social-preview.svg` and `.png`;
 - `docs/assets/recoleta-fleet-proof.svg` and `.png`.
 
+The stable proof SVG embeds its three approved public-site captures so it
+renders in a clean checkout and when opened directly from GitHub. Its
+post-embedding SHA-256 is
+`63006c7ac1a289fe702449911e3ec4ea5463831c39b60a152e3e9b9dea100e85`;
+the approved raster output is unchanged.
+
 ## Live fleet capture set
 
 Captured: 2026-07-25
