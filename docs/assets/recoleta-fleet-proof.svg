@@ -1,0 +1,121 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  width="1440"
+  height="960"
+  viewBox="0 0 1440 960"
+  role="img"
+  aria-labelledby="title description"
+>
+  <title id="title">Recoleta live research site</title>
+  <desc id="description">
+    Screenshots show Recoleta tracing Software Intelligence and Embodied AI in
+    English and Chinese, including a trend brief and its linked sources.
+  </desc>
+
+  <defs>
+    <clipPath id="home-clip">
+      <rect x="64" y="216" width="824" height="550" />
+    </clipPath>
+    <clipPath id="trend-clip">
+      <rect x="936" y="216" width="440" height="294" />
+    </clipPath>
+    <clipPath id="source-clip">
+      <rect x="995" y="564" width="322" height="336" />
+    </clipPath>
+  </defs>
+
+  <rect width="1440" height="960" fill="#f5f6f8" />
+  <rect x="32" y="32" width="1376" height="896" fill="none" stroke="#c8ced6" stroke-width="2" />
+
+  <text
+    x="64"
+    y="90"
+    fill="#172033"
+    font-family="Georgia, 'Songti SC', serif"
+    font-size="30"
+    font-weight="700"
+  >Recoleta</text>
+  <text
+    x="64"
+    y="148"
+    fill="#172033"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif"
+    font-size="42"
+    font-weight="700"
+  >Live research site</text>
+  <text
+    x="64"
+    y="184"
+    fill="#354052"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif"
+    font-size="20"
+  >Tracking Software Intelligence and Embodied AI · English and 中文 · Explore the public site</text>
+
+  <rect x="56" y="208" width="840" height="566" fill="#ffffff" stroke="#172033" stroke-width="2" />
+  <image
+    x="64"
+    y="216"
+    width="824"
+    height="550"
+    preserveAspectRatio="xMidYMid slice"
+    clip-path="url(#home-clip)"
+    href="../../../../output/playwright/fleet-home-desktop-2026-07-25.png"
+    xlink:href="../../../../output/playwright/fleet-home-desktop-2026-07-25.png"
+  />
+  <text
+    x="64"
+    y="816"
+    fill="#172033"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif"
+    font-size="22"
+    font-weight="700"
+  >Live research home</text>
+  <text
+    x="64"
+    y="850"
+    fill="#5f6875"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif"
+    font-size="18"
+  >Explore the public GitHub Pages site.</text>
+
+  <text
+    x="936"
+    y="202"
+    fill="#172033"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif"
+    font-size="20"
+    font-weight="700"
+  >Trend brief</text>
+  <rect x="928" y="208" width="456" height="310" fill="#ffffff" stroke="#172033" stroke-width="2" />
+  <image
+    x="936"
+    y="216"
+    width="440"
+    height="294"
+    preserveAspectRatio="xMidYMin slice"
+    clip-path="url(#trend-clip)"
+    href="../../../../output/playwright/fleet-trend-desktop-2026-07-25.png"
+    xlink:href="../../../../output/playwright/fleet-trend-desktop-2026-07-25.png"
+  />
+
+  <text
+    x="936"
+    y="550"
+    fill="#172033"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif"
+    font-size="20"
+    font-weight="700"
+  >Linked source trail</text>
+  <rect x="987" y="556" width="338" height="352" fill="#ffffff" stroke="#172033" stroke-width="2" />
+  <image
+    x="995"
+    y="564"
+    width="322"
+    height="336"
+    preserveAspectRatio="xMidYMid meet"
+    clip-path="url(#source-clip)"
+    href="../../../../output/playwright/fleet-trend-source-card-2026-07-25.png"
+    xlink:href="../../../../output/playwright/fleet-trend-source-card-2026-07-25.png"
+  />
+</svg>

@@ -1,12 +1,17 @@
 # Promotion channel kit
 
-Last updated: 2026-07-25
+Last updated: 2026-07-27
 
-Publication status: draft; wait for the release gates
+Publication status: draft; release and fleet are live, but wait for the
+multi-architecture container replay and social-preview gate
 
 ## Source-of-truth links
 
 - Repository: <https://github.com/NeapolitanIcecream/recoleta>
+- Release:
+  <https://github.com/NeapolitanIcecream/recoleta/releases/tag/v0.7.0>
+- PyPI: <https://pypi.org/project/recoleta/0.7.0/>
+- Container: <https://github.com/NeapolitanIcecream/recoleta/pkgs/container/recoleta>
 - Running fleet: <https://neapolitanicecream.github.io/recoleta/>
 - Fleet case study:
   <https://github.com/NeapolitanIcecream/recoleta/blob/main/docs/guides/production-fleet-case-study.md>
@@ -32,17 +37,21 @@ sustained maintainer dogfooding.
 7. Record each attempt and attributable outcome in
    [`launch-log.md`](./launch-log.md).
 
+Steps 1–3 are complete except for repairing the public container's missing
+arm64 variant. Do not begin step 4 until the replayed image passes anonymous
+amd64 and arm64 checks and the approved social preview is uploaded.
+
 Staggering submissions makes failures diagnosable and attribution less
 ambiguous. It also avoids asking several communities to inspect a release while
 its permanent distribution surfaces are still changing.
 
 ## GitHub Release
 
-Suggested title:
+Published release:
 
-> Recoleta v0.7.0: production-fleet demo and research-site discovery
+> [Recoleta 0.7.0](https://github.com/NeapolitanIcecream/recoleta/releases/tag/v0.7.0)
 
-Suggested body:
+Reusable release summary:
 
 > Recoleta runs long-lived research radars across arXiv, Hacker News,
 > OpenReview, Hugging Face Daily Papers, and RSS. This release makes the
@@ -54,10 +63,10 @@ Suggested body:
 > or an API key. It verifies installation and rendering; it does not reproduce
 > synthesis or count as an external activation.
 >
-> The public three-stream fleet now serves as the reference deployment. Its
-> 2026-07-24 snapshot contains 244 trend briefs, 244 idea briefs, and 1,362
-> linked source notes in English and Simplified Chinese. The release adds a
-> dated case study and a redacted, runnable three-child fleet topology.
+> The maintained bilingual fleet now serves as the reference deployment. Its
+> current snapshot contains 244 trend briefs, 244 idea briefs, and 1,362 linked
+> source notes, with visible briefs through 2026-07-23. The release adds a dated
+> case study and a redacted, runnable fleet topology.
 >
 > Generated research sites now include canonical and social metadata,
 > multilingual alternates, Atom feeds, a curated sitemap, and an explicit
@@ -69,8 +78,9 @@ Suggested body:
 > require source inspection, and the public fleet is maintainer dogfooding
 > rather than independent validation.
 
-Append the final changelog diff and exact artifact links after the version, tag,
-and container digest exist.
+The exact release, package hashes, first container digest, and fleet deployment
+checks are recorded in
+[`checkpoints/2026-07-27-release-and-fleet-verification.md`](./checkpoints/2026-07-27-release-and-fleet-verification.md).
 
 ## Show HN
 
@@ -80,7 +90,7 @@ Submit the repository URL, not a landing page. Recommended title:
 
 Alternatives:
 
-- `Show HN: Recoleta, a Python research radar running as a three-stream fleet`
+- `Show HN: Recoleta, a Python research radar with a live bilingual deployment`
 - `Show HN: Recoleta – continuously turn technical sources into a research site`
 
 Do not use a first comment prepared by an agent. Hacker News requires something
@@ -93,7 +103,8 @@ The maintainer can use this fact card while writing their own comments:
 
 - Why it exists: the maintainer and team needed several research scopes to stay
   current without losing the source trail.
-- What is personally operated: the linked three-stream bilingual fleet.
+- What is personally operated: the linked bilingual deployment tracing
+  Software Intelligence and Embodied AI.
 - Fastest trial: `uvx recoleta demo`; no account, key, source fetch, or model
   call.
 - What a full deployment adds: source ingestion, durable state, evidence-gated
@@ -124,10 +135,11 @@ What's interesting:
 > Recoleta is an Apache-2.0 Python system that monitors arXiv, Hacker News,
 > OpenReview, Hugging Face Daily Papers, and RSS, then publishes traceable trend
 > and idea briefs as a living research site. The project is backed by a running
-> three-stream bilingual fleet rather than a staged preset. The new release adds
-> a no-key offline demo from a real fleet brief, a redacted fleet example, Atom
-> feeds and curated search discovery, PyPI distribution, and a public container
-> image. Low-evidence synthesis windows can be suppressed instead of padded.
+> bilingual deployment rather than a staged preset. The new release adds a
+> `uvx recoleta demo` command that renders a real curated fleet brief without
+> requiring an API key, plus a redacted fleet example, Atom feeds and curated
+> search discovery, PyPI distribution, and a public container image.
+> Low-evidence synthesis windows can be suppressed instead of padded.
 
 Changelog accepts self-submissions, asks why the link is newsworthy, and
 excludes commercial products and generic tutorials. Recoleta is open source and
@@ -151,9 +163,9 @@ Description:
 > Recoleta is an Apache-2.0 Python 3.14 system for operating one research radar
 > or a fleet of isolated streams. It ingests technical sources, retains durable
 > state, produces evidence-linked trend and idea briefs, and publishes
-> multilingual research sites. A no-key `uvx recoleta demo` renders a curated
-> output from the running three-stream fleet before users configure a model or
-> source account.
+> multilingual research sites. `uvx recoleta demo` renders a curated output
+> from the maintained bilingual deployment before users configure a model,
+> source account, or API key.
 
 The newsletter explicitly accepts projects from the Python community but does
 not guarantee inclusion: <https://pycoders.com/submissions>.
@@ -166,15 +178,17 @@ bot, and automated interaction is allowed only after a user tags the account.
 Launch post:
 
 > Recoleta v0.7.0 is out: run long-lived research radars across technical
-> sources, publish traceable trends and ideas, and inspect a real three-stream
-> production fleet. `uvx recoleta demo` needs no API key or model call.
+> sources, publish traceable trends and ideas, and inspect a maintained
+> bilingual deployment tracing Software Intelligence and Embodied AI.
+> `uvx recoleta demo` needs no API key or model call.
 > https://github.com/NeapolitanIcecream/recoleta
 
 Fleet proof post:
 
-> What sustained dogfooding looks like: Recoleta's 2026-07-24 fleet snapshot
-> contains 244 trends, 244 ideas, and 1,362 linked source notes across three
-> isolated streams in English and Simplified Chinese. Limits and reproduction:
+> What sustained dogfooding looks like: Recoleta's current public snapshot
+> contains 244 trends, 244 ideas, and 1,362 linked source notes in English and
+> Simplified Chinese, tracing Software Intelligence and Embodied AI. Limits and
+> reproduction:
 > https://github.com/NeapolitanIcecream/recoleta/blob/main/docs/guides/production-fleet-case-study.md
 
 Selected-brief post:

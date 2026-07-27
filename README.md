@@ -1,8 +1,9 @@
 <p align="center">
-  <img src="./docs/assets/Recoleta-3.jpeg" alt="Recoleta banner"/>
+  <img src="./docs/assets/recoleta-banner.png" alt="Research sources becoming traceable Recoleta briefs"/>
 </p>
 
 [![CI](https://github.com/NeapolitanIcecream/recoleta/actions/workflows/ci.yml/badge.svg)](https://github.com/NeapolitanIcecream/recoleta/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/recoleta.svg)](https://pypi.org/project/recoleta/)
 [![Live demo](https://img.shields.io/badge/demo-live-0b7a75)](https://neapolitanicecream.github.io/recoleta/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.14%2B-blue.svg)](#recoleta-installation)
@@ -20,9 +21,9 @@ PDF, email, or a living research site.
 - Keep durable SQLite state and regenerate Markdown, site pages, localization,
   and delivery surfaces from it.
 
-The public fleet is the project’s primary example. As of 2026-07-24 it combined
-three streams—Embodied AI, Software Intelligence, and Cross Platform—into 244
-trend briefs, 244 idea briefs, and 1,362 linked source notes in English and
+The public fleet is the project’s primary example. Its current snapshot was
+refreshed from Recoleta 0.7.0 on 2026-07-27 and contains visible briefs through
+2026-07-23: 244 trends, 244 ideas, and 1,362 linked source notes in English and
 Simplified Chinese. These are production-dogfooding results, not independent
 adoption claims.
 
@@ -66,11 +67,8 @@ Inspect a real, curated production-fleet output before configuring sources,
 models, or Huldra:
 
 ```bash
-git clone https://github.com/NeapolitanIcecream/recoleta.git
-cd recoleta
-uv sync
-uv run recoleta demo --output-dir recoleta-demo
-uv run python -m http.server 8000 --directory recoleta-demo
+uvx recoleta==0.7.0 demo --output-dir recoleta-demo
+python -m http.server 8000 --directory recoleta-demo
 ```
 
 Open <http://127.0.0.1:8000/>. The command performs no network, model, or
@@ -89,6 +87,12 @@ state. The fleet build combines those outputs into one bilingual research site.
 Read the
 [dated production fleet case study](./docs/guides/production-fleet-case-study.md)
 for the topology, a real source trail, reproducible checks, and limitations.
+
+<p align="center">
+  <a href="https://neapolitanicecream.github.io/recoleta/">
+    <img src="./docs/assets/recoleta-fleet-proof.png" alt="Bilingual public Recoleta research site tracing Software Intelligence and Embodied AI"/>
+  </a>
+</p>
 
 <a id="recoleta-features"></a>
 ## ✨ Features
@@ -129,6 +133,21 @@ for the topology, a real source trail, reproducible checks, and limitations.
     send
   - Chromium-compatible browser for browser-rendered trend PDFs
 
+### Install from PyPI
+
+Run the CLI in an isolated environment:
+
+```bash
+uvx recoleta --help
+```
+
+Or install it as a persistent command:
+
+```bash
+uv tool install recoleta
+recoleta --help
+```
+
 ### Install from source
 
 ```bash
@@ -162,6 +181,13 @@ service. To verify the bundled CLI:
 
 ```bash
 docker run --rm --entrypoint huldra recoleta:runtime --help
+```
+
+Pull the published runtime image:
+
+```bash
+docker pull ghcr.io/neapolitanicecream/recoleta:0.7.0
+docker run --rm ghcr.io/neapolitanicecream/recoleta:0.7.0 --help
 ```
 
 The image uses these default paths:

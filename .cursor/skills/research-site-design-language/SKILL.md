@@ -12,6 +12,10 @@ section hierarchy, markdown-to-site rendering, or reader-facing generation rules
 
 - Treat Recoleta as a research publication and reading tool. Evidence, findings,
   and navigation take priority over product marketing.
+- On promotional cards and proof graphics, lead with the research subjects,
+  available languages, inspectable output, and direct access path. Keep stream
+  counts, process isolation, and deployment topology in technical documentation
+  unless the graphic explicitly teaches that architecture.
 - Give each page one primary job. Do not make a research detail page double as a
   landing page or make an email reproduce the whole website.
 - The current palette, card system, serif headings, gradients, and hero layouts

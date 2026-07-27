@@ -4,24 +4,31 @@ Last updated: 2026-07-27
 
 ## Current state
 
-- Branch: `codex/promotion-readiness`
-- Recoleta release candidate: `0.7.0`; `07ce0946` is the initial candidate
-  commit and later branch commits incorporate cloud-review corrections
+- Release branch: `codex/promotion-readiness`, squash-merged by PR 78 as
+  `3e2a59c5`
+- Recoleta release: `0.7.0`
 - Huldra release merge: `1b9a671`
 - Remote publication: Huldra PR 7 is merged and
   <https://github.com/NeapolitanIcecream/huldra/releases/tag/v0.4.2> is
   published; its release workflow succeeded and PyPI serves version `0.4.2` of
   `huldra-arxiv`. Recoleta
-  [PR 78](https://github.com/NeapolitanIcecream/recoleta/pull/78) is open.
-- Phase: Recoleta `0.7.0` PR remediation; fresh-head CI and cloud review pending
-- External publication: Huldra infrastructure release complete; Recoleta
-  package and container not published
-- Visual publication: no asset is public; the structure is approved and a
-  themed three-asset replacement set awaits final review
+  [PR 78](https://github.com/NeapolitanIcecream/recoleta/pull/78) is merged,
+  the [0.7.0 release](https://github.com/NeapolitanIcecream/recoleta/releases/tag/v0.7.0)
+  is published, PyPI serves `recoleta 0.7.0`, and the public GHCR tags
+  `0.7.0`, `0.7`, and `latest` resolve to the same OCI image. That image
+  currently contains `linux/amd64` only.
+- Phase: repair and replay the `0.7.0` container as a verified amd64/arm64 image,
+  then publish the approved visual set
+- External publication: package, source distribution, and release complete; the
+  public container is available for amd64 while the arm64 repair is pending; no
+  channel submission attempted
+- Visual publication: the maintainer approved the final three-asset set on
+  2026-07-27; stable copies are on the current branch and remain unpublished
+  until that versioned change is reviewed and merged
 - Credentials requested: none
 - Maintainer account actions: both PyPI/GitHub publisher configurations
   confirmed complete on 2026-07-27
-- Primary example: the running three-stream production fleet published at
+- Primary example: the maintained bilingual production fleet published at
   <https://neapolitanicecream.github.io/recoleta/>
 
 ## Evidence produced
@@ -143,17 +150,44 @@ Last updated: 2026-07-27
 - Verified all three assets with Chromium and SVG parsing. The banner remains
   legible at 240 by 120, the social card at 300 by 158, both survive grayscale,
   and all text-role pairs meet at least 4.5:1 contrast.
+- Squash-merged Recoleta PR 78 as `3e2a59c5`, pushed annotated tag `v0.7.0` at
+  that exact commit, and published the matching GitHub Release.
+- Both release workflows passed on the merge commit. PyPI exposes the
+  `0.7.0` wheel and source distribution with the expected Python requirement
+  and `huldra-arxiv>=0.4.2,<0.5` dependency. Anonymous GHCR requests resolve
+  `0.7.0`, `0.7`, and `latest` to
+  `sha256:9e11855ad4ae2f96fe851151124864c6ac2c34890ccc4dc28520dc8d00a9ad79`.
+- A post-release runtime smoke found that the OCI index contains one
+  `linux/amd64` image plus its attestation, not an arm64 image. A default pull
+  therefore fails on Apple Silicon. The published amd64 variant runs Recoleta
+  `0.7.0` with Huldra `0.4.2`, and a native local arm64 build of the same
+  runtime target also passes CLI and version smokes.
+- The maintainer approved the revised banner, social card, and fleet proof
+  board after the social-card and proof-board copy was simplified.
+- Rebuilt and deployed the maintained fleet from a clean worktree pinned to
+  release commit `3e2a59c5`, without rerunning translation or model synthesis.
+  GitHub Pages built branch commit `2855fd0e` successfully.
+- Independently verified the public manifest, 986-URL sitemap, robots policy,
+  three Atom feeds, English and Chinese representative briefs, canonical and
+  language metadata, index/no-index policy, and desktop/mobile Chromium
+  rendering. All checked URLs returned HTTP 200 and the browser reported no
+  console errors or warnings.
+- Enabled private vulnerability reporting for both Recoleta and Huldra through
+  the GitHub repository API, then independently read both settings back as
+  enabled.
+- Replaced the repository's stale `local-first` About description and removed
+  `local-first`, `digital-garden`, `obsidian`, generic `ai`, and
+  `developer-tools` topics. The public About text, website, and ten focused
+  topics now match the approved handoff.
 
 ## Active work
 
-1. Complete PR CI, cloud review, and thread resolution.
-2. Obtain maintainer approval or revisions for the themed banner, social card,
-   and real-fleet proof board.
-3. Merge, tag, and publish the Recoleta GitHub Release through the configured
-   pending publisher.
-4. Verify PyPI, GHCR, the deployed fleet discovery files, and final URLs.
-5. Complete the account-only GHCR visibility and private vulnerability
-   reporting steps before submitting any channel material.
+1. Add amd64/arm64 container publication and a safe existing-tag replay path,
+   merge it, replay `v0.7.0`, and verify both public platforms.
+2. Publish the approved visual set through a separate versioned change and
+   upload the approved social preview.
+3. Prepare the maintainer-reviewed Show HN package, then stage later channel
+   submissions according to the launch order.
 
 ## Approval gates
 
@@ -165,37 +199,29 @@ The maintainer has already approved:
   it a separate promotion campaign;
 - preparing Show HN material, with the maintainer reviewing, submitting, and
   participating in the discussion;
-- requesting narrowly scoped account access when an external action requires it.
+- requesting narrowly scoped account access when an external action requires it;
+- the final revised banner, social card, and production-fleet proof board.
 
 Still requires explicit review or action:
 
-- every replacement visual asset;
 - disclosure of private fleet cost, failure, recipient, or team-identity data;
-- container package visibility after its first publication;
-- private vulnerability reporting;
 - any external post or directory submission;
 - routine autonomous posting under a project social account.
 
 ## Current bottleneck
 
-The Huldra dependency blocker is closed. The Recoleta `0.7.0` candidate passes
-local release gates with index-hosted Huldra `0.4.2`, including the latest
-review corrections. Its next package gate is fresh-head
-[PR 78](https://github.com/NeapolitanIcecream/recoleta/pull/78) CI and review;
-Recoleta remains absent from PyPI until the candidate is merged, tagged, and
-released.
-
-Visual publication remains independently gated. The structure is approved. The
-current banner, social card, and real-fleet proof board need one final review
-before they replace public assets.
+The package and fleet deployment gates are complete, but the first public
+container is amd64-only. The next outcome-facing gate is republishing the same
+release tag as a verified amd64/arm64 image without weakening tag/version or
+stable-`latest` safeguards.
 
 ## Approach registry
 
 | Family | Evidence | Exact gap | Status |
 | --- | --- | --- | --- |
-| No-key evaluation | bundled real brief, CLI tests, wheel inspection, clean index install | published `uvx` smoke | ready |
-| Production proof | public fleet case, redacted topology, full isolated build | external-user evidence | active |
-| Search and syndication | metadata, Atom, sitemap, robots, full fleet validation | production deployment | ready |
-| Package distribution | Huldra 0.4.2 on PyPI, configured publishers, Recoleta 0.7.0 index-only candidate | Recoleta PR, release workflows, and public checks | active |
-| Visual identity | approved structure, sourced constraints, themed banner, social card, real-fleet proof board | final asset review and public replacement | awaiting review |
-| Channel distribution | channel kit, account instructions, launch ledger | release URL, approved visuals, account actions | ready behind gates |
+| No-key evaluation | bundled real brief, CLI tests, public wheel and source distribution, successful public-index `uvx` smoke | external-user evidence | ready |
+| Production proof | public fleet case, redacted topology, refreshed public deployment | external-user evidence | active |
+| Search and syndication | deployed metadata, Atom, 986-URL sitemap, robots, HTTPS and Chromium validation | syndication discovery | ready |
+| Package distribution | Huldra 0.4.2 and Recoleta 0.7.0 on PyPI; public versioned and stable GHCR tags; clean public-index command smoke | arm64 GHCR variant | repair active |
+| Visual identity | approved banner, social card, and real-fleet proof board | versioned public replacement | approved |
+| Channel distribution | channel kit, account instructions, launch ledger, live release URL | merged visuals and maintainer-reviewed Show HN package | ready behind gates |
