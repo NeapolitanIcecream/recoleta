@@ -2,7 +2,7 @@
 
 Status: Accepted and implemented for the current stage
 
-This document captures a pragmatic design for running Recoleta continuously over long periods. It is intentionally narrower than a full platform redesign. The goal is to make the existing single-user, local-first system safe to operate for months, while preserving the current CLI-first model.
+This document captures a pragmatic design for running Recoleta continuously over long periods. It is intentionally narrower than a full platform redesign. The goal is to make the existing single-operator system safe to operate for months, while preserving the current CLI-first model.
 
 ## Current iteration assumptions
 

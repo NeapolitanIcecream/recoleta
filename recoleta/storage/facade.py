@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from threading import Lock
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import event
 from sqlmodel import Session, create_engine
@@ -68,11 +69,21 @@ class Repository(
         db_path: Path,
         title_dedup_threshold: float = 92.0,
         title_dedup_max_candidates: int = 500,
+        read_only: bool = False,
     ) -> None:
         self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.read_only = bool(read_only)
+        if self.read_only:
+            resolved_path = self.db_path.expanduser().resolve()
+            encoded_path = quote(resolved_path.as_posix(), safe="/:")
+            database_url = (
+                f"sqlite:///file:{encoded_path}?mode=ro&uri=true"
+            )
+        else:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            database_url = f"sqlite:///{self.db_path}"
         self.engine = create_engine(
-            f"sqlite:///{self.db_path}",
+            database_url,
             echo=False,
             connect_args={"check_same_thread": False, "timeout": 30},
         )

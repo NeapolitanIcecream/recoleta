@@ -7,8 +7,41 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-27
+
+### Added
+
+- `recoleta demo` builds an offline site from a bundled, curated production
+  fleet brief without configuration, source fetches, or model calls.
+- Public site discovery output: canonical and social metadata, multilingual
+  alternates, Atom feeds, a curated sitemap, and robots policy.
+- `PUBLIC_SITE_URL` as a site-level canonical base URL, with compatibility
+  fallback to `EMAIL.public_site_url`.
+- Trusted Publishing and container-release workflows, package metadata, and a
+  private vulnerability-reporting policy.
+- A dated production fleet case study and redacted three-stream fleet example.
+
+### Changed
+
+- Project positioning and onboarding now lead with the maintained production
+  fleet and continuously operated research radars instead of `local-first` or a
+  lightly maintained preset.
+- Standard installations now resolve `huldra-arxiv>=0.4.2,<0.5` from PyPI
+  instead of a pinned Git revision, enabling index-only package installation.
+
 ### Fixed
 
+- Single-instance and fleet dry-runs now inspect existing state through a
+  read-only database connection and use an in-memory empty schema when the
+  configured database is absent, preserving the no-persistent-write contract.
+- Managed site builds validate the canonical public URL before replacing prior
+  output, and multilingual root Atom feeds identify their own public URL in the
+  `self` link.
+- Canonical, alternate, sitemap, and Atom entry URLs percent-encode generated
+  page paths, while feed generation resolves those encoded homepage links back
+  to their local pages.
+- Container publication rejects release tags that do not match the package
+  version and reserves the `latest` image tag for stable releases.
 - Trend emails now keep the title-rule gap on the content-bearing title cell,
   avoiding a standalone full-width spacer surface that Outlook could repaint.
 

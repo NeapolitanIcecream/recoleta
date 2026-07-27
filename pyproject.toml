@@ -1,9 +1,27 @@
 [project]
 name = "recoleta"
-version = "0.6.1"
-description = "Local-first AI research radar for ingesting, analyzing, and publishing research signals."
+version = "0.7.0"
+description = "Continuously operated research radar for traceable trends, ideas, and living research sites."
 readme = "README.md"
 requires-python = ">=3.14"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "NeapolitanIcecream" }]
+keywords = [
+    "research",
+    "research-radar",
+    "trend-analysis",
+    "arxiv",
+    "knowledge-management",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
 dependencies = [
     "anthropic>=0.46.0",
     "apscheduler>=3.11.2",
@@ -13,7 +31,7 @@ dependencies = [
     "filelock>=3.24.3",
     "httpx>=0.28.1",
     "huggingface-hub>=0.36.2",
-    "huldra-arxiv @ git+https://github.com/NeapolitanIcecream/huldra.git@8109b997f4c6be5c80a638f632977bf929cef976",
+    "huldra-arxiv>=0.4.2,<0.5",
     "lancedb>=0.29.2",
     "latex2mathml>=3.81.0",
     "litellm>=1.76.1",
@@ -53,6 +71,14 @@ huldra = []
 
 [project.scripts]
 recoleta = "recoleta.cli:main"
+
+[project.urls]
+Changelog = "https://github.com/NeapolitanIcecream/recoleta/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/NeapolitanIcecream/recoleta#readme"
+Homepage = "https://neapolitanicecream.github.io/recoleta/"
+Issues = "https://github.com/NeapolitanIcecream/recoleta/issues"
+Repository = "https://github.com/NeapolitanIcecream/recoleta"
+Security = "https://github.com/NeapolitanIcecream/recoleta/security/policy"
 
 [dependency-groups]
 dev = [
@@ -224,3 +250,4 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "recoleta"
 module-root = ""
+source-exclude = [".DS_Store"]

@@ -130,6 +130,19 @@ def child_default_language_code(config_path: Path) -> str | None:
     )
 
 
+def child_public_site_url(config_path: Path) -> str | None:
+    settings = load_child_settings(config_path)
+    explicit = str(getattr(settings, "public_site_url", "") or "").strip()
+    if explicit:
+        return explicit
+    email = getattr(settings, "email", None)
+    return (
+        str(getattr(email, "public_site_url", "") or "").strip()
+        if email is not None
+        else None
+    ) or None
+
+
 def _fleet_instance_slug(name: str) -> str:
     return slugify(str(name or "").strip(), lowercase=True) or "instance"
 

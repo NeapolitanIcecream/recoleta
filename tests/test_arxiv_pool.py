@@ -2363,6 +2363,27 @@ def test_fleet_workflow_dry_run_skips_pool_pre_sync_and_marks_children_dry_run(
     assert payload["planned_expensive_steps"] == 4
 
 
+def test_fleet_workflow_dry_run_does_not_create_child_databases(
+    tmp_path: Path,
+) -> None:
+    manifest_path, pool_path = _write_pool_fleet_manifest(tmp_path)
+
+    payload = execute_fleet_granularity_workflow(
+        manifest_path=manifest_path,
+        workflow_name="day",
+        command="fleet run day",
+        anchor_date="2026-05-20",
+        dry_run=True,
+        json_output=False,
+    )
+
+    assert payload["mode"] == "dry_run"
+    assert len(payload["children"]) == 2
+    assert not (tmp_path / "embodied_ai.db").exists()
+    assert not (tmp_path / "software.db").exists()
+    assert not pool_path.exists()
+
+
 def test_fleet_workflow_skip_ingest_skips_pool_pre_sync_but_still_gates_analysis(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

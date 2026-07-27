@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import inspect
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ from recoleta.cli.site_support import (
     FleetSitePayloadContext,
     fleet_default_language,
     fleet_input_dirs,
+    fleet_public_site_url,
     load_manifest,
     fleet_site_output_dir,
     fleet_site_payload,
@@ -47,6 +49,7 @@ from recoleta.fleet import (
     FleetSequenceBusyError,
     _fleet_instance_slug,
     child_default_language_code,
+    child_public_site_url,
     child_site_input_dir,
     fleet_sequence_lease,
     load_child_settings,
@@ -251,6 +254,13 @@ def _fleet_default_language(manifest: Any, explicit: str | None) -> str | None:
     )
 
 
+def _fleet_public_site_url(manifest: Any) -> str | None:
+    return fleet_public_site_url(
+        manifest=manifest,
+        child_public_site_url=child_public_site_url,
+    )
+
+
 def _fleet_site_output_dir(manifest_path: Path, output_dir: Path | None) -> Path:
     return fleet_site_output_dir(
         manifest_path=manifest_path,
@@ -325,6 +335,21 @@ def _build_fleet_site_artifacts(
         "limit": limit,
         "default_language_code": resolved_default_language_code,
     }
+    if public_site_url := _fleet_public_site_url(manifest):
+        try:
+            parameters = inspect.signature(export_trend_static_site).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "options" in parameters:
+            site_export_options = cli._import_symbol(
+                "recoleta.site",
+                attr_name="SiteExportOptions",
+            )
+            export_kwargs["options"] = site_export_options(
+                public_site_url=public_site_url,
+            )
+        elif "public_site_url" in parameters:
+            export_kwargs["public_site_url"] = public_site_url
     if normalized_item_export_scope != "linked":
         export_kwargs["item_export_scope"] = normalized_item_export_scope
     manifest_result_path = export_trend_static_site(**export_kwargs)
@@ -1596,6 +1621,8 @@ def _deploy_fleet_site(*, context: FleetSiteDeployContext) -> dict[str, Any]:
         "force": context.force,
         "default_language_code": _fleet_default_language(context.manifest, None),
     }
+    if public_site_url := _fleet_public_site_url(context.manifest):
+        deploy_kwargs["public_site_url"] = public_site_url
     normalized_item_export_scope = normalize_item_export_scope(
         context.item_export_scope
     )

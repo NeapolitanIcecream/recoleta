@@ -1,0 +1,25 @@
+recoleta_db_path: "./.state/embodied_ai/recoleta.db"
+markdown_output_dir: "./.state/embodied_ai/outputs"
+llm_model: "openai/gpt-5.4"
+publish_targets: [markdown]
+
+topics:
+  - embodied ai
+  - robot learning
+  - vision-language-action models
+  - world models
+
+sources:
+  arxiv:
+    enabled: true
+    mode: pool
+    queries:
+      - "cat:cs.RO OR cat:cs.AI"
+    max_results_per_run: 60
+  hf_daily:
+    enabled: true
+
+arxiv_pool:
+  enabled: true
+  backend: huldra
+  huldra_base_url: "http://127.0.0.1:8765"

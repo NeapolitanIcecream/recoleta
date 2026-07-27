@@ -102,7 +102,7 @@ Local paths:
 Public examples:
 
 - <https://neapolitanicecream.github.io/recoleta/en/trends/index.html>
-- <https://neapolitanicecream.github.io/recoleta/en/streams/software-intelligence.html>
+- <https://neapolitanicecream.github.io/recoleta/en/trends/software-intelligence--day--2026-07-23--trend--2079.html>
 
 ![Recoleta trend note](../assets/sample-output-trend-brief.png)
 
@@ -124,11 +124,21 @@ Local paths:
 Public examples:
 
 - <https://neapolitanicecream.github.io/recoleta/en/ideas/index.html>
-- <https://neapolitanicecream.github.io/recoleta/en/streams/software-intelligence.html>
+- <https://neapolitanicecream.github.io/recoleta/en/ideas/software-intelligence--day--2026-07-23--ideas.html>
 
 ![Recoleta idea note](../assets/sample-output-idea-brief.png)
 
-## 4. Pick the closest preset example
+## 4. Compare the fleet topology
+
+The live three-stream fleet is the maintained reference deployment. Read the
+[production fleet case study](./production-fleet-case-study.md) and start from
+the [redacted fleet shape](../../examples/production-fleet/README.md) when you
+want to reproduce its instance isolation and aggregate site.
+
+Presets remain smaller configuration examples; they are not the source of the
+public site or the main product proof.
+
+## 5. Pick a smaller preset
 
 The preset configs that include arXiv use the standard
 [Huldra](https://github.com/NeapolitanIcecream/huldra)-backed pool mode. Huldra
@@ -139,7 +149,7 @@ your running service before using a preset.
 
 - Start from: [`presets/agents-radar.yaml`](../../presets/agents-radar.yaml)
 - Closest public example:
-  <https://neapolitanicecream.github.io/recoleta/en/streams/software-intelligence.html>
+  <https://neapolitanicecream.github.io/recoleta/en/trends/software-intelligence--day--2026-07-23--trend--2079.html>
 - Expect: `latest.md`, `Inbox/`, trend notes, idea notes when evidence is
   strong enough, and the static site. Here `latest.md` is still only the latest
   publish index.
@@ -148,7 +158,7 @@ your running service before using a preset.
 
 - Start from: [`presets/robotics-radar.yaml`](../../presets/robotics-radar.yaml)
 - Closest public example:
-  <https://neapolitanicecream.github.io/recoleta/en/streams/embodied-ai.html>
+  <https://neapolitanicecream.github.io/recoleta/en/trends/embodied-ai--day--2026-07-22--trend--946.html>
 - Expect the same output structure, but with robotics-heavy source material
 
 ### arXiv digest

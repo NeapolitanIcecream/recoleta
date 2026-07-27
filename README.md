@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./docs/assets/Recoleta-3.jpeg" alt="Project Name Banner"/>
+  <img src="./docs/assets/Recoleta-3.jpeg" alt="Recoleta banner"/>
 </p>
 
 [![CI](https://github.com/NeapolitanIcecream/recoleta/actions/workflows/ci.yml/badge.svg)](https://github.com/NeapolitanIcecream/recoleta/actions/workflows/ci.yml)
@@ -7,21 +7,30 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.14%2B-blue.svg)](#recoleta-installation)
 
-Recoleta watches arXiv, Hacker News, OpenReview, Hugging Face Daily Papers, and
-RSS from one local workspace. It keeps state in SQLite, writes Markdown first,
-and can turn the same corpus into trend notes, idea notes, PDFs, a static
-site, and manual trend email batches.
+Recoleta runs long-lived research radars across arXiv, Hacker News, OpenReview,
+Hugging Face Daily Papers, and RSS. It turns the accumulated evidence into
+traceable trend and idea briefs, then publishes the same corpus as Markdown,
+PDF, email, or a living research site.
 
-**Start here:** [Live demo](https://neapolitanicecream.github.io/recoleta/) · [5-minute quickstart](#recoleta-quickstart) · [First output tour](./docs/guides/first-output-tour.md) · [Fleet development runbook](./docs/guides/fleet-development-runbook.md) · [Preset gallery](./presets/README.md) · [CLI v2 migration](./docs/guides/cli-v2-migration.md)
+**Start here:** [Live production fleet](https://neapolitanicecream.github.io/recoleta/) · [Offline output demo](#offline-output-demo-no-api-key) · [Production fleet case study](./docs/guides/production-fleet-case-study.md) · [First output tour](./docs/guides/first-output-tour.md) · [Fleet runbook](./docs/guides/fleet-development-runbook.md)
 
-- Run one instance or a fleet of isolated instances from one manifest.
-- Keep SQLite as the source of truth and regenerate Markdown, site pages, and
-  delivery outputs from stored state.
-- Start from a preset if you want a smaller first run.
+- Operate one radar or a fleet of isolated research streams from one manifest.
+- Retain exact evidence links and suppress low-evidence synthesis windows
+  instead of padding them with unsupported output.
+- Keep durable SQLite state and regenerate Markdown, site pages, localization,
+  and delivery surfaces from it.
+
+The public fleet is the project’s primary example. As of 2026-07-24 it combined
+three streams—Embodied AI, Software Intelligence, and Cross Platform—into 244
+trend briefs, 244 idea briefs, and 1,362 linked source notes in English and
+Simplified Chinese. These are production-dogfooding results, not independent
+adoption claims.
 
 ## 📚 Contents
 
 - [Overview](#recoleta-overview)
+- [Offline output demo](#offline-output-demo-no-api-key)
+- [Production fleet](#recoleta-production-fleet)
 - [Features](#recoleta-features)
 - [Installation](#recoleta-installation)
 - [Docker / Compose](#recoleta-docker)
@@ -35,10 +44,10 @@ site, and manual trend email batches.
 <a id="recoleta-overview"></a>
 ## 👀 Overview
 
-Recoleta is local-first by design. The database is the durable record of what
-was ingested, analyzed, and published. Markdown notes, PDFs, Telegram messages,
-email preview/send artifacts, and site pages are rebuildable outputs on top of
-that state.
+Recoleta is designed for continuous operation. The database is the durable
+record of what was ingested, analyzed, and published. Markdown notes, PDFs,
+Telegram messages, email preview/send artifacts, and site pages are rebuildable
+outputs on top of that state.
 
 One workspace can run a single instance. A migrated deployment can also run a
 fleet manifest that points at several isolated child instances. Each child keeps
@@ -49,6 +58,37 @@ or shell environment, remove it first. The old shared multi-scope runtime and
 in-tree migration commands are no longer part of the supported product surface.
 Multi-instance deployments now use one child config per instance plus a
 `fleet.yaml` manifest.
+
+<a id="offline-output-demo-no-api-key"></a>
+## Offline output demo (no API key)
+
+Inspect a real, curated production-fleet output before configuring sources,
+models, or Huldra:
+
+```bash
+git clone https://github.com/NeapolitanIcecream/recoleta.git
+cd recoleta
+uv sync
+uv run recoleta demo --output-dir recoleta-demo
+uv run python -m http.server 8000 --directory recoleta-demo
+```
+
+Open <http://127.0.0.1:8000/>. The command performs no network, model, or
+embedding calls. It verifies installation and site rendering from one bundled
+2026-07-23 fleet brief; it does not count as an external activation or
+reproduce the synthesis itself.
+
+<a id="recoleta-production-fleet"></a>
+## Production fleet
+
+The live site at <https://neapolitanicecream.github.io/recoleta/> is generated
+from three isolated child instances and one aggregate fleet manifest. Each
+stream has its own database, topics, source policy, output tree, and delivery
+state. The fleet build combines those outputs into one bilingual research site.
+
+Read the
+[dated production fleet case study](./docs/guides/production-fleet-case-study.md)
+for the topology, a real source trail, reproducible checks, and limitations.
 
 <a id="recoleta-features"></a>
 ## ✨ Features
@@ -284,6 +324,10 @@ publish_targets:
 
 # Local Markdown output directory
 markdown_output_dir: "~/.local/share/recoleta/outputs"
+
+# Canonical base URL used for sitemap, feeds, canonical links, and social
+# metadata when building a public site.
+# public_site_url: "https://example.github.io/recoleta"
 
 # Optional: manual trend email preview/send via Resend.
 # This does not change publish_targets.
@@ -549,6 +593,7 @@ uv run recoleta stage translate backfill --all-history --include items,trends,id
 # build, preview, or deploy the public site
 uv run recoleta run site build
 # item pages are linked-only by default; pass --item-export-scope all to restore the legacy full export
+# explicit-path builds accept --public-site-url or PUBLIC_SITE_URL without loading full runtime settings
 uv run recoleta run site serve
 uv run recoleta run deploy --branch gh-pages --pages-config auto
 
@@ -645,12 +690,8 @@ workflows, and admin commands, see
 ### Release docs
 
 - [`CHANGELOG.md`](CHANGELOG.md) - user-visible changes by release
-- [`docs/releases/v0.6.0-draft.md`](docs/releases/v0.6.0-draft.md) - public
-  release notes draft
-- [`docs/releases/v0.6.0-launch-kit.md`](docs/releases/v0.6.0-launch-kit.md) -
-  reusable launch copy
-- [`docs/releases/v0.6.0-content-pack.md`](docs/releases/v0.6.0-content-pack.md) -
-  longer demo and launch material
+- [`docs/releases/release-process.md`](docs/releases/release-process.md) -
+  package, container, fleet, and post-release gates
 
 ### Design reference
 
@@ -677,6 +718,11 @@ workflows, and admin commands, see
 
 See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for PR expectations, issue templates,
 and preset request guidance.
+
+If you generated a new artifact from your own input, you can optionally
+[share a public usage receipt](https://github.com/NeapolitanIcecream/recoleta/issues/new?template=activation_receipt.yml).
+Do not include private sources, credentials, recipient data, or confidential
+output.
 
 Install dev dependencies and run the standard checks:
 

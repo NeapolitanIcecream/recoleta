@@ -1,0 +1,23 @@
+recoleta_db_path: "./.state/cross_platform/recoleta.db"
+markdown_output_dir: "./.state/cross_platform/outputs"
+llm_model: "openai/gpt-5.4"
+publish_targets: [markdown]
+
+topics:
+  - agent evaluation
+  - human oversight
+  - research infrastructure
+  - system reliability
+
+sources:
+  arxiv:
+    enabled: true
+    mode: pool
+    queries:
+      - "cat:cs.AI AND (all:evaluation OR all:reliability)"
+    max_results_per_run: 40
+
+arxiv_pool:
+  enabled: true
+  backend: huldra
+  huldra_base_url: "http://127.0.0.1:8765"

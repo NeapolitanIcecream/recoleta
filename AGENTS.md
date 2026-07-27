@@ -24,6 +24,18 @@ Pytest is the test runner; `pytest-asyncio` and `respx` support async and HTTP-f
 ## Commit & Pull Request Guidelines
 Recent history uses short imperative subjects with optional Conventional Commit scopes, for example `fix(trends): constrain rag searches` and `feat(trends): inject overview pack`. Match that pattern when possible. Keep commits focused, mention config or schema changes in the body, and include the commands you ran (`uv run pytest`, `uv run ruff check .`) in the PR description. If a change affects CLI output, Markdown publishing, or trend documents, include a representative sample in the PR.
 
+## Promotion & Launch Work
+Promotion research, decisions, experiments, and current execution state live in
+`docs/promotion/`. Read `docs/promotion/README.md` before changing positioning,
+packaging, public examples, launch material, or acquisition channels, and update
+the archive when material evidence or decisions change. Treat the running
+production fleet, observed behavior, and current code as stronger evidence than
+older generated documentation or launch copy. Never copy credentials, private
+recipient data, or internal filesystem paths into the promotion archive.
+
+Visual promotion assets require maintainer review before they replace an existing
+asset or are published. Drafts may be generated locally and presented for review.
+
 ## Project-local Codex Skills
 Project-specific skills live under `.cursor/skills/`. When a task clearly matches one, load its `SKILL.md` before proceeding.
 

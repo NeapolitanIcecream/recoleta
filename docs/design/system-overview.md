@@ -1,6 +1,6 @@
 # Recoleta System Overview
 
-Recoleta is a local-first AI research radar. It pulls items from multiple
+Recoleta is a continuously operated research radar. It pulls items from multiple
 sources (arXiv, Hacker News, Hugging Face Daily Papers, OpenReview, newsletters
 via RSS), stores raw and derived state in SQLite, uses an LLM to produce
 high-signal summaries, and publishes the selected outputs to **local Markdown

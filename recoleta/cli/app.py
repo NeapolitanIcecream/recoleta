@@ -20,6 +20,7 @@ from recoleta.cli.db import (
     run_db_clear_command,
     run_db_reset_command,
 )
+from recoleta.cli.demo import run_demo_command
 from recoleta.cli.ideas import run_ideas_command
 from recoleta.cli.ingest import run_ingest_command
 from recoleta.cli.materialize import run_materialize_outputs_command
@@ -52,6 +53,18 @@ from recoleta.cli.translate import (
     run_translate_run_command,
 )
 from recoleta.cli.trends import run_trends_command
+
+
+def _public_site_url_option() -> Any:
+    return typer.Option(
+        None,
+        "--public-site-url",
+        envvar="PUBLIC_SITE_URL",
+        help=(
+            "Canonical absolute public site URL used for discovery metadata. "
+            "Useful with explicit input and output paths."
+        ),
+    )
 
 
 def execute_granularity_workflow(**kwargs: Any) -> Any:
@@ -127,6 +140,36 @@ def run_fleet_email_send_command(**kwargs: Any) -> Any:
 
 
 app = typer.Typer(help="Recoleta workflow-first CLI.", no_args_is_help=True)
+
+
+@app.command("demo")
+def demo(
+    output_dir: Path = typer.Option(
+        Path("recoleta-demo"),
+        "--output-dir",
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Dedicated directory for the bundled offline evaluation snapshot.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force/--no-force",
+        help="Replace an existing directory only when it was created by this command.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit machine-readable evaluation metadata.",
+    ),
+) -> None:
+    """Build a no-key site from a curated production fleet snapshot."""
+    run_demo_command(
+        output_dir=output_dir,
+        force=force,
+        json_output=json_output,
+    )
+
 
 arxiv_pool_app = typer.Typer(
     help="Shared arXiv metadata pool commands.", no_args_is_help=True
@@ -1368,6 +1411,7 @@ def run_site_build(
         "--default-language-code",
         help="Default language code for multilingual static site builds.",
     ),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -1385,6 +1429,7 @@ def run_site_build(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
         json_output=json_output,
         command_name="run site build",
@@ -1436,6 +1481,7 @@ def run_site_serve(
         "--default-language-code",
         help="Default language code for multilingual builds performed before serving.",
     ),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -1451,6 +1497,7 @@ def run_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
         command_name="run site serve",
         build_command_name="run site build",
@@ -2159,6 +2206,7 @@ def stage_site_build(
         "--default-language-code",
         help="Default language code for multilingual static site builds.",
     ),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -2174,6 +2222,7 @@ def stage_site_build(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
         json_output=json_output,
         command_name="stage site build",
@@ -2276,6 +2325,7 @@ def stage_site_serve(
         "--default-language-code",
         help="Default language code for multilingual builds performed before serving.",
     ),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -2291,6 +2341,7 @@ def stage_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
         command_name="stage site serve",
         build_command_name="stage site build",
@@ -2759,6 +2810,7 @@ def legacy_site_build(
     ),
     limit: int | None = typer.Option(None, min=1),
     default_language_code: str | None = typer.Option(None, "--default-language-code"),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -2771,6 +2823,7 @@ def legacy_site_build(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
         json_output=json_output,
     )
@@ -2836,6 +2889,7 @@ def legacy_site_serve(
     port: int = typer.Option(8000, "--port", min=0, max=65535),
     build: bool = typer.Option(True, "--build/--no-build"),
     default_language_code: str | None = typer.Option(None, "--default-language-code"),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -2850,6 +2904,7 @@ def legacy_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
     )
 

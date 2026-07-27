@@ -539,6 +539,56 @@ def test_materialize_outputs_cli_emits_json_summary(
     assert payload["output"]["trend_notes_total"] == 1
 
 
+def test_repair_outputs_site_preserves_configured_public_url(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    repository = Repository(db_path=tmp_path / "recoleta.db")
+    repository.init_schema()
+    _seed_materialize_fixture(repository=repository)
+    output_dir = tmp_path / "outputs"
+    config_path = tmp_path / "recoleta.yml"
+    public_site_url = "https://research.example.test/recoleta"
+    config_path.write_text(
+        "\n".join(
+            [
+                f"recoleta_db_path: {repository.db_path}",
+                f"markdown_output_dir: {output_dir}",
+                "publish_targets: [markdown]",
+                "llm_model: test/fake-model",
+                "llm_output_language: English",
+                f"public_site_url: {public_site_url}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        recoleta.cli.app,
+        [
+            "repair",
+            "outputs",
+            "--config-path",
+            str(config_path),
+            "--output-dir",
+            str(output_dir),
+            "--site",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    manifest = json.loads(
+        (output_dir / "site" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["discovery"]["public_site_url"] == public_site_url
+    assert manifest["discovery"]["sitemap"] == "sitemap.xml"
+    assert manifest["discovery"]["robots"] == "robots.txt"
+    assert (output_dir / "site" / "sitemap.xml").is_file()
+    assert (output_dir / "site" / "robots.txt").is_file()
+
+
 def test_stage_materialize_cli_forwards_explicit_item_export_scope(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -25,6 +25,17 @@ Secrets:
 - `PUBLISH_TARGETS` (default `["markdown"]`): publish targets, allowed values: `markdown|obsidian|telegram`.
 - `MARKDOWN_OUTPUT_DIR` (default: platform-specific user data dir + `/outputs`): local Markdown output directory.
 
+Public site discovery (optional):
+
+- `PUBLIC_SITE_URL`: canonical absolute `http(s)` base URL for the generated
+  public site. When set, site builds emit absolute canonical and social
+  metadata, language alternates, Atom feeds, `sitemap.xml`, and `robots.txt`.
+  In YAML/JSON config files, use `public_site_url`. Site builds validate this
+  value before replacing managed output, so an invalid URL leaves the prior
+  export intact.
+- Existing email-enabled configs fall back to `EMAIL.public_site_url` when the
+  top-level value is unset.
+
 ## Conditionally required settings
 
 - `OBSIDIAN_VAULT_PATH`: required when `PUBLISH_TARGETS` includes `obsidian`.
@@ -530,7 +541,9 @@ Notes:
 - `recoleta run site build --input-dir ... --output-dir ...` and
   `recoleta stage site stage --input-dir ... --output-dir ...` intentionally
   work without loading the full runtime config so CI can build from staged
-  trend notes only.
+  trend notes only. For an explicit-path public build, pass
+  `--public-site-url https://example.com/recoleta` or set `PUBLIC_SITE_URL`;
+  build-before-serve commands accept the same option.
 - site build also writes a private email link-map companion artifact beside the
   site root, named `.<site_output_dir.name>-email-links.json`; with the default
   site output path this is `MARKDOWN_OUTPUT_DIR/.site-email-links.json`.

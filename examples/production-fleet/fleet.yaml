@@ -1,0 +1,9 @@
+schema_version: 1
+
+instances:
+  - name: embodied_ai
+    config_path: ./instances/embodied_ai.yaml
+  - name: software_intelligence
+    config_path: ./instances/software_intelligence.yaml
+  - name: cross_platform
+    config_path: ./instances/cross_platform.yaml

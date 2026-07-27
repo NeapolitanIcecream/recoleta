@@ -6,6 +6,7 @@ from typing import Any
 
 import recoleta.cli as cli
 from recoleta.cli.command_support import load_runtime, RuntimeLoadRequest
+from recoleta.cli.site_support import public_site_url_from_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +129,11 @@ def _materialize_outputs(*, request: MaterializeRunRequest) -> Any:
         "output_language": output_language,
         "site_input_dir": site_input_dir,
         "site_output_dir": site_output_dir,
+        "public_site_url": (
+            public_site_url_from_settings(request.settings)
+            if request.settings is not None
+            else None
+        ),
         "localization": (
             getattr(request.settings, "localization", None)
             if request.settings is not None

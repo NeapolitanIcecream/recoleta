@@ -1091,8 +1091,8 @@ wheels = [
 
 [[package]]
 name = "huldra-arxiv"
-version = "0.4.1"
-source = { git = "https://github.com/NeapolitanIcecream/huldra.git?rev=8109b997f4c6be5c80a638f632977bf929cef976#8109b997f4c6be5c80a638f632977bf929cef976" }
+version = "0.4.2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
     { name = "feedparser" },
@@ -1105,6 +1105,10 @@ dependencies = [
     { name = "rich" },
     { name = "typer" },
     { name = "uvicorn", extra = ["standard"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/49/c1/9eaf2412bc56372469414e6331f187659426fe1a6e0d844bae8a753b117c/huldra_arxiv-0.4.2.tar.gz", hash = "sha256:d865f4160eb72194a4e7b10573103f89d08cb03329ef5c8abb5ac97a079567bb", size = 182056, upload-time = "2026-07-27T03:58:13.137Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/6a/200e90c3739a4e27ec9e72c28638504e34aa7f3e4950d0303fa7cc0d176c/huldra_arxiv-0.4.2-py3-none-any.whl", hash = "sha256:98f0cc6cc11de44641829e89affbf9fe7c2d682be7d0c7e81598aaa69d95d34d", size = 76804, upload-time = "2026-07-27T03:58:11.838Z" },
 ]
 
 [[package]]
@@ -2638,7 +2642,7 @@ wheels = [
 
 [[package]]
 name = "recoleta"
-version = "0.6.1"
+version = "0.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
@@ -2706,7 +2710,7 @@ requires-dist = [
     { name = "filelock", specifier = ">=3.24.3" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "huggingface-hub", specifier = ">=0.36.2" },
-    { name = "huldra-arxiv", git = "https://github.com/NeapolitanIcecream/huldra.git?rev=8109b997f4c6be5c80a638f632977bf929cef976" },
+    { name = "huldra-arxiv", specifier = ">=0.4.2,<0.5" },
     { name = "lancedb", specifier = ">=0.29.2" },
     { name = "latex2mathml", specifier = ">=3.81.0" },
     { name = "litellm", specifier = ">=1.76.1" },
