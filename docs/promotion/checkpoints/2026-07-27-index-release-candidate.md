@@ -35,7 +35,7 @@ is open; no Recoleta package publication attempted.
 | --- | --- |
 | Ruff | passed |
 | Pyright | 0 errors, 0 warnings |
-| Pytest | 1,051 passed after five PR review corrections |
+| Pytest | 1,052 passed after seven PR review corrections |
 | Wheel and source distribution | built |
 | Twine | both distributions passed |
 | Wheel contents | bundled fleet brief present; `.DS_Store` absent |
@@ -69,7 +69,7 @@ failure.
 
 ## Further PR review corrections
 
-Current-head reviews identified four additional output-contract defects:
+Current-head reviews identified six additional output-contract defects:
 
 1. `repair outputs --site` did not propagate the configured public URL through
    `MaterializeOutputsRequest`, so a repaired site silently lost canonical
@@ -85,6 +85,12 @@ Current-head reviews identified four additional output-contract defects:
 4. Generated Atom feeds provided no author on the feed or its entries. Feeds
    with entries therefore violated Atom's author requirement and could be
    rejected by standards-compliant consumers.
+5. A manually dispatched PyPI retry accepted an existing version input but
+   checked out the selected workflow branch. Its tag and workflow-SHA checks
+   then failed unless the operator separately selected the matching tag.
+6. Explicit-path site builds intentionally skipped full runtime settings, but
+   had no separate route for `PUBLIC_SITE_URL`. They therefore omitted
+   canonical and social metadata, feeds, sitemap, and robots policy.
 
 An end-to-end repair regression test asserts that a configured public URL
 reaches the final discovery manifest and produces `sitemap.xml` and
@@ -101,15 +107,21 @@ private input, output, and generation metadata. A same-mode search found no
 other product command that moves a generated site while returning its pre-move
 manifest, and the single public-manifest sanitizer covers root and language
 manifests. The shared feed writer now adds a feed-level `Recoleta` author, which
-all entries and the copied default root feed inherit. The existing JSON, XML,
-and manifest artifacts are the direct observable contracts, so no additional
-log or metric was warranted.
+all entries and the copied default root feed inherit. Manual PyPI runs now
+derive the checkout ref from the release event or required version input and
+compare the tag to the checked-out `HEAD`. Explicit-path build and
+build-before-serve commands now receive a separately validated public URL from
+`--public-site-url` or `PUBLIC_SITE_URL` without loading full runtime settings.
+The existing workflow result, JSON, XML, and manifest artifacts are the direct
+observable contracts, so no additional log or metric was warranted.
 
-After these changes, Ruff, Pyright, the 22 tests across the repair and demo
-files, all 11 deployment tests, both discovery tests, and all 1,051 tests pass.
-The exact corrected source rebuilt into a wheel and source distribution that
-pass Twine. The fresh Python 3.14 wheel install performed after the repair and
-demo corrections resolved `huldra-arxiv 0.4.2`, reported Recoleta `0.7.0`, and
+After these changes, Ruff, Pyright, the 29 tests across the release-workflow and
+site CLI files, all 11 deployment tests, both discovery tests, and all 1,052
+tests pass. A real explicit-path CLI build using only `PUBLIC_SITE_URL` emitted
+the configured discovery metadata, sitemap, and robots file. The exact
+corrected source rebuilt into a wheel and source distribution that pass Twine.
+The fresh Python 3.14 wheel install performed after the repair and demo
+corrections resolved `huldra-arxiv 0.4.2`, reported Recoleta `0.7.0`, and
 generated a no-key demo whose persisted manifest paths all resolve inside the
 final snapshot.
 

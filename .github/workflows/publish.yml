@@ -23,6 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || format('v{0}', inputs.version) }}
           fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
@@ -44,8 +45,9 @@ jobs:
             echo "Expected ${EXPECTED_TAG} to match package version v${PACKAGE_VERSION}" >&2
             exit 1
           fi
-          if [[ "$(git rev-list -n 1 "${EXPECTED_TAG}")" != "${GITHUB_SHA}" ]]; then
-            echo "${EXPECTED_TAG} does not point at ${GITHUB_SHA}" >&2
+          CHECKED_OUT_SHA="$(git rev-parse HEAD)"
+          if [[ "$(git rev-list -n 1 "${EXPECTED_TAG}")" != "${CHECKED_OUT_SHA}" ]]; then
+            echo "${EXPECTED_TAG} does not point at checked-out commit ${CHECKED_OUT_SHA}" >&2
             exit 1
           fi
       - name: Verify index-compatible dependencies

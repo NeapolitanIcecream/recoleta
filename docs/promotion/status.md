@@ -112,6 +112,14 @@ Last updated: 2026-07-27
   the copied default-language root feed. The XML regression failed with no
   author before the fix and passes afterward; Ruff, Pyright, both discovery
   tests, and all 1,051 tests pass.
+- Addressed two more PR 78 findings. Manual PyPI recovery now checks out the
+  requested existing tag and verifies that tag against the checked-out `HEAD`.
+  Explicit-path build and build-before-serve commands now accept
+  `--public-site-url` or `PUBLIC_SITE_URL` without loading full runtime
+  settings. Three regressions failed before the fixes and pass afterward;
+  Ruff, Pyright, 29 affected-file tests, and all 1,052 tests pass. A real
+  explicit-path build produced discovery files, and rebuilt distributions pass
+  Twine.
 - Promoted the approved visual structure into a local second-review set:
   repository banner, exact-text social card, and real-fleet proof board. The set
   uses current site roles, not a colour inferred from the first comparison.

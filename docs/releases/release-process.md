@@ -78,9 +78,14 @@ git push origin main v0.7.0
 ```
 
 Create and publish a GitHub Release for that exact tag. The PyPI workflow checks
-that the tag, package version, and workflow SHA match before building. Its
+that the tag, package version, and checked-out commit match before building. Its
 unprivileged job produces and checks the distributions; a separate job receives
 only `id-token: write` and publishes the stored artifacts.
+
+To retry PyPI publication for an existing tag, run **Publish to PyPI** manually
+and enter the version without the `v` prefix. The workflow checks out that exact
+tag before verification and build, regardless of the branch selected when the
+manual run is started.
 
 The release event also publishes:
 

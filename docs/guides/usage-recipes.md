@@ -268,6 +268,10 @@ DB state:
 uv run recoleta run site build
 uv run recoleta run site serve
 uv run recoleta run site build --default-language-code en
+uv run recoleta run site build \
+  --input-dir /path/to/outputs/Trends \
+  --output-dir /path/to/site \
+  --public-site-url https://example.com/recoleta
 uv run recoleta stage site stage --item-export-scope all
 uv run recoleta run deploy --branch gh-pages --pages-config auto
 uv run recoleta fleet site build --manifest /path/to/fleet.yaml
@@ -282,7 +286,8 @@ What to know:
 - `run site build` writes a managed static export to `MARKDOWN_OUTPUT_DIR/site`
   unless you pass explicit paths. By default it only exports item pages and
   item markdown artifacts that are actually linked from the selected trend and
-  idea pages.
+  idea pages. Explicit-path builds do not load the full runtime config; pass
+  `--public-site-url` or set `PUBLIC_SITE_URL` when the result will be public.
 - `run site serve` rebuilds and serves a single-instance local preview on
   `127.0.0.1:8000`. It uses the same linked-only item export behavior when it
   rebuilds first.

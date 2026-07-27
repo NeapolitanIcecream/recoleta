@@ -26,6 +26,7 @@ class SiteExportRequest:
     limit: int | None
     default_language_code: str | None
     item_export_scope: str
+    public_site_url: str | None
     command_name: str
     log_module: str
     exporter_attr: str
@@ -42,6 +43,7 @@ class SiteServeRequest:
     build: bool
     default_language_code: str | None
     item_export_scope: str
+    public_site_url: str | None
     command_name: str
     build_command_name: str
 
@@ -82,6 +84,7 @@ def run_site_build_command(**kwargs: Any) -> None:
             limit=kwargs.get("limit"),
             default_language_code=kwargs.get("default_language_code"),
             item_export_scope=str(kwargs.get("item_export_scope", "linked")),
+            public_site_url=kwargs.get("public_site_url"),
             command_name=command_name,
             log_module="cli.site.build",
             exporter_attr="export_trend_static_site",
@@ -114,6 +117,7 @@ def run_site_stage_command(**kwargs: Any) -> None:
             limit=kwargs.get("limit"),
             default_language_code=kwargs.get("default_language_code"),
             item_export_scope=str(kwargs.get("item_export_scope", "linked")),
+            public_site_url=kwargs.get("public_site_url"),
             command_name=command_name,
             log_module="cli.site.stage",
             exporter_attr="stage_trend_site_source",
@@ -146,6 +150,7 @@ def run_site_serve_command(**kwargs: Any) -> None:
         build=bool(kwargs.get("build", False)),
         default_language_code=kwargs.get("default_language_code"),
         item_export_scope=str(kwargs.get("item_export_scope", "linked")),
+        public_site_url=kwargs.get("public_site_url"),
         command_name=str(kwargs.get("command_name", "site serve")),
         build_command_name=str(kwargs.get("build_command_name", "site build")),
     )
@@ -157,6 +162,7 @@ def run_site_serve_command(**kwargs: Any) -> None:
             limit=request.limit,
             default_language_code=request.default_language_code,
             item_export_scope=request.item_export_scope,
+            public_site_url=request.public_site_url,
             command_name=request.build_command_name,
         )
     _serve_site_directory(
@@ -179,6 +185,7 @@ def _site_export_result(*, request: SiteExportRequest) -> tuple[Any, Path]:
             output_dir=request.output_dir,
             default_language_code=request.default_language_code,
             item_export_scope=request.item_export_scope,
+            public_site_url=request.public_site_url,
             settings=settings,
             default_output_dir=(
                 request.default_output_dir or site_output_dir_from_settings(settings)

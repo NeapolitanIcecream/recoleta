@@ -861,10 +861,17 @@ def test_site_build_cli_with_explicit_paths_does_not_require_settings(
     def _fail_build_settings():  # type: ignore[no-untyped-def]
         raise AssertionError("settings should not be loaded")
 
-    def _fake_export_trend_static_site(*, input_dir, output_dir, limit=None):  # type: ignore[no-untyped-def]
+    def _fake_export_trend_static_site(  # type: ignore[no-untyped-def]
+        *,
+        input_dir,
+        output_dir,
+        limit=None,
+        options=None,
+    ):
         calls["input_dir"] = input_dir
         calls["output_dir"] = output_dir
         calls["limit"] = limit
+        calls["options"] = options
         output_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = output_dir / "manifest.json"
         manifest_path.write_text(
@@ -874,6 +881,10 @@ def test_site_build_cli_with_explicit_paths_does_not_require_settings(
         return manifest_path
 
     monkeypatch.setattr(recoleta.cli, "_build_settings", _fail_build_settings)
+    monkeypatch.setenv(
+        "PUBLIC_SITE_URL",
+        "https://research.example.test/recoleta",
+    )
     monkeypatch.setattr(
         recoleta.site,
         "export_trend_static_site",
@@ -900,6 +911,9 @@ def test_site_build_cli_with_explicit_paths_does_not_require_settings(
     assert calls["input_dir"] == input_dir.resolve()
     assert calls["output_dir"] == output_dir.resolve()
     assert calls["limit"] is None
+    options = calls["options"]
+    assert isinstance(options, recoleta.site.SiteExportOptions)
+    assert options.public_site_url == "https://research.example.test/recoleta"
     assert "site build completed" in result.stdout
 
 
@@ -1123,6 +1137,10 @@ def test_site_serve_cli_forwards_default_language_code_to_build(
         return fake_server
 
     monkeypatch.setattr(recoleta.cli, "_build_settings", _fail_build_settings)
+    monkeypatch.setenv(
+        "PUBLIC_SITE_URL",
+        "https://research.example.test/recoleta",
+    )
     monkeypatch.setattr(
         recoleta.cli.site,
         "run_site_build_command",
@@ -1152,6 +1170,10 @@ def test_site_serve_cli_forwards_default_language_code_to_build(
     build_kwargs = calls["build_kwargs"]
     assert isinstance(build_kwargs, dict)
     assert build_kwargs["default_language_code"] == "zh-CN"
+    assert (
+        build_kwargs["public_site_url"]
+        == "https://research.example.test/recoleta"
+    )
     assert calls["serve_directory"] == output_dir.resolve()
     assert fake_server.served is True
 

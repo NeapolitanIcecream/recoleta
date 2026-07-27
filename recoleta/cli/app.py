@@ -55,6 +55,18 @@ from recoleta.cli.translate import (
 from recoleta.cli.trends import run_trends_command
 
 
+def _public_site_url_option() -> Any:
+    return typer.Option(
+        None,
+        "--public-site-url",
+        envvar="PUBLIC_SITE_URL",
+        help=(
+            "Canonical absolute public site URL used for discovery metadata. "
+            "Useful with explicit input and output paths."
+        ),
+    )
+
+
 def execute_granularity_workflow(**kwargs: Any) -> Any:
     from recoleta.cli.workflows import execute_granularity_workflow as impl
 
@@ -1399,6 +1411,7 @@ def run_site_build(
         "--default-language-code",
         help="Default language code for multilingual static site builds.",
     ),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -1416,6 +1429,7 @@ def run_site_build(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
         json_output=json_output,
         command_name="run site build",
@@ -1467,6 +1481,7 @@ def run_site_serve(
         "--default-language-code",
         help="Default language code for multilingual builds performed before serving.",
     ),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -1482,6 +1497,7 @@ def run_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
         command_name="run site serve",
         build_command_name="run site build",
@@ -2190,6 +2206,7 @@ def stage_site_build(
         "--default-language-code",
         help="Default language code for multilingual static site builds.",
     ),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -2205,6 +2222,7 @@ def stage_site_build(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
         json_output=json_output,
         command_name="stage site build",
@@ -2307,6 +2325,7 @@ def stage_site_serve(
         "--default-language-code",
         help="Default language code for multilingual builds performed before serving.",
     ),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -2322,6 +2341,7 @@ def stage_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
         command_name="stage site serve",
         build_command_name="stage site build",
@@ -2790,6 +2810,7 @@ def legacy_site_build(
     ),
     limit: int | None = typer.Option(None, min=1),
     default_language_code: str | None = typer.Option(None, "--default-language-code"),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -2802,6 +2823,7 @@ def legacy_site_build(
         output_dir=output_dir,
         limit=limit,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
         json_output=json_output,
     )
@@ -2867,6 +2889,7 @@ def legacy_site_serve(
     port: int = typer.Option(8000, "--port", min=0, max=65535),
     build: bool = typer.Option(True, "--build/--no-build"),
     default_language_code: str | None = typer.Option(None, "--default-language-code"),
+    public_site_url: str | None = _public_site_url_option(),
     item_export_scope: str = typer.Option(
         "linked",
         "--item-export-scope",
@@ -2881,6 +2904,7 @@ def legacy_site_serve(
         port=port,
         build=build,
         default_language_code=default_language_code,
+        public_site_url=public_site_url,
         item_export_scope=item_export_scope,
     )
 

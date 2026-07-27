@@ -22,6 +22,7 @@ class SitePathRequest:
     output_dir: Path | None
     default_language_code: str | None
     item_export_scope: str
+    public_site_url: str | None
     settings: Any | None
     default_output_dir: Path
 
@@ -76,6 +77,7 @@ def resolve_site_command_paths(*, request: SitePathRequest) -> SiteCommandPaths:
     resolved_default_language_code = (
         str(request.default_language_code or "").strip() or None
     )
+    resolved_public_site_url = str(request.public_site_url or "").strip() or None
     if resolved_default_language_code is None and request.settings is not None:
         resolved_default_language_code = default_language_code_from_settings(
             request.settings
@@ -94,9 +96,12 @@ def resolve_site_command_paths(*, request: SitePathRequest) -> SiteCommandPaths:
         default_language_code=resolved_default_language_code,
         item_export_scope=normalize_item_export_scope(request.item_export_scope),
         public_site_url=(
-            public_site_url_from_settings(request.settings)
-            if request.settings is not None
-            else None
+            resolved_public_site_url
+            or (
+                public_site_url_from_settings(request.settings)
+                if request.settings is not None
+                else None
+            )
         ),
         settings=request.settings,
     )
