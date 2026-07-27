@@ -13,15 +13,17 @@ Read in this order:
    limitations, and external references.
 4. [`decisions.md`](./decisions.md) — append-only decisions that materially
    change the plan.
-5. [`maintainer-actions.md`](./maintainer-actions.md) — exact one-time account
+5. [`visual-system-review.md`](./visual-system-review.md) — sourced visual
+   constraints, the first-candidate diagnosis, and the current review test.
+6. [`maintainer-actions.md`](./maintainer-actions.md) — exact one-time account
    and approval steps that cannot be completed from the repository.
-6. [`channel-kit.md`](./channel-kit.md) — launch copy, channel order, and
+7. [`channel-kit.md`](./channel-kit.md) — launch copy, channel order, and
    platform-specific boundaries.
-7. [`launch-log.md`](./launch-log.md) — attributable attempts and outcomes.
-8. [`checkpoints/2026-07-25-release-readiness.md`](./checkpoints/2026-07-25-release-readiness.md)
+8. [`launch-log.md`](./launch-log.md) — attributable attempts and outcomes.
+9. [`checkpoints/2026-07-25-release-readiness.md`](./checkpoints/2026-07-25-release-readiness.md)
    — implementation, validation, corrections, and exact next gate for this
    sprint checkpoint.
-9. [`checkpoints/2026-07-25-maintainer-gate.md`](./checkpoints/2026-07-25-maintainer-gate.md)
+10. [`checkpoints/2026-07-25-maintainer-gate.md`](./checkpoints/2026-07-25-maintainer-gate.md)
    — requirement-by-requirement completion audit and exact resume signals.
 
 ## Update contract

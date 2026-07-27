@@ -1,18 +1,23 @@
 # Promotion status
 
-Last updated: 2026-07-25
+Last updated: 2026-07-27
 
 ## Current state
 
 - Branch: `codex/promotion-readiness`
 - Recoleta implementation commit: `2e79f8b7`
-- Huldra release-preparation commit: `0e8f8f4`
-- Remote publication: neither branch has been pushed
-- Phase: waiting for maintainer; automatic execution paused at external gates
+- Huldra release-preparation head: `986fcc5`
+- Remote publication: Huldra review branch pushed as
+  <https://github.com/NeapolitanIcecream/huldra/pull/7>; Recoleta branch remains
+  local
+- Phase: execution resumed after maintainer account confirmation and visual
+  feedback
 - External publication: not started
-- Visual publication: two local banner directions await maintainer review
+- Visual publication: no asset is public; a neutral structure study now tests
+  the selected candidate's topology without treating its colour as a preference
 - Credentials requested: none
-- Maintainer account actions requested: PyPI/GitHub configuration documented
+- Maintainer account actions: both PyPI/GitHub publisher configurations
+  confirmed complete on 2026-07-27
 - Primary example: the running three-stream production fleet published at
   <https://neapolitanicecream.github.io/recoleta/>
 
@@ -52,17 +57,30 @@ Last updated: 2026-07-25
 - Corrected the dry-run persistence leak found by the redacted fleet example:
   missing databases now use in-memory planning state, existing databases are
   opened read-only, and the real three-child dry-run creates no `.state`.
+- Researched GOV.UK, Carbon, and Primer guidance and converted it into a
+  Recoleta-specific visual contract: semantic images, replaceable colour roles,
+  fixed grid and spacing, deliberate hierarchy, accessible fallbacks, and
+  thumbnail verification.
+- Produced an untracked deterministic SVG structure study that preserves three
+  peer streams and one dominant publication while removing the generated
+  collage layer. It passes browser rendering, 240 by 120 thumbnail, and
+  grayscale legibility checks.
+- Revalidated Huldra `0.4.2` after the maintainer configured publishing: Ruff,
+  Pyright, 274 tests, clean wheel and source distribution, Twine, a fresh Python
+  3.13 wheel install, and installed CLI smoke checks. PR 7 is open for CI and
+  cloud review.
 
 ## Active work
 
-1. Obtain maintainer visual direction; then create the exact-text social card
-   and select from the fresh fleet screenshots for a second visual review.
-2. Configure Huldra's PyPI Trusted Publisher, approve its release changes, and
-   publish `huldra-arxiv 0.4.2`.
+1. Obtain maintainer feedback on the structure study; only then explore palette,
+   create the exact-text social card, and select fresh fleet screenshots for a
+   second visual review.
+2. Complete CI and cloud review on Huldra PR 7, merge it, then publish
+   `huldra-arxiv 0.4.2` through the now-configured Trusted Publisher.
 3. Replace Recoleta's Git dependency with the published Huldra range, update the
    lock, and repeat the clean-index and release gates.
-4. Configure Recoleta's pending PyPI publisher and private vulnerability
-   reporting; approve the final candidate and publish the release.
+4. Use Recoleta's configured pending publisher, enable private vulnerability
+   reporting, approve the final candidate, and publish the release.
 5. Verify PyPI, GHCR, the deployed fleet discovery files, and final URLs before
    submitting any channel material.
 
@@ -82,23 +100,22 @@ Still requires explicit review or action:
 
 - every replacement visual asset;
 - disclosure of private fleet cost, failure, recipient, or team-identity data;
-- PyPI Trusted Publisher, GitHub environment, and package-visibility settings;
+- container package visibility after its first publication;
+- private vulnerability reporting;
 - any external post or directory submission;
 - routine autonomous posting under a project social account.
 
 ## Current bottleneck
 
-Clean Recoleta index publication is sequenced behind Huldra `0.4.2` publication.
-That external step requires the maintainer to configure PyPI and approve or
-merge the prepared repository changes. Visual publication independently waits
-for selection or rejection of the two local directions.
+Clean Recoleta index publication remains sequenced behind Huldra `0.4.2`, but
+the account-side blocker is resolved. Huldra PR 7 now carries the prepared
+release changes; its CI and cloud review are pending. The 2026-07-27 public
+recheck still serves `huldra-arxiv 0.4.1` and returns 404 for `recoleta`.
 
-The third consecutive gate audit on 2026-07-25 confirmed that PyPI still serves
-`huldra-arxiv 0.4.1`, returns 404 for `recoleta`, and has neither local
-promotion branch on the GitHub remotes. There is no remaining in-scope action
-that can advance publication without the maintainer's visual decision and
-account-side configuration. See
-[`checkpoints/2026-07-25-maintainer-gate.md`](./checkpoints/2026-07-25-maintainer-gate.md).
+Visual publication remains independently gated. Candidate B is preferred over
+Candidate A, but neither its dark background nor its complex collage treatment
+is approved as a requirement. The current neutral structure study isolates the
+topology for the next review.
 
 ## Approach registry
 
@@ -107,6 +124,6 @@ account-side configuration. See
 | No-key evaluation | bundled real brief, CLI tests, wheel inspection | clean index install | active |
 | Production proof | public fleet case, redacted topology, full isolated build | external-user evidence | active |
 | Search and syndication | metadata, Atom, sitemap, robots, full fleet validation | production deployment | ready |
-| Package distribution | Huldra release candidate and both release workflows | account configuration and tags | blocked externally |
-| Visual identity | two archived candidates | maintainer direction | awaiting review |
+| Package distribution | Huldra release candidate, configured publishers, both release workflows | review, merge, tags, workflow results | active |
+| Visual identity | two generated directions, sourced design-system review, neutral SVG structure test | structure review, then theme and final asset review | awaiting review |
 | Channel distribution | channel kit, account instructions, launch ledger | release URL, approved visuals, account actions | ready behind gates |

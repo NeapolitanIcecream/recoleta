@@ -167,3 +167,32 @@ Consequence:
 - The Recoleta publishing workflow explicitly rejects direct dependencies.
 - Huldra account configuration and release are the current external blocker
   for Recoleta's clean index release.
+
+## 2026-07-27 — Separate visual structure from palette and texture
+
+Decision:
+
+- Treat the preference for Candidate B as a preference between the two complete
+  candidates, not as a request for a dark-blue background.
+- Preserve Candidate B's legible three-stream-to-publication topology as the
+  current hypothesis.
+- Test that topology without its cyanotype, collage, map, and paper texture
+  before choosing a palette.
+- Use GOV.UK, Carbon, and Primer as constraints for usefulness, grid, tokens,
+  hierarchy, accessibility, and asset consistency. Do not copy their visual
+  surfaces.
+
+Reason:
+
+- The maintainer used “dark blue” only to identify the second file and then
+  explicitly corrected the possibility of a colour inference.
+- Candidate B reads more directly than Candidate A, but its many bespoke
+  details are hard to systematize and compete with the product model.
+
+Consequence:
+
+- Palette remains an open design variable.
+- The next candidate is a neutral, deterministic SVG structure study rather
+  than another generated art direction.
+- Exact copy and real fleet screenshots are separate layers that remain behind
+  the visual review gate.

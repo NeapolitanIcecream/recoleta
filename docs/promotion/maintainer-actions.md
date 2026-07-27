@@ -1,6 +1,6 @@
 # Maintainer actions
 
-Last verified: 2026-07-25
+Last verified: 2026-07-27
 
 This file contains the small set of account and approval actions that cannot be
 completed safely from the repository. Code, release copy, checks, and routine
@@ -12,6 +12,11 @@ the named service or a local secret store. Recoleta's PyPI release path uses
 short-lived OpenID Connect credentials and does not need a stored PyPI token.
 
 ## Required before the package release
+
+Maintainer status: both publisher-configuration tasks below were confirmed
+complete on 2026-07-27. The instructions remain as a reproducible account
+record. The public PyPI API will continue to show Huldra `0.4.1` and no Recoleta
+project until the corresponding release workflows succeed.
 
 ### 1. Enable Huldra's protected PyPI publisher
 
@@ -120,15 +125,24 @@ This activates the private route already named in each repository's
 
 ## Visual approval
 
-Review:
+Review history:
 
 - [`visuals/banner-candidate-a-light.png`](./visuals/banner-candidate-a-light.png)
 - [`visuals/banner-candidate-b-dark.png`](./visuals/banner-candidate-b-dark.png)
 
-Reply with `A`, `B`, `neither`, or a concrete revision. Nothing currently
-references either image. After a direction is approved, the agent will prepare
-the exact-text banner, social card, and current fleet screenshots for one more
-review before changing public surfaces.
+The maintainer preferred Candidate B to Candidate A but raised a concern about
+its artistic complexity. “Dark blue” was only the identifier for Candidate B,
+not a requested palette.
+
+The current local test,
+`visuals/banner-candidate-c-structure.png`, preserves Candidate B's three-lane
+topology while removing its collage texture. Its light background is
+deliberately non-final. Review the structure rather than choosing a colour.
+Nothing currently references any candidate.
+
+After a structure is approved, the agent will prepare theme values, the
+exact-text social card, and current fleet screenshots for one more review before
+changing public surfaces.
 
 ## Optional later: Bluesky project account
 

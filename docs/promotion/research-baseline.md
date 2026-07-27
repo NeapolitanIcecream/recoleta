@@ -170,3 +170,42 @@ Verified on 2026-07-25 after the implementation and discovery refactor:
 
 These are local release-readiness facts, not evidence of external adoption.
 No channel submission or external activation occurred during this checkpoint.
+
+## 2026-07-27 recheck
+
+Maintainer-confirmed account state:
+
+- the Huldra trusted publisher and Recoleta pending publisher work have been
+  completed;
+- this confirms the account-side configuration, not package publication.
+
+Publicly observed after that confirmation:
+
+- PyPI's JSON API still reported `huldra-arxiv 0.4.1`;
+- PyPI's JSON API still returned HTTP 404 for `recoleta`;
+- neither local `codex/promotion-readiness` branch existed on its GitHub remote
+  at the time of the initial recheck;
+- Huldra's branch was subsequently pushed as
+  <https://github.com/NeapolitanIcecream/huldra/pull/7> after its complete local
+  release gates passed again.
+
+Visual-system evidence:
+
+- GOV.UK says to avoid images used for unnecessary decoration, require a real
+  user need, preserve image meaning for people who cannot see it, and meet WCAG
+  contrast requirements:
+  <https://design-system.service.gov.uk/styles/images/> and
+  <https://design-system.service.gov.uk/styles/colour/>.
+- Carbon's 2x Grid uses an 8-pixel mini unit and visible key lines, while its
+  colour system separates stable semantic roles from theme-specific values:
+  <https://preview.carbondesignsystem.com/building-blocks/foundations/2x-grid/overview>
+  and
+  <https://preview.carbondesignsystem.com/building-blocks/foundations/color/overview>.
+- Primer Brand UI uses a 12-column grid, equal spans for repeated peer content,
+  unequal spans for deliberate hierarchy, and consistent image dimensions:
+  <https://primer.style/brand/layout/Grid/> and
+  <https://primer.style/brand/components/Image/>.
+
+These systems support a simpler, tokenized, accessible visual grammar. They do
+not provide evidence for a particular Recoleta background colour or a specific
+illustration style.
