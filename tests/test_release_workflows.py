@@ -64,19 +64,22 @@ def test_manual_container_publish_replays_the_requested_tag() -> None:
     verify_script = str(verify_step["run"])
 
     assert inputs["version"]["required"] is True
-    assert inputs["update_latest"]["type"] == "boolean"
-    assert inputs["update_latest"]["default"] is False
+    assert inputs["update_floating_tags"]["type"] == "boolean"
+    assert inputs["update_floating_tags"]["default"] is False
     assert checkout_step["with"]["ref"] == (
         "${{ github.event_name == 'release' && "
         "github.event.release.tag_name || format('v{0}', inputs.version) }}"
     )
     assert verify_step["env"]["REQUESTED_VERSION"] == "${{ inputs.version }}"
+    assert verify_step["env"]["UPDATE_FLOATING_TAGS"] == (
+        "${{ inputs.update_floating_tags }}"
+    )
     assert 'EXPECTED_TAG="v${REQUESTED_VERSION}"' in verify_script
     assert 'CHECKED_OUT_SHA="$(git rev-parse HEAD)"' in verify_script
     assert '"$(git rev-list -n 1 "${EXPECTED_TAG}")"' in verify_script
 
 
-def test_container_latest_is_only_emitted_by_the_verified_rule() -> None:
+def test_container_floating_tags_are_only_emitted_by_the_verified_rule() -> None:
     publish_steps = _workflow_steps("container.yml")
     verify_step = next(
         step
@@ -90,15 +93,21 @@ def test_container_latest_is_only_emitted_by_the_verified_rule() -> None:
     )
     tags = str(metadata_step["with"]["tags"]).splitlines()
     verify_script = str(verify_step["run"])
+    floating_enable = (
+        "enable=${{ steps.release.outputs.publish_floating_tags == 'true' }}"
+    )
 
     assert (
-        "type=raw,value=latest,"
-        "enable=${{ steps.release.outputs.publish_latest == 'true' }}"
+        "type=semver,pattern={{major}}.{{minor}},"
+        f"value=${{{{ steps.release.outputs.tag }}}},{floating_enable}"
     ) in tags
+    assert f"type=raw,value=latest,{floating_enable}" in tags
     assert metadata_step["with"]["flavor"] == "latest=false"
     assert '"${RELEASE_PRERELEASE}" == "false"' in verify_script
-    assert '"${UPDATE_LATEST}" == "true"' in verify_script
+    assert '"${UPDATE_FLOATING_TAGS}" == "true"' in verify_script
     assert r"^[0-9]+\.[0-9]+\.[0-9]+$" in verify_script
+    assert 'LATEST_STABLE_TAG=""' in verify_script
+    assert '"${EXPECTED_TAG}" != "${LATEST_STABLE_TAG}"' in verify_script
 
 
 def test_container_release_tag_matches_package_version_before_push() -> None:

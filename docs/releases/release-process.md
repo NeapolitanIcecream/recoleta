@@ -102,12 +102,14 @@ image publication. Prereleases receive versioned tags but never move the stable
 
 To rebuild an existing tag—for example, to repair a missing target
 architecture—run **Publish container** manually, enter the version without the
-`v` prefix, and select whether a stable `X.Y.Z` release should update `latest`.
-The workflow checks out that exact tag and repeats the tag, commit, and package
-version checks before publishing. A prerelease-shaped version cannot update
-`latest` through the manual path. The metadata action's automatic SemVer
-`latest` flavor is disabled; the verified conditional rule is the only source
-of the `latest` tag.
+`v` prefix, and select whether the newest stable `X.Y.Z` release should update
+the floating minor and `latest` tags. The default-false replay publishes only
+the exact version. The workflow checks out that exact tag and repeats the tag,
+commit, and package-version checks before publishing. It rejects a request to
+move floating tags unless the requested version is the highest stable tag.
+Prerelease-shaped versions cannot update either floating channel. The metadata
+action's automatic SemVer `latest` flavor is disabled; one verified output gates
+both the minor SemVer rule and the explicit `latest` rule.
 
 Verify anonymous registry access after the first publication. If the package is
 not public, follow

@@ -297,8 +297,9 @@ Container counterevidence:
   <https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch>.
 - Docker Metadata Action defaults to `latest=auto`, which adds `latest` for
   version tag types. Its documented `latest=false` flavor disables that
-  automatic tag so an explicit conditional raw rule can control the stable
-  channel:
+  automatic tag. Recoleta uses one verified condition for both the floating
+  minor SemVer rule and explicit raw `latest` rule, while a default manual
+  replay publishes only the exact version:
   <https://github.com/docker/metadata-action/blob/master/_autodocs/04-flavor.md>.
 
 The public container remains a launch blocker until both native platforms are
