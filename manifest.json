@@ -1,5 +1,17 @@
 {
   "default_language_code": "en",
+  "discovery": {
+    "feeds": [
+      "en/feed.xml",
+      "feed.xml",
+      "zh-cn/feed.xml"
+    ],
+    "indexable_pages_total": 986,
+    "noindex_pages_total": 4298,
+    "public_site_url": "https://neapolitanicecream.github.io/recoleta",
+    "robots": "robots.txt",
+    "sitemap": "sitemap.xml"
+  },
   "files": {
     "archive": "archive.html",
     "archive_pages": [
