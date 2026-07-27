@@ -76,7 +76,7 @@ def test_manual_container_publish_replays_the_requested_tag() -> None:
     assert '"$(git rev-list -n 1 "${EXPECTED_TAG}")"' in verify_script
 
 
-def test_prerelease_container_does_not_update_latest() -> None:
+def test_container_latest_is_only_emitted_by_the_verified_rule() -> None:
     publish_steps = _workflow_steps("container.yml")
     verify_step = next(
         step
@@ -95,6 +95,7 @@ def test_prerelease_container_does_not_update_latest() -> None:
         "type=raw,value=latest,"
         "enable=${{ steps.release.outputs.publish_latest == 'true' }}"
     ) in tags
+    assert metadata_step["with"]["flavor"] == "latest=false"
     assert '"${RELEASE_PRERELEASE}" == "false"' in verify_script
     assert '"${UPDATE_LATEST}" == "true"' in verify_script
     assert r"^[0-9]+\.[0-9]+\.[0-9]+$" in verify_script

@@ -105,7 +105,9 @@ architecture—run **Publish container** manually, enter the version without the
 `v` prefix, and select whether a stable `X.Y.Z` release should update `latest`.
 The workflow checks out that exact tag and repeats the tag, commit, and package
 version checks before publishing. A prerelease-shaped version cannot update
-`latest` through the manual path.
+`latest` through the manual path. The metadata action's automatic SemVer
+`latest` flavor is disabled; the verified conditional rule is the only source
+of the `latest` tag.
 
 Verify anonymous registry access after the first publication. If the package is
 not public, follow
