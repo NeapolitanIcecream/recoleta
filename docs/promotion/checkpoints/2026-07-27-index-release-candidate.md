@@ -35,7 +35,7 @@ is open; no Recoleta package publication attempted.
 | --- | --- |
 | Ruff | passed |
 | Pyright | 0 errors, 0 warnings |
-| Pytest | 1,056 passed after eleven PR review corrections |
+| Pytest | 1,058 passed after thirteen PR review corrections |
 | Wheel and source distribution | built |
 | Twine | both distributions passed |
 | Wheel contents | bundled fleet brief present; `.DS_Store` absent |
@@ -69,7 +69,7 @@ failure.
 
 ## Further PR review corrections
 
-Current-head reviews identified ten additional release or output-contract
+Current-head reviews identified twelve additional release or output-contract
 defects:
 
 1. `repair outputs --site` did not propagate the configured public URL through
@@ -104,6 +104,13 @@ defects:
 10. Container SemVer tags came from the GitHub release tag without comparing it
     to the package version, so a mistagged release could publish an image whose
     visible Recoleta version disagreed with its image tag.
+11. Public discovery joined raw generated page paths to the configured base URL.
+    Spaces and CJK text remained unescaped, while `#` and `?` became URL
+    delimiters instead of filename characters in canonical, sitemap, and Atom
+    URLs.
+12. Homepage links were already URL-encoded, but Atom generation treated each
+    encoded href as a literal filesystem path. A featured or recent page whose
+    filename required encoding was therefore omitted from the feed.
 
 [GitHub's release-event documentation](https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#release)
 confirms that `published` captures stable releases and prereleases.
@@ -138,13 +145,20 @@ out the release tag, compares it with `uv version --short` before registry
 login, and enables `latest` only for non-prerelease events. The existing command
 failure, workflow result, generated tag set, JSON, XML, and manifest artifacts
 are the direct observable contracts, so no additional log or metric was
-warranted.
+warranted. Public discovery now percent-encodes each generated relative page
+path at the shared absolute-URL boundary. Feed generation parses internal
+homepage hrefs, rejects external URLs, decodes only their path before local
+resolution, and then emits the shared encoded public URL.
 
-After these changes, Ruff, Pyright, all three release-workflow tests, all 29
-export/discovery tests, all 11 deployment tests, and all 1,056 tests pass. A
+After these changes, Ruff, Pyright, all three release-workflow tests, all 31
+export/discovery tests, all 11 deployment tests, and all 1,058 tests pass. A
 real explicit-path CLI build using only `PUBLIC_SITE_URL` emitted the configured
 discovery metadata, sitemap, and robots file. The exact corrected source rebuilt
 into a wheel and source distribution that pass Twine.
+Two focused discovery regressions separately failed on the raw public URL and
+the missing feed entry before the latest fix. A Chromium check then followed an
+encoded homepage link containing spaces, `#`, `?`, and CJK text to the intended
+page over a real local HTTP server.
 The fresh Python 3.14 wheel install performed after the repair and demo
 corrections resolved `huldra-arxiv 0.4.2`, reported Recoleta `0.7.0`, and
 generated a no-key demo whose persisted manifest paths all resolve inside the

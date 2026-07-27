@@ -65,8 +65,9 @@ uv run --project ../.. recoleta fleet run day \
 
 Build the private production fleet into an isolated output path and verify
 representative English and Chinese pages, canonical URLs, language alternates,
-feeds, sitemap XML, robots policy, and no-index counts. Do not overwrite the
-public deployment during validation.
+feeds, sitemap XML, robots policy, no-index counts, and a generated page whose
+filename requires URL percent-encoding. Do not overwrite the public deployment
+during validation.
 
 ## Tag and publish
 

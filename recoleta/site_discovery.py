@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 import posixpath
 import re
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import quote, unquote, urljoin, urlparse
 from xml.etree import ElementTree
 
 from bs4 import BeautifulSoup, Tag
@@ -64,7 +64,10 @@ def normalize_public_site_url(value: str | None) -> str | None:
 
 
 def _site_url(*, public_site_url: str, relative_path: str) -> str:
-    return urljoin(public_site_url.rstrip("/") + "/", relative_path)
+    return urljoin(
+        public_site_url.rstrip("/") + "/",
+        quote(relative_path, safe="/"),
+    )
 
 
 def _relative_html_paths(root: Path) -> frozenset[str]:
@@ -554,7 +557,10 @@ def _write_atom_feed(
         href = str(link.get("href") or "").strip()
         if not href:
             continue
-        target_path = (home_path.parent / href).resolve()
+        parsed_href = urlparse(href)
+        if parsed_href.scheme or parsed_href.netloc:
+            continue
+        target_path = (home_path.parent / unquote(parsed_href.path)).resolve()
         try:
             target_relative_path = str(target_path.relative_to(output_dir)).replace(
                 "\\", "/"

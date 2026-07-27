@@ -185,6 +185,74 @@ def test_multilingual_discovery_artifacts_expose_only_curated_pages(
     )
 
 
+def test_public_discovery_urls_percent_encode_page_paths(tmp_path: Path) -> None:
+    page_name = "AI #1 中文?.html"
+    expected_url = (
+        "https://example.github.io/recoleta/trends/"
+        "AI%20%231%20%E4%B8%AD%E6%96%87%3F.html"
+    )
+    _write_page(
+        tmp_path / "index.html",
+        language="en",
+        body="<p>Research index.</p>",
+    )
+    page_path = tmp_path / "trends" / page_name
+    _write_page(
+        page_path,
+        language="en",
+        body="<p>Special-character research page.</p>",
+    )
+
+    write_site_discovery_artifacts(
+        output_dir=tmp_path,
+        manifest={"generated_at": "2026-07-24T00:00:00Z"},
+        public_site_url="https://example.github.io/recoleta/",
+    )
+
+    page_soup = BeautifulSoup(page_path.read_text(encoding="utf-8"), "html.parser")
+    canonical = page_soup.select_one("link[rel~='canonical']")
+    assert isinstance(canonical, Tag)
+    assert canonical["href"] == expected_url
+    sitemap_root = ElementTree.parse(tmp_path / "sitemap.xml").getroot()
+    sitemap_namespace = {"sitemap": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+    locations = sitemap_root.findall("sitemap:url/sitemap:loc", sitemap_namespace)
+    assert expected_url in {location.text for location in locations}
+
+
+def test_atom_feed_resolves_percent_encoded_homepage_links(tmp_path: Path) -> None:
+    encoded_href = "trends/AI%20%231%20%E4%B8%AD%E6%96%87%3F.html"
+    expected_url = f"https://example.github.io/recoleta/{encoded_href}"
+    _write_page(
+        tmp_path / "index.html",
+        language="en",
+        body=(
+            '<h2 class="home-feature-title">'
+            f'<a href="{encoded_href}">Special-character research</a>'
+            "</h2>"
+        ),
+    )
+    _write_page(
+        tmp_path / "trends" / "AI #1 中文?.html",
+        language="en",
+        body="<p>Special-character research page.</p>",
+    )
+
+    write_site_discovery_artifacts(
+        output_dir=tmp_path,
+        manifest={"generated_at": "2026-07-24T00:00:00Z"},
+        public_site_url="https://example.github.io/recoleta/",
+    )
+
+    atom_namespace = {"atom": "http://www.w3.org/2005/Atom"}
+    feed_root = ElementTree.parse(tmp_path / "feed.xml").getroot()
+    entries = feed_root.findall("atom:entry", atom_namespace)
+    assert len(entries) == 1
+    assert entries[0].findtext("atom:id", namespaces=atom_namespace) == expected_url
+    entry_link = entries[0].find("atom:link", atom_namespace)
+    assert entry_link is not None
+    assert entry_link.get("href") == expected_url
+
+
 def test_unconfigured_public_url_adds_safe_metadata_without_dead_discovery_links(
     tmp_path: Path,
 ) -> None:

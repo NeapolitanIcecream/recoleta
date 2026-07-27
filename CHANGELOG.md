@@ -37,6 +37,9 @@ Versioning.
 - Managed site builds validate the canonical public URL before replacing prior
   output, and multilingual root Atom feeds identify their own public URL in the
   `self` link.
+- Canonical, alternate, sitemap, and Atom entry URLs percent-encode generated
+  page paths, while feed generation resolves those encoded homepage links back
+  to their local pages.
 - Container publication rejects release tags that do not match the package
   version and reserves the `latest` image tag for stable releases.
 - Trend emails now keep the title-rule gap on the content-bearing title cell,

@@ -129,6 +129,14 @@ Last updated: 2026-07-27
   rejects a release tag that differs from the package version before registry
   login, and only stable releases can move `latest`. Two workflow regressions
   failed before the fixes and pass afterward.
+- Addressed two current-head discovery findings. Every generated public page
+  path is now percent-encoded before it reaches canonical, alternate, sitemap,
+  or Atom URLs, and the feed resolver decodes internal homepage href paths
+  before checking the corresponding file. Both regressions failed for their
+  reported symptoms before the fix and pass afterward; Ruff, Pyright, all 31
+  export/discovery tests, and all 1,058 tests pass. A real Chromium navigation
+  followed a link containing spaces, `#`, `?`, and CJK text to the intended
+  page over HTTP.
 - Promoted the approved visual structure into a local second-review set:
   repository banner, exact-text social card, and real-fleet proof board. The set
   uses current site roles, not a colour inferred from the first comparison.

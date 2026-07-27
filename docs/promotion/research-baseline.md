@@ -239,7 +239,7 @@ Local intervention after review:
   fresh Python 3.14 index install, the bundled no-network demo, the redacted
   three-child dry-run, and container smoke checks. Both fresh and container
   environments reported Huldra runtime and distribution version `0.4.2`.
-- Recoleta PR 78 cloud review subsequently found eleven release or public-output
+- Recoleta PR 78 cloud review subsequently found thirteen release or public-output
   defects:
   configured-path site commands used a removed keyword, repair-site builds
   dropped the configured public URL, the bundled demo retained pre-move
@@ -250,10 +250,13 @@ Local intervention after review:
   public URLs were rejected only after managed output replacement and that the
   multilingual root feed retained its child feed's `self` URL. Container review
   then found that prereleases could overwrite `latest` and release tags were
-  not checked against the package version. Red-then-green regressions now cover
-  all eleven; Ruff, Pyright, and all 1,056 tests pass after the corrections. A
-  fresh Python 3.14 install of the rebuilt wheel also generated a demo with
-  final, self-contained manifest paths.
+  not checked against the package version. The next review found that generated
+  canonical, sitemap, and Atom URLs did not percent-encode special-character
+  filenames, while the feed resolver treated already encoded homepage links as
+  literal filesystem paths and dropped those entries. Red-then-green regressions
+  now cover all thirteen; Ruff, Pyright, and all 1,058 tests pass after the
+  corrections. A fresh Python 3.14 install of the rebuilt wheel also generated
+  a demo with final, self-contained manifest paths.
 
 These checks establish release compatibility and distribution integrity. They
 do not count as an external activation.
