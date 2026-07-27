@@ -5,7 +5,7 @@ Last updated: 2026-07-27
 ## Current state
 
 - Branch: `codex/promotion-readiness`
-- Recoleta release candidate: `0.7.0`, local commit pending
+- Recoleta release candidate: `07ce0946` (`0.7.0`)
 - Huldra release merge: `1b9a671`
 - Remote publication: Huldra PR 7 is merged and
   <https://github.com/NeapolitanIcecream/huldra/releases/tag/v0.4.2> is
@@ -95,7 +95,7 @@ Last updated: 2026-07-27
 
 ## Active work
 
-1. Archive and push the `0.7.0` candidate, then complete PR CI and cloud review.
+1. Push the `0.7.0` candidate, then complete PR CI and cloud review.
 2. Obtain maintainer approval or revisions for the themed banner, social card,
    and real-fleet proof board.
 3. Merge, tag, and publish the Recoleta GitHub Release through the configured

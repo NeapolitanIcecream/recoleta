@@ -2,8 +2,8 @@
 
 Date: 2026-07-27
 
-State: Huldra published; Recoleta `0.7.0` validated locally; no Recoleta
-publication attempted.
+State: Huldra published; Recoleta `0.7.0` validated and committed as
+`07ce0946`; no Recoleta publication attempted.
 
 ## Huldra publication proof
 
@@ -50,7 +50,7 @@ source-adapter tests and full suite protect runtime API compatibility.
 
 ## Remaining gates
 
-1. Commit and push the candidate.
+1. Push the candidate.
 2. Complete PR CI, cloud review, and thread resolution.
 3. Merge, tag, and publish the Recoleta GitHub Release.
 4. Verify PyPI and GHCR artifacts, then deploy and inspect the refreshed fleet.
