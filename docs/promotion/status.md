@@ -216,6 +216,10 @@ Last updated: 2026-07-27
 - Replaced the generated title candidates with a non-postable maintainer
   handoff containing verified facts, public links, writing questions, account
   eligibility checks, and a submission preflight.
+- Addressed PR 80's stale-handoff finding. The active GitHub launch handoff now
+  records the verified amd64/arm64 replay, completed social-preview upload, and
+  human-only Show HN gate. A same-mode search found no other stale release
+  handoff.
 
 ## Active work
 
