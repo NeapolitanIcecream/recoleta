@@ -533,6 +533,8 @@ def _write_atom_feed(
     feed = ElementTree.Element("feed", {"xmlns": _ATOM_NAMESPACE})
     feed.set("{http://www.w3.org/XML/1998/namespace}lang", language_site.code)
     _atom_text(feed, "title", "Recoleta Research Radar")
+    author = ElementTree.SubElement(feed, "author")
+    _atom_text(author, "name", "Recoleta")
     _atom_text(feed, "id", home_url)
     _atom_text(feed, "updated", generated_at)
     ElementTree.SubElement(

@@ -156,6 +156,10 @@ def test_multilingual_discovery_artifacts_expose_only_curated_pages(
     feed_root = ElementTree.parse(tmp_path / "en" / "feed.xml").getroot()
     entries = feed_root.findall("atom:entry", atom_namespace)
     assert len(entries) == 1
+    assert (
+        feed_root.findtext("atom:author/atom:name", namespaces=atom_namespace)
+        == "Recoleta"
+    )
     assert entries[0].findtext("atom:title", namespaces=atom_namespace) == (
         "Research page"
     )

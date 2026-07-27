@@ -107,6 +107,11 @@ Last updated: 2026-07-27
   failed with a missing field before the fix and passes afterward; Ruff,
   Pyright, all 11 deployment tests, and all 1,051 tests pass. Rebuilt
   distributions pass Twine.
+- Addressed PR 78's Atom conformance finding. Every generated language feed now
+  supplies a feed-level `Recoleta` author inherited by its entries, including
+  the copied default-language root feed. The XML regression failed with no
+  author before the fix and passes afterward; Ruff, Pyright, both discovery
+  tests, and all 1,051 tests pass.
 - Promoted the approved visual structure into a local second-review set:
   repository banner, exact-text social card, and real-fleet proof board. The set
   uses current site roles, not a colour inferred from the first comparison.

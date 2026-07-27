@@ -35,7 +35,7 @@ is open; no Recoleta package publication attempted.
 | --- | --- |
 | Ruff | passed |
 | Pyright | 0 errors, 0 warnings |
-| Pytest | 1,051 passed after four PR review corrections |
+| Pytest | 1,051 passed after five PR review corrections |
 | Wheel and source distribution | built |
 | Twine | both distributions passed |
 | Wheel contents | bundled fleet brief present; `.DS_Store` absent |
@@ -69,7 +69,7 @@ failure.
 
 ## Further PR review corrections
 
-Current-head reviews identified three additional output-contract defects:
+Current-head reviews identified four additional output-contract defects:
 
 1. `repair outputs --site` did not propagate the configured public URL through
    `MaterializeOutputsRequest`, so a repaired site silently lost canonical
@@ -82,6 +82,9 @@ Current-head reviews identified three additional output-contract defects:
    removed the safe `discovery` field while sanitizing public manifests. The
    deployed branch therefore kept sitemap and feed files but stopped exposing
    their canonical manifest metadata.
+4. Generated Atom feeds provided no author on the feed or its entries. Feeds
+   with entries therefore violated Atom's author requirement and could be
+   rejected by standards-compliant consumers.
 
 An end-to-end repair regression test asserts that a configured public URL
 reaches the final discovery manifest and produces `sitemap.xml` and
@@ -97,15 +100,18 @@ now preserves the exporter-owned `discovery` field while continuing to omit
 private input, output, and generation metadata. A same-mode search found no
 other product command that moves a generated site while returning its pre-move
 manifest, and the single public-manifest sanitizer covers root and language
-manifests. The existing JSON payload and manifests are the direct observable
-contracts, so no additional log or metric was warranted.
+manifests. The shared feed writer now adds a feed-level `Recoleta` author, which
+all entries and the copied default root feed inherit. The existing JSON, XML,
+and manifest artifacts are the direct observable contracts, so no additional
+log or metric was warranted.
 
 After these changes, Ruff, Pyright, the 22 tests across the repair and demo
-files, all 11 deployment tests, and all 1,051 tests pass. The exact corrected
-source rebuilt into a wheel and source distribution that pass Twine. The fresh
-Python 3.14 wheel install performed after the repair and demo corrections
-resolved `huldra-arxiv 0.4.2`, reported Recoleta `0.7.0`, and generated a no-key
-demo whose persisted manifest paths all resolve inside the final snapshot.
+files, all 11 deployment tests, both discovery tests, and all 1,051 tests pass.
+The exact corrected source rebuilt into a wheel and source distribution that
+pass Twine. The fresh Python 3.14 wheel install performed after the repair and
+demo corrections resolved `huldra-arxiv 0.4.2`, reported Recoleta `0.7.0`, and
+generated a no-key demo whose persisted manifest paths all resolve inside the
+final snapshot.
 
 ## Remaining gates
 
