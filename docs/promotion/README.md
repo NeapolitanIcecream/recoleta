@@ -19,16 +19,18 @@ Read in this order:
    and approval steps that cannot be completed from the repository.
 7. [`channel-kit.md`](./channel-kit.md) — launch copy, channel order, and
    platform-specific boundaries.
-8. [`launch-log.md`](./launch-log.md) — attributable attempts and outcomes.
-9. [`checkpoints/2026-07-25-release-readiness.md`](./checkpoints/2026-07-25-release-readiness.md)
+8. [`show-hn-handoff.md`](./show-hn-handoff.md) — non-postable facts,
+   human-authorship boundary, and maintainer submission checklist.
+9. [`launch-log.md`](./launch-log.md) — attributable attempts and outcomes.
+10. [`checkpoints/2026-07-25-release-readiness.md`](./checkpoints/2026-07-25-release-readiness.md)
    — implementation, validation, corrections, and exact next gate for this
    sprint checkpoint.
-10. [`checkpoints/2026-07-25-maintainer-gate.md`](./checkpoints/2026-07-25-maintainer-gate.md)
+11. [`checkpoints/2026-07-25-maintainer-gate.md`](./checkpoints/2026-07-25-maintainer-gate.md)
    — requirement-by-requirement completion audit and exact resume signals.
-11. [`checkpoints/2026-07-27-index-release-candidate.md`](./checkpoints/2026-07-27-index-release-candidate.md)
+12. [`checkpoints/2026-07-27-index-release-candidate.md`](./checkpoints/2026-07-27-index-release-candidate.md)
    — Huldra publication proof and the exact Recoleta `0.7.0` index-only
    release-candidate gates.
-12. [`checkpoints/2026-07-27-release-and-fleet-verification.md`](./checkpoints/2026-07-27-release-and-fleet-verification.md)
+13. [`checkpoints/2026-07-27-release-and-fleet-verification.md`](./checkpoints/2026-07-27-release-and-fleet-verification.md)
     — final release identity, public PyPI and GHCR proof, production fleet
     deployment, and independent HTTPS checks.
 

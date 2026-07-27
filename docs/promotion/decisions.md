@@ -252,3 +252,31 @@ Consequence:
 - Later visual changes return to maintainer review.
 - The approved files can now replace public assets without reopening palette or
   structural exploration.
+
+## 2026-07-27 — Keep all Hacker News text human-authored
+
+Decision:
+
+- Retire the agent-generated Show HN title candidates and do not prepare a
+  submission body or comments.
+- Keep only a non-postable factual handoff, writing questions, eligibility
+  checks, and public links.
+- Require the maintainer to write the title, submission context, and discussion
+  replies without AI generation or editing.
+
+Reason:
+
+- Hacker News guidelines prohibit generated or AI-edited comments.
+- The Show HN presentation tips were updated on 2026-03-28 to require all text
+  posted to Hacker News to be written by hand, including submission copy.
+- Hacker News is also temporarily restricting Show HN submissions from accounts
+  that are not yet familiar with the community.
+
+Consequence:
+
+- This decision supersedes the title-candidate portion of the 2026-07-25
+  human-in-the-loop decision.
+- The agent may verify facts, links, release health, and outcomes but may not
+  draft or edit text that will be posted to Hacker News.
+- If the maintainer does not want to write the submission, skip Show HN and use
+  a channel whose current rules permit prepared project copy.

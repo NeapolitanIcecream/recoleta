@@ -305,3 +305,38 @@ Container counterevidence:
 The public container remains a launch blocker until both native platforms are
 present and verified. None of these maintainer or agent checks counts as an
 external activation.
+
+## 2026-07-27 promotion gate closure
+
+Later observations supersede the open container and social-preview gates:
+
+- PR 79 was squash-merged as
+  `89116739bfed3c57b17a7b4f44f1c1925197eeab`.
+- Manual replay run
+  <https://github.com/NeapolitanIcecream/recoleta/actions/runs/30259934268>
+  published one OCI index with native `linux/amd64` and `linux/arm64` images
+  plus attestations. Anonymous requests show that `0.7.0`, `0.7`, and `latest`
+  resolve to the same digest, and a default arm64 pull passed Recoleta and
+  Huldra runtime checks.
+- The approved 1200 by 630 PNG is visible in the authenticated GitHub
+  repository social-preview setting. GitHub GraphQL returns a public
+  repository-image URL whose downloaded bytes match the versioned source.
+
+The remaining Show HN boundary is human authorship and account eligibility:
+
+- the Show HN guidelines require a tryable project, maker participation, easy
+  evaluation, and no vote or comment solicitation:
+  <https://news.ycombinator.com/showhn.html>;
+- the Hacker News guidelines prohibit generated or AI-edited comments:
+  <https://news.ycombinator.com/newsguidelines.html>;
+- the presentation tips, updated 2026-03-28, explicitly require submission text
+  to be written by hand without LLM generation or editing:
+  <https://news.ycombinator.com/item?id=22336638>;
+- Hacker News is temporarily restricting Show HN submissions from accounts
+  that are not yet familiar with the community:
+  <https://news.ycombinator.com/showlim>.
+
+Recoleta meets the tryable-project gate through its public repository, live
+fleet, and bundled output demo. The agent cannot prepare text for Hacker News.
+The maintainer must confirm account eligibility and write the title,
+submission context, and comments independently.
