@@ -2,7 +2,8 @@
 
 Recoleta releases are published from a tagged commit through GitHub Actions.
 PyPI authentication uses Trusted Publishing; the container workflow publishes
-the same GitHub Release to GHCR with provenance and an SBOM.
+the same GitHub Release to GHCR for `linux/amd64` and `linux/arm64`, with
+provenance and an SBOM.
 
 ## Dependency order
 
@@ -95,12 +96,25 @@ The release event also publishes:
 - `ghcr.io/neapolitanicecream/recoleta:latest`
 
 The container workflow checks out the release tag and rejects it unless it
-matches the package version before registry login or image publication.
-Prereleases receive versioned tags but never move the stable `latest` tag.
+matches both the package version and checked-out commit before registry login or
+image publication. Prereleases receive versioned tags but never move the stable
+`latest` tag.
 
-The first container package is private. Follow
+To rebuild an existing tag—for example, to repair a missing target
+architecture—run **Publish container** manually, enter the version without the
+`v` prefix, and select whether the newest stable `X.Y.Z` release should update
+the floating minor and `latest` tags. The default-false replay publishes only
+the exact version. The workflow checks out that exact tag and repeats the tag,
+commit, and package-version checks before publishing. It rejects a request to
+move floating tags unless the requested version is the highest stable tag.
+Prerelease-shaped versions cannot update either floating channel. The metadata
+action's automatic SemVer `latest` flavor is disabled; one verified output gates
+both the minor SemVer rule and the explicit `latest` rule.
+
+Verify anonymous registry access after the first publication. If the package is
+not public, follow
 [`docs/promotion/maintainer-actions.md`](../promotion/maintainer-actions.md)
-to make it public only after the digest and source link are verified.
+before advertising the image.
 
 ## Post-release checks
 
@@ -110,12 +124,16 @@ From a clean environment:
 uvx recoleta==0.7.0 demo --output-dir recoleta-demo --json
 docker pull ghcr.io/neapolitanicecream/recoleta:0.7.0
 docker run --rm ghcr.io/neapolitanicecream/recoleta:0.7.0 --help
+docker run --rm --platform linux/amd64 \
+  ghcr.io/neapolitanicecream/recoleta:0.7.0 --help
+docker run --rm --platform linux/arm64 \
+  ghcr.io/neapolitanicecream/recoleta:0.7.0 --help
 ```
 
 Then:
 
 1. deploy the full production fleet site with its canonical public URL;
 2. validate the sitemap, feeds, and selected public brief over HTTPS;
-3. confirm the PyPI metadata and release artifacts;
+3. confirm the PyPI metadata, release artifacts, and both container platforms;
 4. confirm private vulnerability reporting;
 5. start the channel sequence only after all checks pass.

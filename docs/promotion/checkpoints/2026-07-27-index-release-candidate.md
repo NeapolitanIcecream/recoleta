@@ -174,3 +174,12 @@ final snapshot.
    reporting actions before channel submissions.
 
 No channel submission or external activation occurred at this checkpoint.
+
+## Closure
+
+Later on 2026-07-27, all release and production-deployment gates above closed:
+PR 78 merged, `v0.7.0` and its GitHub Release were created from the exact merge
+commit, both publication workflows passed, PyPI and anonymous GHCR metadata
+were verified, and the refreshed fleet passed independent HTTPS and Chromium
+checks. The durable evidence is recorded in
+[`2026-07-27-release-and-fleet-verification.md`](./2026-07-27-release-and-fleet-verification.md).

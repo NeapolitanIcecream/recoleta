@@ -1,0 +1,123 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1200"
+  height="630"
+  viewBox="0 0 1200 630"
+  role="img"
+  aria-labelledby="title description"
+>
+  <title id="title">Recoleta social preview</title>
+  <desc id="description">
+    Recoleta publishes traceable trends and ideas. The card invites readers to
+    explore research on Software Intelligence and Embodied AI, then try the
+    project without an API key.
+  </desc>
+
+  <rect width="1200" height="630" fill="#ffffff" />
+  <rect x="32" y="32" width="1136" height="566" fill="none" stroke="#e2e5ea" stroke-width="2" />
+
+  <text
+    x="72"
+    y="102"
+    fill="#172033"
+    font-family="Georgia, 'Songti SC', serif"
+    font-size="40"
+    font-weight="700"
+  >Recoleta</text>
+
+  <text
+    x="72"
+    y="205"
+    fill="#172033"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif"
+    font-size="56"
+    font-weight="700"
+    letter-spacing="-1.2"
+  >
+    <tspan x="72" dy="0">Research radars that</tspan>
+    <tspan x="72" dy="68">publish traceable</tspan>
+    <tspan x="72" dy="68">trends and ideas.</tspan>
+  </text>
+
+  <text
+    x="72"
+    y="414"
+    fill="#354052"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif"
+    font-size="24"
+  >
+    <tspan x="72" dy="0">Explore live research on</tspan>
+    <tspan x="72" dy="34">Software Intelligence and Embodied AI.</tspan>
+    <tspan x="72" dy="34">Try Recoleta without an API key.</tspan>
+  </text>
+
+  <text
+    x="72"
+    y="556"
+    fill="#145da0"
+    font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif"
+    font-size="20"
+    font-weight="600"
+  >github.com/NeapolitanIcecream/recoleta</text>
+
+  <path d="M714 215H1032M714 315H1032M714 415H1032" stroke="#145da0" stroke-width="6" />
+  <path d="M930 176V454" stroke="#c8ced6" stroke-width="3" />
+
+  <g fill="#f5f6f8" stroke="#172033" stroke-width="3">
+    <rect x="692" y="184" width="76" height="62" />
+    <rect x="692" y="284" width="76" height="62" />
+    <rect x="692" y="384" width="76" height="62" />
+    <rect x="804" y="190" width="92" height="50" />
+    <rect x="804" y="290" width="92" height="50" />
+    <rect x="804" y="390" width="92" height="50" />
+  </g>
+
+  <g fill="#145da0">
+    <circle cx="716" cy="207" r="8" />
+    <rect x="710" y="311" width="12" height="20" />
+    <rect x="728" y="301" width="12" height="30" />
+    <rect x="746" y="291" width="12" height="40" />
+    <circle cx="716" cy="407" r="6" />
+    <circle cx="742" cy="423" r="8" />
+  </g>
+  <g fill="#172033">
+    <circle cx="738" cy="207" r="6" />
+    <circle cx="752" cy="223" r="6" />
+    <circle cx="728" cy="435" r="6" />
+  </g>
+  <g stroke="#5f6875" stroke-width="4">
+    <path d="M822 209H878M822 225H860" />
+    <path d="M822 309H878M822 325H852" />
+    <path d="M822 409H878M822 425H866" />
+  </g>
+
+  <circle cx="930" cy="215" r="11" fill="#0e477d" />
+  <circle cx="930" cy="315" r="11" fill="#0e477d" />
+  <circle cx="930" cy="415" r="11" fill="#0e477d" />
+
+  <g fill="#ffffff" stroke="#172033" stroke-width="3">
+    <rect x="1048" y="160" width="104" height="320" />
+    <rect x="1038" y="170" width="104" height="320" />
+    <rect x="1028" y="180" width="104" height="320" />
+  </g>
+  <rect x="1048" y="204" width="48" height="7" fill="#172033" />
+  <rect x="1048" y="222" width="32" height="5" fill="#5f6875" />
+  <g fill="none" stroke="#e2e5ea" stroke-width="2">
+    <rect x="1048" y="250" width="64" height="58" />
+    <rect x="1048" y="324" width="64" height="58" />
+    <rect x="1048" y="398" width="64" height="58" />
+  </g>
+  <circle cx="1062" cy="266" r="5" fill="#0e477d" />
+  <path d="M1074 266H1098M1062 282H1098M1062 294H1090" stroke="#c8ced6" stroke-width="4" />
+  <rect x="1060" y="354" width="8" height="16" fill="#145da0" />
+  <rect x="1074" y="344" width="8" height="26" fill="#145da0" />
+  <rect x="1088" y="334" width="8" height="36" fill="#145da0" />
+  <circle cx="1062" cy="424" r="4" fill="#172033" />
+  <circle cx="1080" cy="442" r="5" fill="#145da0" />
+  <circle cx="1098" cy="418" r="4" fill="#0e477d" />
+  <path d="M1062 424L1080 442L1098 418" stroke="#c8ced6" stroke-width="3" fill="none" />
+
+  <rect x="1018" y="207" width="20" height="16" fill="#0e477d" />
+  <rect x="1018" y="307" width="20" height="16" fill="#0e477d" />
+  <rect x="1018" y="407" width="20" height="16" fill="#0e477d" />
+</svg>

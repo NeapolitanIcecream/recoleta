@@ -159,7 +159,8 @@ Verified on 2026-07-25 after the implementation and discovery refactor:
   non-indexable pages.
 - The Recoleta `0.6.1` wheel and source distribution passed Twine checks. A
   fresh Python 3.14 environment installed the built wheel and produced the
-  bundled no-key fleet demo without network or model calls.
+  bundled no-key fleet demo without source fetches or model and embedding
+  calls.
 - The rebuilt default container passed CLI, doctor-help, bundled-demo, and
   bundled-Huldra smoke checks.
 - The redacted three-child fleet dry-run now plans from read-only or in-memory
@@ -260,3 +261,47 @@ Local intervention after review:
 
 These checks establish release compatibility and distribution integrity. They
 do not count as an external activation.
+
+## 2026-07-27 post-release observations
+
+Publicly verified:
+
+- Recoleta PR 78 was squash-merged as `3e2a59c5`; annotated tag `v0.7.0` and
+  the matching GitHub Release resolve to that commit.
+- PyPI serves the `0.7.0` wheel and source distribution with Python `>=3.14`
+  and `huldra-arxiv>=0.4.2,<0.5`.
+- A clean public-index `uvx recoleta==0.7.0 demo` completed without source,
+  model, or embedding calls.
+- The production fleet was rebuilt from the release commit and GitHub Pages
+  built deployment `2855fd0e`. The public sitemap, robots policy, three Atom
+  feeds, representative English and Chinese briefs, canonical and alternate
+  links, and desktop/mobile browser views passed independent checks.
+- Private vulnerability reporting is enabled for both Recoleta and Huldra.
+- The repository About text and topics no longer claim `local-first`.
+
+Container counterevidence:
+
+- GHCR tags `0.7.0`, `0.7`, and `latest` are anonymously readable and initially
+  resolved to the same OCI index.
+- That index contains one `linux/amd64` image and one provenance attestation,
+  not a `linux/arm64` image. A default pull fails on Apple Silicon.
+- The explicit amd64 image runs Recoleta `0.7.0` with Huldra `0.4.2`, and a
+  native local arm64 build of the same runtime target passes. The failure is
+  therefore in publication coverage, not demonstrated application
+  incompatibility.
+- Docker's official GitHub Actions guidance uses QEMU plus an explicit
+  `platforms: linux/amd64,linux/arm64` build for one multi-platform image:
+  <https://docs.docker.com/build/ci/github-actions/multi-platform/>.
+- GitHub documents that `workflow_dispatch` supports typed inputs and can run
+  only after the workflow exists on the default branch:
+  <https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch>.
+- Docker Metadata Action defaults to `latest=auto`, which adds `latest` for
+  version tag types. Its documented `latest=false` flavor disables that
+  automatic tag. Recoleta uses one verified condition for both the floating
+  minor SemVer rule and explicit raw `latest` rule, while a default manual
+  replay publishes only the exact version:
+  <https://github.com/docker/metadata-action/blob/master/_autodocs/04-flavor.md>.
+
+The public container remains a launch blocker until both native platforms are
+present and verified. None of these maintainer or agent checks counts as an
+external activation.

@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 from recoleta.cli.app import app
 
 
-def test_demo_builds_offline_snapshot_without_runtime_configuration(
+def test_demo_builds_bundled_snapshot_without_runtime_configuration(
     tmp_path: Path,
 ) -> None:
     output_dir = tmp_path / "evaluation"
@@ -37,6 +37,21 @@ def test_demo_builds_offline_snapshot_without_runtime_configuration(
         "Agent evaluation reaches ambiguous projects"
         in soup.select_one(".home-feature-title").get_text(" ", strip=True)  # type: ignore[union-attr]
     )
+
+
+def test_demo_human_output_scopes_its_network_claim(tmp_path: Path) -> None:
+    output_dir = tmp_path / "evaluation"
+    result = CliRunner().invoke(
+        app,
+        ["demo", "--output-dir", str(output_dir)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "Recoleta fetched no sources and made no model or embedding calls."
+        in result.stdout
+    )
+    assert "No network or model calls were made" not in result.stdout
 
 
 def test_demo_manifest_paths_refer_to_final_snapshot(tmp_path: Path) -> None:

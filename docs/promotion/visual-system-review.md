@@ -156,9 +156,11 @@ The set contains:
 
 - a 2400 by 1200 repository banner without embedded marketing text;
 - a 1200 by 630 social card with the exact claim “Research radars that publish
-  traceable trends and ideas”;
+  traceable trends and ideas” plus a direct invitation to inspect Software
+  Intelligence and Embodied AI and try the demo without an API key;
 - a 1440 by 960 proof board built from the live fleet home, one real Trend, and
   its linked source trail.
 
-All three remain local. Public replacement still requires review of the
-complete set.
+The maintainer approved all three after the social-card and proof-board copy was
+simplified. Stable copies are staged for a separate versioned change; later
+visual revisions return to review.

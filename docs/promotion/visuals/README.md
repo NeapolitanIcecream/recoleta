@@ -1,14 +1,15 @@
 # Visual review candidates
 
-Status: structure approved; themed set requires final review
+Status: revised themed set approved; ready for a separate versioned change
 
-Generated: 2026-07-25; structure study added 2026-07-27
+Generated: 2026-07-25; structure study and approved replacement set added
+2026-07-27
 
-Published or referenced by product surfaces: no
+Published or referenced by merged product surfaces: no
 
-These files are local review artifacts. Do not replace the README banner,
-social preview, screenshots, or site assets until the maintainer selects or
-rejects a direction.
+The approved files have been copied to stable `docs/assets/` paths on the
+current versioned branch. They become public only after that branch passes
+review and merges. Later visual revisions return to maintainer review.
 
 ## Candidate A — light evidence field
 
@@ -117,9 +118,20 @@ Exact social-card text:
 >
 > Research radars that publish traceable trends and ideas.
 >
-> A running three-stream fleet. A no-key offline demo.
+> Explore live research on
+>
+> Software Intelligence and Embodied AI.
+>
+> Try Recoleta without an API key.
 >
 > github.com/NeapolitanIcecream/recoleta
+
+Exact proof-board text:
+
+> Live research site
+>
+> Tracking Software Intelligence and Embodied AI · English and 中文 · Explore
+> the public site
 
 Validation:
 
@@ -131,22 +143,35 @@ Validation:
 - every text-role pair used in the assets exceeds 4.5:1 contrast;
 - proof board contains only the previously captured live fleet, real Trend, and
   linked source-trail screenshots;
-- no public surface references the set.
+- no merged public surface references the set; the current branch references
+  stable copies in the README.
 
 SHA-256:
 
 | File | SHA-256 |
 | --- | --- |
-| `fleet-proof-board.png` | `52ba83d87d650e3ff7eec9f9d87ce5bc4ecc46c3f61b758dff53c1986f4e3efa` |
-| `fleet-proof-board.svg` | `386d7f7bacd489d6e04499a911e8b7c2fb1ce8b5fae69fe24beea67aec918aa3` |
+| `fleet-proof-board.png` | `ec8df70f73de889eb3d9d3493c2293f1f825ccf3662cfce83679c431e0bb3e7b` |
+| `fleet-proof-board.svg` | `099042f0f218b8f1b4166b2a66c6bff5857be0fd6429f839d59d3a1460eedd33` |
 | `recoleta-banner.png` | `35e584eda65573353b5319ecde55e142e9d5e32cc0c4bdaa00242ad41c75b05e` |
 | `recoleta-banner.svg` | `1564afa42689a6e240d232a164b5e26c862f97a759059e4f1ee521fbbae9a8e2` |
-| `recoleta-social-card.png` | `0eeb02c9f72e6c1793a033b6f691d54b6abb0a75c85ef2c5937ece312f242194` |
-| `recoleta-social-card.svg` | `fef4e4201ca8140f3748d300556d3449de73d7202aa7159b0b3dbad8832f2d99` |
+| `recoleta-social-card.png` | `b246908fca0a9eea4f773b194a66c32fb447fc5a64c53ae6e97b4a61ce883ab1` |
+| `recoleta-social-card.svg` | `83c78a7c94e92d5f39fe592dac983003fd33fb9a0c63e3e626055a096e315fc3` |
 
-Final review should approve the complete set or identify the specific file and
-change. Approval authorizes promotion into versioned public assets; it does not
-authorize a channel post.
+The maintainer approved the complete revised set on 2026-07-27. Approval
+authorizes promotion into versioned public assets; it does not authorize a
+channel post.
+
+Stable publication paths:
+
+- `docs/assets/recoleta-banner.svg` and `.png`;
+- `docs/assets/recoleta-social-preview.svg` and `.png`;
+- `docs/assets/recoleta-fleet-proof.svg` and `.png`.
+
+The stable proof SVG embeds its three approved public-site captures so it
+renders in a clean checkout and when opened directly from GitHub. Its
+post-embedding SHA-256 is
+`63006c7ac1a289fe702449911e3ec4ea5463831c39b60a152e3e9b9dea100e85`;
+the approved raster output is unchanged.
 
 ## Live fleet capture set
 

@@ -115,8 +115,9 @@ Consequence:
 
 Decision:
 
-- Bundle one curated production-fleet brief and let `recoleta demo` render it
-  without configuration, network calls, or model calls.
+- Bundle one curated production-fleet brief and, once Recoleta is installed, let
+  `recoleta demo` render it without runtime configuration, source fetches, or
+  model calls.
 - Report the command explicitly as an evaluation event, not an activation.
 
 Reason:
@@ -223,3 +224,31 @@ Consequence:
   before public replacement.
 - Future palette changes can replace role values without redesigning the
   composition.
+
+## 2026-07-27 — Approve the revised visual set after copy simplification
+
+Decision:
+
+- Approve the repository banner, social card, and production-fleet proof board
+  in the second review set.
+- Replace the social card's operational shorthand with a direct invitation to
+  inspect the maintained research radar.
+- Describe the proof board as a bilingual public demo tracing Software
+  Intelligence and Embodied AI, without foregrounding internal stream count or
+  independence.
+- Publish the set only after the `0.7.0` package, container, and refreshed fleet
+  gates pass, using a separate versioned repository change.
+
+Reason:
+
+- The maintainer accepted the visual direction but found “a running
+  three-stream fleet” and “a no-key offline demo” unclear as promotional copy.
+- The public value is the inspectable research output and supported languages,
+  not the deployment topology itself.
+
+Consequence:
+
+- Visual review is closed for the current files.
+- Later visual changes return to maintainer review.
+- The approved files can now replace public assets without reopening palette or
+  structural exploration.

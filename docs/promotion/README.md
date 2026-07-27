@@ -28,6 +28,9 @@ Read in this order:
 11. [`checkpoints/2026-07-27-index-release-candidate.md`](./checkpoints/2026-07-27-index-release-candidate.md)
    — Huldra publication proof and the exact Recoleta `0.7.0` index-only
    release-candidate gates.
+12. [`checkpoints/2026-07-27-release-and-fleet-verification.md`](./checkpoints/2026-07-27-release-and-fleet-verification.md)
+    — final release identity, public PyPI and GHCR proof, production fleet
+    deployment, and independent HTTPS checks.
 
 ## Update contract
 
