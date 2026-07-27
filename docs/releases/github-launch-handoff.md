@@ -70,7 +70,8 @@ Current sources:
 
 The draft promotion target is `v0.7.0`. Do not tag it until Huldra `0.4.2` is
 published, Recoleta uses the index-hosted Huldra constraint, and the repeated
-clean-install gates pass.
+clean-install gates pass. Those three conditions passed locally on 2026-07-27;
+remote PR CI and review remain before tagging.
 
 ## Execution checklist
 

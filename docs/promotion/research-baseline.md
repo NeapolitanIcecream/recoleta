@@ -224,5 +224,21 @@ Local intervention after review:
 - Huldra PR 7 then passed CI and current-head Codex review, was squash-merged as
   `1b9a671`, and produced the annotated `v0.4.2` tag and GitHub Release:
   <https://github.com/NeapolitanIcecream/huldra/releases/tag/v0.4.2>.
-- Trusted Publishing workflow 30235829971 started from that exact tag and merge
-  commit. Its completion and PyPI artifact remain to be verified.
+- Trusted Publishing workflow
+  <https://github.com/NeapolitanIcecream/huldra/actions/runs/30235829971>
+  completed successfully from that exact tag and merge commit.
+- PyPI's JSON API then reported `huldra-arxiv 0.4.2`. Its wheel SHA-256 is
+  `98f0cc6cc11de44641829e89affbf9fe7c2d682be7d0c7e81598aaa69d95d34d`;
+  its source-distribution SHA-256 is
+  `d865f4160eb72194a4e7b10573103f89d08cb03329ef5c8abb5ac97a079567bb`.
+- Recoleta replaced its direct Git reference with
+  `huldra-arxiv>=0.4.2,<0.5`, and the lock now resolves the same PyPI artifact
+  hashes without changing unrelated packages.
+- The exact Recoleta `0.7.0` candidate passed Ruff, Pyright, all 1,047 tests,
+  wheel and source-distribution builds, Twine, package-content inspection, a
+  fresh Python 3.14 index install, the bundled no-network demo, the redacted
+  three-child dry-run, and container smoke checks. Both fresh and container
+  environments reported Huldra runtime and distribution version `0.4.2`.
+
+These checks establish release compatibility and distribution integrity. They
+do not count as an external activation.

@@ -5,14 +5,15 @@ Last updated: 2026-07-27
 ## Current state
 
 - Branch: `codex/promotion-readiness`
-- Recoleta implementation commit: `2e79f8b7`
+- Recoleta release candidate: `0.7.0`, local commit pending
 - Huldra release merge: `1b9a671`
 - Remote publication: Huldra PR 7 is merged and
   <https://github.com/NeapolitanIcecream/huldra/releases/tag/v0.4.2> is
-  published; its PyPI workflow is running. The Recoleta branch remains local.
-- Phase: execution resumed after maintainer account confirmation and visual
-  feedback
-- External publication: not started
+  published; its release workflow succeeded and PyPI serves version `0.4.2` of
+  `huldra-arxiv`. The Recoleta branch remains local.
+- Phase: Recoleta `0.7.0` release candidate validated
+- External publication: Huldra infrastructure release complete; Recoleta not
+  started
 - Visual publication: no asset is public; the structure is approved and a
   themed three-asset replacement set awaits final review
 - Credentials requested: none
@@ -74,7 +75,17 @@ Last updated: 2026-07-27
   Pyright, and all 275 tests pass. Fresh CI succeeded, cloud Codex approved the
   current head, and all review threads were resolved.
 - Squash-merged Huldra PR 7, created annotated tag `v0.4.2`, and published the
-  matching GitHub Release. Trusted Publishing workflow 30235829971 is running.
+  matching GitHub Release. Trusted Publishing workflow 30235829971 succeeded,
+  and PyPI serves the matching wheel and source distribution.
+- Replaced Recoleta's pinned Huldra Git revision with
+  `huldra-arxiv>=0.4.2,<0.5`, resolved the lock to the PyPI wheel and source
+  distribution hashes, set the candidate version to `0.7.0`, and dated the
+  changelog.
+- Revalidated the exact `0.7.0` candidate: Ruff, Pyright, all 1,047 tests,
+  wheel and source distribution, Twine, package contents, index-only fresh
+  installation, no-key demo, three-child dry-run, and runtime container all
+  passed. Fresh and container checks both reported Recoleta `0.7.0` with
+  Huldra runtime and distribution version `0.4.2`.
 - Promoted the approved visual structure into a local second-review set:
   repository banner, exact-text social card, and real-fleet proof board. The set
   uses current site roles, not a colour inferred from the first comparison.
@@ -84,15 +95,14 @@ Last updated: 2026-07-27
 
 ## Active work
 
-1. Obtain maintainer approval or revisions for the themed banner, social card,
+1. Archive and push the `0.7.0` candidate, then complete PR CI and cloud review.
+2. Obtain maintainer approval or revisions for the themed banner, social card,
    and real-fleet proof board.
-2. Verify Huldra workflow 30235829971 and `huldra-arxiv 0.4.2` on PyPI.
-3. Replace Recoleta's Git dependency with the verified Huldra range, update the
-   lock, and repeat the clean-index and release gates.
-4. Use Recoleta's configured pending publisher, enable private vulnerability
-   reporting, approve the final candidate, and publish the release.
-5. Verify PyPI, GHCR, the deployed fleet discovery files, and final URLs before
-   submitting any channel material.
+3. Merge, tag, and publish the Recoleta GitHub Release through the configured
+   pending publisher.
+4. Verify PyPI, GHCR, the deployed fleet discovery files, and final URLs.
+5. Complete the account-only GHCR visibility and private vulnerability
+   reporting steps before submitting any channel material.
 
 ## Approval gates
 
@@ -117,11 +127,10 @@ Still requires explicit review or action:
 
 ## Current bottleneck
 
-Clean Recoleta index publication remains sequenced behind Huldra `0.4.2`, but
-the account-side blocker is resolved. Huldra PR 7 is merged, its `v0.4.2`
-Release exists, and the Trusted Publishing workflow is running. Recoleta still
-returns HTTP 404 on PyPI until the Huldra artifact is verified and its Git
-dependency is replaced.
+The Huldra dependency blocker is closed. The exact Recoleta `0.7.0` candidate
+passes local release gates with index-hosted Huldra `0.4.2`. Its next package
+gate is remote PR CI and review; Recoleta remains absent from PyPI until the
+candidate is merged, tagged, and released.
 
 Visual publication remains independently gated. The structure is approved. The
 current banner, social card, and real-fleet proof board need one final review
@@ -131,9 +140,9 @@ before they replace public assets.
 
 | Family | Evidence | Exact gap | Status |
 | --- | --- | --- | --- |
-| No-key evaluation | bundled real brief, CLI tests, wheel inspection | clean index install | active |
+| No-key evaluation | bundled real brief, CLI tests, wheel inspection, clean index install | published `uvx` smoke | ready |
 | Production proof | public fleet case, redacted topology, full isolated build | external-user evidence | active |
 | Search and syndication | metadata, Atom, sitemap, robots, full fleet validation | production deployment | ready |
-| Package distribution | Huldra PR merged, v0.4.2 Release published, configured publishers, both release workflows | Huldra workflow result, Recoleta dependency and release | active |
+| Package distribution | Huldra 0.4.2 on PyPI, configured publishers, Recoleta 0.7.0 index-only candidate | Recoleta PR, release workflows, and public checks | active |
 | Visual identity | approved structure, sourced constraints, themed banner, social card, real-fleet proof board | final asset review and public replacement | awaiting review |
 | Channel distribution | channel kit, account instructions, launch ledger | release URL, approved visuals, account actions | ready behind gates |

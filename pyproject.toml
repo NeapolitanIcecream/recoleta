@@ -1,6 +1,6 @@
 [project]
 name = "recoleta"
-version = "0.6.1"
+version = "0.7.0"
 description = "Continuously operated research radar for traceable trends, ideas, and living research sites."
 readme = "README.md"
 requires-python = ">=3.14"
@@ -31,7 +31,7 @@ dependencies = [
     "filelock>=3.24.3",
     "httpx>=0.28.1",
     "huggingface-hub>=0.36.2",
-    "huldra-arxiv @ git+https://github.com/NeapolitanIcecream/huldra.git@8109b997f4c6be5c80a638f632977bf929cef976",
+    "huldra-arxiv>=0.4.2,<0.5",
     "lancedb>=0.29.2",
     "latex2mathml>=3.81.0",
     "litellm>=1.76.1",

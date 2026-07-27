@@ -7,6 +7,8 @@ Versioning.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-27
+
 ### Added
 
 - `recoleta demo` builds an offline site from a bundled, curated production
@@ -24,6 +26,8 @@ Versioning.
 - Project positioning and onboarding now lead with the maintained production
   fleet and continuously operated research radars instead of `local-first` or a
   lightly maintained preset.
+- Standard installations now resolve `huldra-arxiv>=0.4.2,<0.5` from PyPI
+  instead of a pinned Git revision, enabling index-only package installation.
 
 ### Fixed
 

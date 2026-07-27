@@ -25,6 +25,9 @@ Read in this order:
    sprint checkpoint.
 10. [`checkpoints/2026-07-25-maintainer-gate.md`](./checkpoints/2026-07-25-maintainer-gate.md)
    — requirement-by-requirement completion audit and exact resume signals.
+11. [`checkpoints/2026-07-27-index-release-candidate.md`](./checkpoints/2026-07-27-index-release-candidate.md)
+   — Huldra publication proof and the exact Recoleta `0.7.0` index-only
+   release-candidate gates.
 
 ## Update contract
 

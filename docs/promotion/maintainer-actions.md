@@ -15,8 +15,8 @@ short-lived OpenID Connect credentials and does not need a stored PyPI token.
 
 Maintainer status: both publisher-configuration tasks below were confirmed
 complete on 2026-07-27. The instructions remain as a reproducible account
-record. The public PyPI API will continue to show Huldra `0.4.1` and no Recoleta
-project until the corresponding release workflows succeed.
+record. Huldra `0.4.2` is now published. Recoleta remains absent from PyPI until
+its first release workflow succeeds.
 
 ### 1. Enable Huldra's protected PyPI publisher
 
