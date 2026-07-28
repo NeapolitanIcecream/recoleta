@@ -616,8 +616,8 @@ Scope notes:
   used by the mutating command. `--prune-caches` is a separate, broader preview.
 - `admin vacuum` rewrites the SQLite file, has no dry-run mode, and may require
   temporary free disk space. Take a DB backup first.
-- Recoleta GC does not rotate scheduler logs, delete `.codex-workflows`, or
-  maintain a separate Huldra database. Those remain operator-owned lifecycles.
+- Recoleta GC does not rotate scheduler logs or maintain a separate Huldra
+  database. Those remain operator-owned lifecycles.
 - `admin backup` and `admin restore` cover the SQLite database only.
 - `admin backup` writes to `--output-dir` when you pass it. Otherwise it uses
   `BACKUP_OUTPUT_DIR` / `backup_output_dir` first and falls back to

@@ -35,10 +35,3 @@ recipient data, or internal filesystem paths into the promotion archive.
 
 Visual promotion assets require maintainer review before they replace an existing
 asset or are published. Drafts may be generated locally and presented for review.
-
-## Project-local Codex Skills
-Project-specific skills live under `.cursor/skills/`. When a task clearly matches one, load its `SKILL.md` before proceeding.
-
-- `research-site-design-language`: Use for site visuals, UI copy, badges, card hierarchy, section ordering, and markdown-to-site rendering changes. It keeps fixed research-facing chrome in English while allowing long-form body copy to follow the source language.
-  When a new design rule becomes canonical or an old one is superseded, update the skill in the same change.
-- `proactive-refactoring-methodology`: Use for code-quality audits, structural hotspot reviews, refactor prioritization, and corruption checks with the repo's `cremona` profile. It pairs `uv run cremona scan` with the existing architecture roadmap so refactors follow change axes instead of raw file size.

@@ -75,7 +75,7 @@ readiness layer is useful, but it is not an idempotency planner.
 ### W21 runtime evidence
 
 The replay logs at
-`/Users/chenmohan/Playground/recoleta-playground/fleet/replay-logs/20260525-w21-v1/`
+`/path/to/fleet/replay-logs/20260525-w21-v1/`
 show material repeated LLM work:
 
 | Run group | Children | Total cost | Analyze cost | Day trends cost | Day ideas cost | Week trends+ideas cost | Translation cost |
@@ -420,8 +420,6 @@ Files likely touched:
 - `docs/guides/fleet-development-runbook.md`
 - `docs/design/configuration.md`
 - `recoleta.example.yaml`
-- `.cursor/skills/research-site-design-language/SKILL.md` only if site design
-  rules change
 
 Acceptance criteria:
 - A guard test proves `run week` over seven complete day windows cannot produce
