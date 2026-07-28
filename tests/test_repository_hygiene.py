@@ -13,8 +13,8 @@ PLAIN_USER_HOME_PATTERN = re.compile(
     r"|[A-Za-z]:/Users/[^/\s`'\"<>]+(?:/|$))",
     flags=re.IGNORECASE,
 )
-FILE_URI_PATTERN = re.compile(
-    "file" + r"://[^\s`'\"<>]+",
+LOCAL_FILE_URI_PATTERN = re.compile(
+    r"(?:file|sqlite(?:\+[A-Za-z0-9_.-]+)?):/+[^\s`'\"<>]+",
     flags=re.IGNORECASE,
 )
 ABSOLUTE_USER_HOME_PATTERNS = (
@@ -45,6 +45,10 @@ def _tracked_paths() -> list[Path]:
 
 def _is_absolute_user_home(path: str) -> bool:
     normalized = unquote(path).replace("\\", "/")
+    if re.match(r"^/+(?:Users|home)/", normalized, flags=re.IGNORECASE):
+        normalized = f"/{normalized.lstrip('/')}"
+    elif re.match(r"^/+[A-Za-z]:/Users/", normalized, flags=re.IGNORECASE):
+        normalized = normalized.lstrip("/")
     return any(pattern.search(normalized) for pattern in ABSOLUTE_USER_HOME_PATTERNS)
 
 
@@ -53,7 +57,7 @@ def _contains_user_home_path(line: str) -> bool:
     if PLAIN_USER_HOME_PATTERN.search(normalized):
         return True
 
-    for match in FILE_URI_PATTERN.finditer(normalized):
+    for match in LOCAL_FILE_URI_PATTERN.finditer(normalized):
         parsed = urlsplit(match.group())
         uri_path = parsed.path
         candidates = [uri_path]
@@ -86,6 +90,8 @@ def test_user_home_path_detection_covers_platform_and_uri_variants() -> None:
     windows_home = "C:" + "\\" + "Users" + "\\alice\\recoleta"
     normalized_windows_home = "C:" + "/" + "Users" + "/alice/recoleta"
     file_uri = "file" + "://"
+    sqlite_uri = "sqlite:" + "///"
+    sqlite_driver_uri = "sqlite+pysqlite:" + "///"
 
     examples = (
         macos_home,
@@ -96,6 +102,8 @@ def test_user_home_path_detection_covers_platform_and_uri_variants() -> None:
         f"{file_uri}{linux_home}",
         f"{file_uri}/{normalized_windows_home}",
         f"{file_uri}localhost/{normalized_windows_home}",
+        f"{sqlite_uri}{linux_home}",
+        f"{sqlite_driver_uri}{macos_home}",
     )
 
     assert all(_contains_user_home_path(f"path={example}") for example in examples)
@@ -103,10 +111,12 @@ def test_user_home_path_detection_covers_platform_and_uri_variants() -> None:
 
 def test_user_home_path_detection_allows_unrelated_uris() -> None:
     file_uri = "file" + "://"
+    sqlite_uri = "sqlite:" + "///"
 
     examples = (
         f"{file_uri}/tmp/recoleta/report.json",
         f"{file_uri}server/shared/recoleta.db",
+        f"{sqlite_uri}/var/lib/recoleta/recoleta.db",
         "https://example.com/home/research",
     )
 
