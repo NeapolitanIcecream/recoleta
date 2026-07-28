@@ -29,7 +29,7 @@ dependency wrapper.
 A local smoke test on 2026-05-15 used:
 
 - shared pool DB:
-  `/Users/chenmohan/Playground/recoleta-playground/fleet/arxiv_pool.db`
+  `/path/to/fleet/arxiv_pool.db`
 - `SOURCES.arxiv.mode=pool` for `embodied_ai` and `software_intelligence`
 - `ARXIV_POOL.request_interval_seconds=10`
 - W18 backfill for `2026-04-27` through `2026-05-03`

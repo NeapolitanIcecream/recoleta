@@ -21007,7 +21007,7 @@
       "scripts/ping_openai_compatible.py",
       "scripts/ping_openai_embeddings.py"
     ],
-    "repo_root": "/Users/chenmohan/gits/recoleta",
+    "repo_root": ".",
     "requested_targets": [
       "recoleta",
       "scripts"

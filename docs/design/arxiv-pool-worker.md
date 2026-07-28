@@ -299,11 +299,11 @@ Implementation details that should remain portable:
     <string>arxiv-pool</string>
     <string>worker</string>
     <string>--config</string>
-    <string>/Users/example/recoleta/config.yaml</string>
+    <string>/path/to/recoleta/config.yaml</string>
     <string>--json</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/example/recoleta</string>
+  <string>/path/to/recoleta</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>

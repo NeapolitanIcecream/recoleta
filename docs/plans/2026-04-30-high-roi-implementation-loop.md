@@ -65,8 +65,7 @@ Observed baseline:
 - The reviewer inspects only after the implementer marks a slice delivered.
 - The supervisor commits, pushes, updates this PR, and starts the next slice only
   after review has no blocking findings.
-- Coordination state lives in `.codex-workflows/high-roi-implementation/` and is
-  intentionally local-only.
+- Coordination state is intentionally local-only.
 
 ## Final Validation
 

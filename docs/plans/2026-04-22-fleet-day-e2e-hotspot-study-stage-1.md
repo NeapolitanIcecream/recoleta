@@ -4,7 +4,7 @@
 
 This note records the first completed measurement wave for the UTC day
 `2026-04-13`, using the live fleet manifest at
-`/Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml`.
+`/path/to/fleet/fleet.yaml`.
 
 The intent of this stage was:
 
@@ -21,9 +21,9 @@ The intent of this stage was:
 ### Live preflight
 
 ```bash
-uv run recoleta inspect health --config /Users/chenmohan/Playground/recoleta-playground/fleet/instances/embodied_ai/recoleta.yaml
-uv run recoleta inspect health --config /Users/chenmohan/Playground/recoleta-playground/fleet/instances/software_intelligence/recoleta.yaml
-uv run recoleta inspect health --config /Users/chenmohan/Playground/recoleta-playground/fleet/instances/cross_platform/recoleta.yaml
+uv run recoleta inspect health --config /path/to/fleet/instances/embodied_ai/recoleta.yaml
+uv run recoleta inspect health --config /path/to/fleet/instances/software_intelligence/recoleta.yaml
+uv run recoleta inspect health --config /path/to/fleet/instances/cross_platform/recoleta.yaml
 ```
 
 All three children passed with `settings=ok`, `paths=ok`, `lease=free`.
@@ -32,7 +32,7 @@ All three children passed with `settings=ok`, `paths=ok`, `lease=free`.
 
 ```bash
 uv run python scripts/bench_fleet_day_e2e.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --output-dir bench-out/e2e-20260413-baseline
 ```
@@ -41,7 +41,7 @@ uv run python scripts/bench_fleet_day_e2e.py \
 
 ```bash
 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --output-dir bench-out/shadow-20260413-control
@@ -51,7 +51,7 @@ uv run python scripts/bench_shadow_day_run.py \
 
 ```bash
 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --output-dir bench-out/shadow-20260413-arxiv-html-reuse
@@ -254,7 +254,7 @@ Command run:
 
 ```bash
 TRANSLATION_PARALLELISM=12 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --output-dir bench-out/shadow-20260413-translate-p12
@@ -311,7 +311,7 @@ run a second time from the same backup root:
 
 ```bash
 TRANSLATION_PARALLELISM=12 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --output-dir bench-out/shadow-20260413-translate-p12-r2
@@ -428,7 +428,7 @@ from the same backup root:
 
 ```bash
 TRANSLATION_PARALLELISM=10 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --output-dir bench-out/shadow-20260413-translate-p10
@@ -454,7 +454,7 @@ First measured replay:
 
 ```bash
 ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --output-dir bench-out/shadow-20260413-html-maintext-p4
@@ -472,7 +472,7 @@ Repeat replay:
 
 ```bash
 ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --output-dir bench-out/shadow-20260413-html-maintext-p4-r2
@@ -607,9 +607,9 @@ A single-child diagnostic replay was run against the accepted enrich setting:
 ```bash
 ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 \
 WRITE_DEBUG_ARTIFACTS=true \
-ARTIFACTS_DIR=/Users/chenmohan/gits/recoleta/bench-out/shadow-20260413-trace-si-html-p4/artifacts \
+ARTIFACTS_DIR=bench-out/shadow-20260413-trace-si-html-p4/artifacts \
 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --instances software_intelligence \
@@ -653,9 +653,9 @@ Pilot command:
 ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 \
 TRENDS_IDEAS_SNAPSHOT_FIRST=true \
 WRITE_DEBUG_ARTIFACTS=true \
-ARTIFACTS_DIR=/Users/chenmohan/gits/recoleta/bench-out/shadow-20260413-ideas-snapshot-first-si/artifacts \
+ARTIFACTS_DIR=bench-out/shadow-20260413-ideas-snapshot-first-si/artifacts \
 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --instances software_intelligence \
@@ -721,7 +721,7 @@ translation retry behavior:
 ```bash
 ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 \
 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --output-dir bench-out/shadow-20260413-html-maintext-p4-current-control
@@ -746,7 +746,7 @@ ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 \
 TRANSLATION_PARALLELISM=10 \
 TRANSLATION_LLM_MAX_ATTEMPTS=5 \
 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --output-dir bench-out/shadow-20260413-translate-p10-attempts5
@@ -766,7 +766,7 @@ ENRICH_HTML_MAINTEXT_MAX_CONCURRENCY=4 \
 TRANSLATION_PARALLELISM=10 \
 TRANSLATION_LLM_MAX_ATTEMPTS=5 \
 uv run python scripts/bench_shadow_day_run.py \
-  --manifest /Users/chenmohan/Playground/recoleta-playground/fleet/fleet.yaml \
+  --manifest /path/to/fleet/fleet.yaml \
   --date 2026-04-13 \
   --backup-root bench-out/e2e-20260413-baseline/backups \
   --output-dir bench-out/shadow-20260413-translate-p10-attempts5-r2
