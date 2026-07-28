@@ -1,3 +1,5 @@
+# Recoleta
+
 <p align="center">
   <img src="./docs/assets/recoleta-banner.png" alt="Research sources becoming traceable Recoleta briefs"/>
 </p>
